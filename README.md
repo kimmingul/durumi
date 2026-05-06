@@ -115,6 +115,8 @@ See [docs/PROGRESS.md](docs/PROGRESS.md) for the active progress tracker.
 ## Develop
 
 ```bash
+git clone https://github.com/kimmingul/durumi.git
+cd durumi
 pnpm install
 pnpm dev
 ```

@@ -23,14 +23,24 @@
 
 ## Auto-update
 
-- Provider: `generic` (HTTP directory). Edit `electron-builder.yml` `publish.url` before publishing.
-- The current placeholder (`https://updates.durumi.invalid/`) is invalid by design — auto-update will silently noop on packaged builds until configured.
+- Provider: `github` — releases at https://github.com/kimmingul/durumi/releases are the update source.
+- electron-updater downloads from the latest **non-draft, non-prerelease** GitHub Release whose tag is `v{version}`.
 
-### Publishing flow (when ready)
-1. Bump `package.json` version.
-2. `pnpm make:mac` and `pnpm make:win`.
-3. Upload artifacts + the auto-generated `latest.yml` / `latest-mac.yml` to the host pointed to by `publish.url`.
-4. Existing installs will detect the update on next launch (30s after start) or via Help → Check for Updates….
+### Publishing flow
+1. Bump `package.json` version (e.g. `0.1.0` → `0.2.0`); commit and push.
+2. Set `GH_TOKEN` to a GitHub PAT with `repo` scope (electron-builder reads it to upload assets):
+   ```bash
+   export GH_TOKEN=$(gh auth token)
+   ```
+3. Build and publish — electron-builder creates a **draft** release and uploads the installers + `latest.yml` / `latest-mac.yml`:
+   ```bash
+   pnpm make:mac -- --publish always   # on macOS
+   pnpm make:win -- --publish always   # on Windows 11
+   ```
+4. Open the draft at https://github.com/kimmingul/durumi/releases, fill in release notes, **uncheck "Set as a pre-release"**, and publish.
+5. Existing installs detect the update on next launch (30s after start) or via Help → Check for Updates….
+
+> Until a release is published, auto-update silently noops — `electron-updater` simply finds no matching release and reports "no update available".
 
 ## In-app update UX
 - 30s after launch, packaged builds check `publish.url`. If a newer version is on the server, the user sees a "Download" prompt.

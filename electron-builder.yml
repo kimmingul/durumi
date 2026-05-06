@@ -6,8 +6,9 @@ files:
   - "out/**"
   - "package.json"
 publish:
-  provider: generic
-  url: https://updates.durumi.invalid/  # placeholder — replace before release
+  provider: github
+  owner: kimmingul
+  repo: durumi
   channel: latest
 mac:
   target:

@@ -3,6 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "description": "Durumi — a paper crane for medical research. Typora-style cross-platform markdown editor.",
+  "author": "Min-Gul Kim <kimmingul@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/kimmingul/durumi#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kimmingul/durumi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kimmingul/durumi/issues"
+  },
   "main": "out/main/main.js",
   "type": "module",
   "scripts": {
