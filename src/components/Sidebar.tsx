@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSidebarStore } from '../store/sidebarStore';
 import { FileTree } from './sidebar/FileTree';
 import { Outline } from './sidebar/Outline';
+import { SearchTab } from './sidebar/SearchTab';
 import { jumpToLine } from '../editor/jumpToLine';
 import { useActiveHeading } from '../hooks/useActiveHeading';
 import { useLanguage, t } from '../i18n/t';
@@ -11,9 +12,10 @@ interface SidebarProps {
   content: string;
   view: EditorView | null;
   onOpenFile: (path: string) => void;
+  onOpenHit?: (absPath: string, line: number, column: number) => void;
 }
 
-export function Sidebar({ content, view, onOpenFile }: SidebarProps) {
+export function Sidebar({ content, view, onOpenFile, onOpenHit }: SidebarProps) {
   const visible = useSidebarStore((s) => s.visible);
   const activeTab = useSidebarStore((s) => s.activeTab);
   const width = useSidebarStore((s) => s.width);
@@ -81,12 +83,18 @@ export function Sidebar({ content, view, onOpenFile }: SidebarProps) {
           >
             {t('sidebar.outline')}
           </button>
+          <button
+            className={'cm-sidebar-tab' + (activeTab === 'search' ? ' cm-sidebar-tab-active' : '')}
+            onClick={() => setActiveTab('search')}
+          >
+            {t('sidebar.search')}
+          </button>
         </div>
         <div className="cm-sidebar-body">
-          {activeTab === 'files' ? (
-            <FileTree onOpenFile={onOpenFile} />
-          ) : (
-            <Outline content={content} onJump={onJump} />
+          {activeTab === 'files' && <FileTree onOpenFile={onOpenFile} />}
+          {activeTab === 'outline' && <Outline content={content} onJump={onJump} />}
+          {activeTab === 'search' && (
+            <SearchTab onOpenHit={onOpenHit ?? (() => undefined)} />
           )}
         </div>
       </aside>

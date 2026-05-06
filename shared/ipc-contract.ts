@@ -18,10 +18,20 @@ export interface Preferences {
   recentFiles: string[];
   sidebar: {
     visible: boolean;
-    activeTab: 'files' | 'outline';
+    activeTab: 'files' | 'outline' | 'search';
     width: number;
   };
   workspaceFolders: string[];
+  /** Optional explicit path to the pandoc binary; null = auto-detect on PATH. */
+  pandocPath: string | null;
+  /** Optional `.docx` style reference template path (Pandoc --reference-doc). */
+  docxStyleReference: string | null;
+  /** Optional Pandoc LaTeX template (--template). */
+  latexTemplate: string | null;
+  /** Spell-check languages, e.g. ['en-US']; empty array disables it. */
+  spellCheckLanguages: string[];
+  /** Words the user has added to the dictionary across sessions. */
+  spellCheckCustomWords: string[];
 }
 
 export type MenuCommand =
@@ -33,9 +43,12 @@ export type MenuCommand =
   | 'findPrev'
   | 'bold' | 'italic' | 'code' | 'link'
   | 'strikethrough' | 'insertTable' | 'toggleTask' | 'codeBlock'
-  | 'openFolder' | 'toggleSidebar' | 'showFiles' | 'showOutline'
+  | 'openFolder' | 'toggleSidebar' | 'showFiles' | 'showOutline' | 'showSearch' | 'quickOpen'
+  | 'toggleFocusMode' | 'toggleTypewriterMode'
   | 'exportHtml'
   | 'exportPdf'
+  | 'exportDocx'
+  | 'exportLatex'
   | 'openMacrosConfig'
   | 'languageChanged'
   | { type: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
@@ -84,6 +97,42 @@ export interface IpcApi {
   macrosGet: () => Promise<Macro[]>;
   onMacrosChanged: (cb: (macros: Macro[]) => void) => () => void;
   onAppRequestClose: (decide: () => boolean | Promise<boolean>) => () => void;
+  pandocDetect: () => Promise<{ binary: string; version: string } | null>;
+  pandocExport: (
+    markdown: string,
+    format: 'docx' | 'latex',
+    suggestedName?: string,
+  ) => Promise<{ path: string } | { error: string; stderr?: string } | null>;
+  searchWorkspace: (
+    rootPath: string,
+    opts: {
+      query: string;
+      caseSensitive?: boolean;
+      wholeWord?: boolean;
+      regex?: boolean;
+    },
+  ) => Promise<
+    Array<{
+      relPath: string;
+      absPath: string;
+      line: number;
+      column: number;
+      preview: string;
+      matchLength: number;
+    }>
+  >;
+  filesIndex: (
+    roots: string[],
+  ) => Promise<Array<{ name: string; relPath: string; absPath: string }>>;
+  filesCreate: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  filesCreateFolder: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  filesRename: (
+    oldPath: string,
+    newPath: string,
+  ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  filesDuplicate: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  filesTrash: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  filesReveal: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
 }
 
 declare global {

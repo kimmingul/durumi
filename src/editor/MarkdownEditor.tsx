@@ -7,9 +7,17 @@ import { searchKeymap } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages as lezerLangs } from '@codemirror/language-data';
 import { GFM } from '@lezer/markdown';
+import { FrontMatterExtension } from './markdownExt/frontMatter';
+import { FootnoteExtension } from './markdownExt/footnote';
+import { TocExtension } from './markdownExt/toc';
+import { InlineExtrasExtension } from './markdownExt/inlineExtras';
 import { liveDecorations } from './decorations';
 import { markdownKeymap } from './keymap';
 import { buildMacroKeymap } from './keymap/macros';
+import { autoPair } from './keymap/autoPair';
+import { enterListContinuation } from './keymap/listContinuation';
+import { emojiAutocomplete } from './keymap/emojiAutocomplete';
+import { viewModes } from './viewModes';
 import { makeTheme } from './theme';
 import { handlePaste, handleDrop } from './imagePaste';
 import type { Macro } from '@shared/ipc-contract';
@@ -39,13 +47,16 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
       doc: value,
       extensions: [
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        keymap.of([enterListContinuation(), ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        autoPair(),
+        emojiAutocomplete(),
         markdown({
           base: markdownLanguage,
           codeLanguages: lezerLangs,
-          extensions: [GFM],
+          extensions: [GFM, FrontMatterExtension, FootnoteExtension, TocExtension, InlineExtrasExtension],
         }),
         ...liveDecorations,
+        viewModes(),
         markdownKeymap(),
         macroCompartmentRef.current.of(buildMacroKeymap(macros)),
         makeTheme(),

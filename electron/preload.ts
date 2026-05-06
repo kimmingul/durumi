@@ -53,6 +53,18 @@ const api: IpcApi = {
     ipcRenderer.on('git:status:invalidated', handler);
     return () => { ipcRenderer.removeListener('git:status:invalidated', handler); };
   },
+  pandocDetect: () => ipcRenderer.invoke('pandoc:detect'),
+  pandocExport: (markdown, format, suggestedName) =>
+    ipcRenderer.invoke('pandoc:export', markdown, format, suggestedName),
+  searchWorkspace: (rootPath, opts) =>
+    ipcRenderer.invoke('search:workspace', rootPath, opts),
+  filesIndex: (roots) => ipcRenderer.invoke('files:index', roots),
+  filesCreate: (path) => ipcRenderer.invoke('files:create', path),
+  filesCreateFolder: (path) => ipcRenderer.invoke('files:createFolder', path),
+  filesRename: (oldPath, newPath) => ipcRenderer.invoke('files:rename', oldPath, newPath),
+  filesDuplicate: (path) => ipcRenderer.invoke('files:duplicate', path),
+  filesTrash: (path) => ipcRenderer.invoke('files:trash', path),
+  filesReveal: (path) => ipcRenderer.invoke('files:reveal', path),
   onAppRequestClose: (decide) => {
     const handler = async (_: unknown, reqId: number) => {
       let allow = false;

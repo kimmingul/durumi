@@ -10,6 +10,17 @@ import { saveImage } from './images';
 import { getMacros } from './macros';
 import { getRepoStatus } from './git';
 import { resolveLang, t } from './i18n';
+import { detectPandoc, runPandoc } from './pandoc';
+import { searchInWorkspace, SearchOptions } from './search';
+import { indexWorkspace } from './fileIndex';
+import {
+  createFile,
+  createFolder,
+  duplicate as duplicateFile,
+  moveToTrash,
+  rename as renameFile,
+  revealInFolder,
+} from './fileOps';
 
 /**
  * Pick the longest workspace root that is a prefix of `savedPath`.
@@ -148,6 +159,60 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('macros:get', async () => getMacros());
 
   ipcMain.handle('git:getStatus', async (_e, rootPath: string) => getRepoStatus(rootPath));
+
+  ipcMain.handle(
+    'search:workspace',
+    async (_e, rootPath: string, opts: SearchOptions) => searchInWorkspace(rootPath, opts),
+  );
+
+  ipcMain.handle('files:index', async (_e, roots: string[]) => indexWorkspace(roots));
+
+  ipcMain.handle('files:create', async (_e, path: string) => createFile(path));
+  ipcMain.handle('files:createFolder', async (_e, path: string) => createFolder(path));
+  ipcMain.handle('files:rename', async (_e, oldPath: string, newPath: string) =>
+    renameFile(oldPath, newPath),
+  );
+  ipcMain.handle('files:duplicate', async (_e, path: string) => duplicateFile(path));
+  ipcMain.handle('files:trash', async (_e, path: string) => moveToTrash(path));
+  ipcMain.handle('files:reveal', async (_e, path: string) => revealInFolder(path));
+
+  ipcMain.handle('pandoc:detect', async () => {
+    const prefs = await getPreferences();
+    return detectPandoc(prefs.pandocPath);
+  });
+
+  ipcMain.handle(
+    'pandoc:export',
+    async (event, markdown: string, format: 'docx' | 'latex', suggestedName?: string) => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
+      if (!win) return null;
+      const ext = format === 'docx' ? 'docx' : 'tex';
+      const filterName = format === 'docx' ? 'Word' : 'LaTeX';
+      const dialogResult = await dialog.showSaveDialog(win, {
+        defaultPath: suggestedName ?? `untitled.${ext}`,
+        filters: [{ name: filterName, extensions: [ext] }],
+      });
+      if (dialogResult.canceled || !dialogResult.filePath) return null;
+      const prefs = await getPreferences();
+      const extra: string[] = [];
+      if (format === 'docx' && prefs.docxStyleReference) {
+        extra.push('--reference-doc', prefs.docxStyleReference);
+      }
+      if (format === 'latex' && prefs.latexTemplate) {
+        extra.push('--template', prefs.latexTemplate);
+      }
+      const result = await runPandoc({
+        input: markdown,
+        outputPath: dialogResult.filePath,
+        override: prefs.pandocPath,
+        extraArgs: extra,
+      });
+      if (!result.ok) {
+        return { error: result.error ?? 'export failed', stderr: result.stderr };
+      }
+      return { path: dialogResult.filePath };
+    },
+  );
 
   nativeTheme.on('updated', () => {
     const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';

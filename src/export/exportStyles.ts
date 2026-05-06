@@ -94,6 +94,64 @@ hr {
 
 del, s { text-decoration: line-through; opacity: 0.7; }
 
+nav.toc {
+  margin: 1em 0 1.5em;
+  padding: 12px 18px;
+  border-left: 3px solid #6c7a89;
+  background: rgba(108, 122, 137, 0.06);
+  border-radius: 0 4px 4px 0;
+}
+nav.toc ul { list-style: none; padding-left: 1em; margin: 0; }
+nav.toc > ul { padding-left: 0; }
+nav.toc li.toc-h1 { font-weight: 600; }
+nav.toc a { text-decoration: none; color: #0366d6; }
+nav.toc a:hover { text-decoration: underline; }
+nav.toc .toc-empty { color: #888; font-style: italic; margin: 0; }
+
+.footnotes {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid #eaecef;
+  font-size: 0.9em;
+  color: #444;
+}
+.footnotes ol { padding-left: 1.5em; }
+.footnote-ref a, .footnote-backref { text-decoration: none; }
+
+mark { background: #fff5b1; padding: 0 2px; border-radius: 2px; }
+
+.markdown-alert {
+  border-left: 4px solid #888;
+  background: rgba(120, 120, 120, 0.06);
+  padding: 8px 14px;
+  margin: 1em 0;
+  border-radius: 0 4px 4px 0;
+}
+.markdown-alert > p { margin: 0.4em 0; }
+.markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  margin-bottom: 0.2em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.85em;
+}
+.markdown-alert-note      { border-left-color: #0969da; background: rgba(9, 105, 218, 0.06); }
+.markdown-alert-note .markdown-alert-title    { color: #0969da; }
+.markdown-alert-tip       { border-left-color: #1a7f37; background: rgba(26, 127, 55, 0.06); }
+.markdown-alert-tip .markdown-alert-title     { color: #1a7f37; }
+.markdown-alert-important { border-left-color: #8250df; background: rgba(130, 80, 223, 0.06); }
+.markdown-alert-important .markdown-alert-title { color: #8250df; }
+.markdown-alert-warning   { border-left-color: #9a6700; background: rgba(154, 103, 0, 0.06); }
+.markdown-alert-warning .markdown-alert-title { color: #9a6700; }
+.markdown-alert-caution   { border-left-color: #cf222e; background: rgba(207, 34, 46, 0.06); }
+.markdown-alert-caution .markdown-alert-title { color: #cf222e; }
+sub, sup { font-size: 0.78em; }
+sub { vertical-align: sub; }
+sup { vertical-align: super; }
+
 .cm-tok-keyword  { color: #d73a49; }
 .cm-tok-string   { color: #032f62; }
 .cm-tok-comment  { color: #6a737d; font-style: italic; }

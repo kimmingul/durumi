@@ -16,6 +16,11 @@ const DEFAULTS: Preferences = {
     width: 240,
   },
   workspaceFolders: [],
+  pandocPath: null,
+  docxStyleReference: null,
+  latexTemplate: null,
+  spellCheckLanguages: ['en-US'],
+  spellCheckCustomWords: [],
 };
 
 let cache: Preferences | null = null;

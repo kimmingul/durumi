@@ -8,6 +8,7 @@ import { registerAutoUpdater } from './autoUpdater';
 import { getCustomCss, watchCustomCss } from './customCss';
 import { getMacros, watchMacros } from './macros';
 import { attachCloseGuard } from './closeGuard';
+import { attachSpellCheck } from './spellCheck';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -39,6 +40,8 @@ async function createWindow(prefsOverride?: Awaited<ReturnType<typeof getPrefere
   // Intercept close so the renderer can prompt Save/Discard/Cancel for a dirty
   // document. Without this, beforeunload merely cancels the close silently.
   attachCloseGuard(win, ipcMain);
+
+  void attachSpellCheck(win);
 
   win.webContents.on('did-finish-load', () => {
     const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';

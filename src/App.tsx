@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { MarkdownEditor } from './editor/MarkdownEditor';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
+import { QuickOpen } from './components/QuickOpen';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
 import type { Macro, MenuCommand } from '@shared/ipc-contract';
-import type { EditorView } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
+import { focusModeField, setFocusMode, setTypewriterMode, typewriterModeField } from './editor/viewModes';
 import { toggleWrap } from './editor/keymap/toggleWrap';
 import { setHeading } from './editor/keymap/setHeading';
 import { insertTable as insertTableHelper } from './editor/keymap/insertTable';
@@ -46,6 +48,7 @@ export function App() {
   const toggleSidebarVisible = useSidebarStore((s) => s.toggleVisible);
   const showWith = useSidebarStore((s) => s.showWith);
   const [macros, setMacros] = useState<Macro[]>([]);
+  const [quickOpen, setQuickOpen] = useState(false);
   const { setLang } = useLanguage();
 
   useEffect(() => {
@@ -123,6 +126,17 @@ export function App() {
     await window.api.exportFile(html, format, suggested);
   }
 
+  async function doPandocExport(format: 'docx' | 'latex'): Promise<void> {
+    const baseName = basenameOf(filePath, 'untitled');
+    const ext = format === 'docx' ? 'docx' : 'tex';
+    const suggested = stripMarkdownExt(baseName) + `.${ext}`;
+    const result = await window.api.pandocExport(content, format, suggested);
+    if (result && 'error' in result) {
+      // Surface failure inline; a richer dialog can come in a follow-up.
+      window.alert(`Export failed: ${result.error}${result.stderr ? `\n\n${result.stderr}` : ''}`);
+    }
+  }
+
   useEffect(() => {
     return window.api.onMenuCommand(async (cmd: MenuCommand) => {
       const view = editorViewRef.current;
@@ -145,6 +159,8 @@ export function App() {
       }
       if (cmd === 'exportHtml') { await doExport('html'); return; }
       if (cmd === 'exportPdf') { await doExport('pdf'); return; }
+      if (cmd === 'exportDocx') { await doPandocExport('docx'); return; }
+      if (cmd === 'exportLatex') { await doPandocExport('latex'); return; }
       if (cmd === 'toggleTheme') {
         const currentTheme = useAppStore.getState().theme;
         const next = currentTheme === 'dark' ? 'light' : 'dark';
@@ -169,6 +185,18 @@ export function App() {
       if (cmd === 'toggleSidebar') { toggleSidebarVisible(); return; }
       if (cmd === 'showFiles') { showWith('files'); return; }
       if (cmd === 'showOutline') { showWith('outline'); return; }
+      if (cmd === 'showSearch') { showWith('search'); return; }
+      if (cmd === 'quickOpen') { setQuickOpen(true); return; }
+      if (cmd === 'toggleFocusMode' && view) {
+        const cur = view.state.field(focusModeField, false);
+        view.dispatch({ effects: setFocusMode.of(!cur) });
+        return;
+      }
+      if (cmd === 'toggleTypewriterMode' && view) {
+        const cur = view.state.field(typewriterModeField, false);
+        view.dispatch({ effects: setTypewriterMode.of(!cur) });
+        return;
+      }
       if (cmd === 'languageChanged') {
         // Main process already updated prefs + rebuilt the menu; just
         // re-fetch so we apply the new resolved language to React.
@@ -262,6 +290,23 @@ export function App() {
             const r = await window.api.fileOpenPath(p);
             setFile(r.path, r.content);
           }}
+          onOpenHit={async (absPath, line) => {
+            if (!(await maybeDiscard())) return;
+            const r = await window.api.fileOpenPath(absPath);
+            setFile(r.path, r.content);
+            // Defer line jump until after the editor mounts the new doc.
+            setTimeout(() => {
+              const view = editorViewRef.current;
+              if (!view) return;
+              const safeLine = Math.min(Math.max(line, 1), view.state.doc.lines);
+              const info = view.state.doc.line(safeLine);
+              view.dispatch({
+                selection: { anchor: info.from },
+                effects: EditorView.scrollIntoView(info.from, { y: 'center' }),
+              });
+              view.focus();
+            }, 50);
+          }}
         />
         <div style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
           <MarkdownEditor
@@ -274,6 +319,15 @@ export function App() {
         </div>
       </div>
       <StatusBar />
+      <QuickOpen
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        onPick={async (p) => {
+          if (!(await maybeDiscard())) return;
+          const r = await window.api.fileOpenPath(p);
+          setFile(r.path, r.content);
+        }}
+      />
     </div>
   );
 }

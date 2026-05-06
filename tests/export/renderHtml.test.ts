@@ -6,7 +6,7 @@ describe('renderHtml', () => {
     const html = await renderHtml('# Hello', 'My Doc');
     expect(html).toMatch(/^<!DOCTYPE html>/);
     expect(html).toContain('<title>My Doc</title>');
-    expect(html).toContain('<h1>Hello</h1>');
+    expect(html).toContain('<h1 id="hello">Hello</h1>');
     expect(html).toContain('<style>');
   });
 

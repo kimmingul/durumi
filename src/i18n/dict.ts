@@ -62,6 +62,7 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     // Sidebar
     'sidebar.files': 'Files',
     'sidebar.outline': 'Outline',
+    'sidebar.search': 'Search',
     'sidebar.empty.files': 'No folders open.',
     'sidebar.empty.outline': 'No headings yet',
     'sidebar.openFolder': 'Open Folder…',
@@ -93,6 +94,9 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     // Status bar
     'status.untitled': 'untitled.md',
     'status.charsLine': '{count} chars · UTF-8 · LF',
+    'status.words': '{count} words',
+    'status.chars': '{count} chars',
+    'status.reading': '~{count} min read',
   },
   ko: {
     // App menu
@@ -146,6 +150,7 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     // Sidebar
     'sidebar.files': '파일',
     'sidebar.outline': '목차',
+    'sidebar.search': '검색',
     'sidebar.empty.files': '열린 폴더가 없습니다.',
     'sidebar.empty.outline': '제목 없음',
     'sidebar.openFolder': '폴더 열기…',
@@ -177,5 +182,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     // Status bar
     'status.untitled': 'untitled.md',
     'status.charsLine': '{count}자 · UTF-8 · LF',
+    'status.words': '{count}단어',
+    'status.chars': '{count}자',
+    'status.reading': '~{count}분 읽기',
   },
 };

@@ -1,4 +1,7 @@
+import { footnoteDecoration, footnoteTheme } from './footnote';
+import { frontMatterDecoration, frontMatterTheme } from './frontMatter';
 import { headingDecoration } from './heading';
+import { tocDecoration, tocTheme } from './toc';
 import { emphasisDecoration } from './emphasis';
 import { inlineCodeDecoration } from './inlineCode';
 import { linkDecoration } from './link';
@@ -15,6 +18,12 @@ import { mathDecorations } from './math';
 import { mermaidDecorations } from './mermaid';
 
 export const liveDecorations = [
+  frontMatterDecoration(),
+  frontMatterTheme,
+  footnoteDecoration(),
+  footnoteTheme,
+  tocDecoration(),
+  tocTheme,
   headingDecoration(),
   emphasisDecoration(),
   inlineCodeDecoration(),

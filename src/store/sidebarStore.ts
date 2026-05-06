@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 
+export type SidebarTab = 'files' | 'outline' | 'search';
+
 interface SidebarState {
   visible: boolean;
-  activeTab: 'files' | 'outline';
+  activeTab: SidebarTab;
   width: number;
   workspaceFolders: string[];
   activeHeadingLine: number | null;
   /** root path -> repo-relative path -> bucket name (e.g. "modified"). */
   gitStatus: Record<string, Record<string, string>>;
   toggleVisible: () => void;
-  showWith: (tab: 'files' | 'outline') => void;
-  setActiveTab: (t: 'files' | 'outline') => void;
+  showWith: (tab: SidebarTab) => void;
+  setActiveTab: (t: SidebarTab) => void;
   setWidth: (w: number) => void;
   setWorkspaceFolders: (paths: string[]) => void;
   addFolder: (path: string) => void;
