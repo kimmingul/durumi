@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Durumi — paper crane for medical research</title>
+
+  <defs>
+    <linearGradient id="paper" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FAF3DE"/>
+      <stop offset="100%" stop-color="#EFE2BC"/>
+    </linearGradient>
+    <linearGradient id="bodyShade" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#243044"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="wingShade" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3B4B65"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded-square paper background (한지 톤) -->
+  <rect width="1024" height="1024" rx="220" ry="220" fill="url(#paper)"/>
+
+  <!-- Subtle manuscript ruled lines (논문 원고지 암시) -->
+  <g stroke="#D8C68A" stroke-width="2.5" opacity="0.55" stroke-linecap="round">
+    <line x1="170" y1="252" x2="854" y2="252"/>
+    <line x1="170" y1="356" x2="854" y2="356"/>
+    <line x1="170" y1="460" x2="854" y2="460"/>
+    <line x1="170" y1="564" x2="854" y2="564"/>
+    <line x1="170" y1="668" x2="854" y2="668"/>
+    <line x1="170" y1="772" x2="854" y2="772"/>
+  </g>
+
+  <!-- Origami crane (side profile, head up-left, raised wing, tail back-right) -->
+
+  <!-- Tail: long triangular fold extending right -->
+  <path d="M 612,612 L 880,652 L 838,720 L 580,672 Z"
+        fill="url(#bodyShade)" stroke="#0A0F1F" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Tail crease -->
+  <line x1="612" y1="612" x2="838" y2="720"
+        stroke="#0A0F1F" stroke-width="2" opacity="0.35"/>
+
+  <!-- Body main fold (kite/diamond) -->
+  <path d="M 280,604 L 510,540 L 690,560 L 612,672 L 360,680 Z"
+        fill="url(#bodyShade)" stroke="#0A0F1F" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Body interior fold lines -->
+  <g stroke="#0A0F1F" stroke-width="2" opacity="0.35" fill="none">
+    <line x1="280" y1="604" x2="612" y2="672"/>
+    <line x1="510" y1="540" x2="486" y2="676"/>
+  </g>
+
+  <!-- Raised wing (the iconic peaked triangle) -->
+  <path d="M 360,560 L 612,232 L 720,330 L 690,560 Z"
+        fill="url(#wingShade)" stroke="#0A0F1F" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Wing fold ridge -->
+  <line x1="612" y1="232" x2="612" y2="558"
+        stroke="#0A0F1F" stroke-width="2.5" opacity="0.5"/>
+  <!-- Secondary wing fold -->
+  <line x1="612" y1="232" x2="690" y2="560"
+        stroke="#0A0F1F" stroke-width="1.5" opacity="0.3"/>
+
+  <!-- Neck: long thin triangle pointing up-left -->
+  <path d="M 280,604 L 178,344 L 232,330 L 360,604 Z"
+        fill="url(#bodyShade)" stroke="#0A0F1F" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Neck crease -->
+  <line x1="280" y1="604" x2="232" y2="330"
+        stroke="#0A0F1F" stroke-width="1.5" opacity="0.35"/>
+
+  <!-- Head -->
+  <path d="M 178,344 L 162,288 L 220,278 L 232,330 Z"
+        fill="url(#bodyShade)" stroke="#0A0F1F" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- Red crown patch (단청 / 두루미 머리 붉은 점) -->
+  <ellipse cx="195" cy="294" rx="16" ry="10" fill="#C03030" opacity="0.85"/>
+
+  <!-- Beak (sharp triangle, dark) -->
+  <path d="M 162,288 L 102,272 L 168,304 Z"
+        fill="#0A0F1F" stroke="#0A0F1F" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- Eye (tiny paper dot) -->
+  <circle cx="200" cy="320" r="5" fill="#FAF3DE"/>
+</svg>

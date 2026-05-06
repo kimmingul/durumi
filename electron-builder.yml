@@ -1,0 +1,29 @@
+appId: io.durumi.app
+productName: Durumi
+directories:
+  output: dist-build
+files:
+  - "out/**"
+  - "package.json"
+publish:
+  provider: generic
+  url: https://updates.durumi.invalid/  # placeholder — replace before release
+  channel: latest
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  icon: build/icon.png
+  hardenedRuntime: false
+  identity: null  # ad-hoc signed (no Apple Developer ID); see docs/RELEASE.md
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  verifyUpdateCodeSignature: false  # we ship unsigned NSIS; re-enable in Phase D
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false

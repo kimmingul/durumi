@@ -1,0 +1,11 @@
+.superpowers/
+.claude/
+node_modules/
+dist/
+dist-build/
+out/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.DS_Store
+**/.DS_Store

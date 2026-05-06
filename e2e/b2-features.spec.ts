@@ -1,0 +1,80 @@
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+
+const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.js');
+
+async function launch() {
+  const app = await electron.launch({ args: [APP_ENTRY] });
+  const page = await app.firstWindow();
+  await page.waitForSelector('.cm-content');
+  return { app, page };
+}
+
+// Force-exit to bypass the dirty-close (beforeunload) dialog that
+// `app.close()` would otherwise hang on after we have typed into the editor.
+async function shutdown(app: ElectronApplication) {
+  await app.evaluate(({ app: a }) => a.exit(0));
+}
+
+function makeTempFolder(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-b2-'));
+  fs.writeFileSync(path.join(dir, 'one.md'), '# One\n\nbody');
+  fs.writeFileSync(path.join(dir, 'two.md'), '# Two\n\n## Sub\n\nbody');
+  return dir;
+}
+
+test('open folder + click file opens content', async () => {
+  const { app, page } = await launch();
+  const tmp = makeTempFolder();
+  try {
+    await page.evaluate(async (p: string) => {
+      await (
+        window as unknown as {
+          api: { prefsSet: (x: { workspaceFolders: string[] }) => Promise<void> };
+        }
+      ).api.prefsSet({ workspaceFolders: [p] });
+    }, tmp);
+    await page.reload();
+    await page.waitForSelector('.cm-content');
+    // Allow the App's prefsGet effect + Sidebar's useFolderTree fsListDirectory
+    // round-trip to render the tree rows before asserting count.
+    await page.waitForTimeout(300);
+    await page.waitForSelector('.cm-tree-row-file', { timeout: 5000 });
+    const rows = page.locator('.cm-tree-row-file');
+    await expect(rows).toHaveCount(2);
+    await rows.first().click();
+    await page.waitForTimeout(200);
+    const content = await page.evaluate(
+      () => (document.querySelector('.cm-content') as HTMLElement).innerText
+    );
+    expect(content).toContain('One');
+  } finally {
+    await shutdown(app);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('outline tab shows headings and clicking jumps cursor', async () => {
+  const { app, page } = await launch();
+  try {
+    await page.click('.cm-content');
+    await page.keyboard.type('# H1\n\n## H2\n\n### H3\n\nbody text\n');
+    // useDocOutline has a 100ms debounce; wait it out before switching tabs.
+    await page.waitForTimeout(150);
+    await page.locator('.cm-sidebar-tab', { hasText: 'Outline' }).click();
+    await page.waitForSelector('.cm-outline-row', { timeout: 3000 });
+    const rows = page.locator('.cm-outline-row');
+    await expect(rows).toHaveCount(3);
+    await rows.nth(2).click();
+    await page.waitForTimeout(100);
+    const activeLineText = await page.evaluate(() => {
+      const a = document.querySelector('.cm-activeLine');
+      return a ? (a as HTMLElement).innerText : '';
+    });
+    expect(activeLineText).toContain('H3');
+  } finally {
+    await shutdown(app);
+  }
+});

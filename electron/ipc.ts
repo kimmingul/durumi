@@ -1,0 +1,156 @@
+import { BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron';
+import { promises as fs } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import type { DiscardChoice, FileResult, Preferences } from '@shared/ipc-contract';
+import { addRecentFile, getPreferences, setPreferences } from './preferences';
+import { listDirectory, watchRoot, unwatchRoot, unwatchAllRoots, openFolderDialog } from './fs';
+import { exportToPdf } from './pdf';
+import { getCustomCss } from './customCss';
+import { saveImage } from './images';
+import { getMacros } from './macros';
+import { getRepoStatus } from './git';
+import { resolveLang, t } from './i18n';
+
+/**
+ * Pick the longest workspace root that is a prefix of `savedPath`.
+ * Treats both `<root>` and `<root>/` as a match (so paths equal to the root
+ * itself also match). Returns `null` if no root contains the path.
+ */
+export function findOwningRoot(savedPath: string, roots: readonly string[]): string | null {
+  let best: string | null = null;
+  for (const root of roots) {
+    if (savedPath === root || savedPath.startsWith(root + '/') || savedPath.startsWith(root + '\\')) {
+      if (!best || root.length > best.length) best = root;
+    }
+  }
+  return best;
+}
+
+function broadcastGitStatusInvalidated(root: string): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send('git:status:invalidated', root);
+  }
+}
+
+export function registerIpcHandlers(): void {
+  ipcMain.handle('ping', async () => 'pong' as const);
+
+  ipcMain.handle('file:open', async (event): Promise<FileResult | null> => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, {
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const path = result.filePaths[0]!;
+    const content = await fs.readFile(path, 'utf8');
+    await addRecentFile(path);
+    return { path, content };
+  });
+
+  ipcMain.handle('file:openPath', async (_e, path: string): Promise<FileResult> => {
+    const content = await fs.readFile(path, 'utf8');
+    await addRecentFile(path);
+    return { path, content };
+  });
+
+  ipcMain.handle('file:save', async (_e, path: string, content: string) => {
+    await fs.writeFile(path, content, 'utf8');
+    await addRecentFile(path);
+    const prefs = await getPreferences();
+    const owningRoot = findOwningRoot(path, prefs.workspaceFolders ?? []);
+    if (owningRoot) broadcastGitStatusInvalidated(owningRoot);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('file:saveAs', async (event, content: string, suggestedName?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return null;
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: suggestedName ?? 'untitled.md',
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    await fs.writeFile(result.filePath, content, 'utf8');
+    await addRecentFile(result.filePath);
+    const prefs = await getPreferences();
+    const owningRoot = findOwningRoot(result.filePath, prefs.workspaceFolders ?? []);
+    if (owningRoot) broadcastGitStatusInvalidated(owningRoot);
+    return { path: result.filePath };
+  });
+
+  ipcMain.handle('export:file', async (event, html: string, format: 'html' | 'pdf', suggestedName?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
+    if (!win) return null;
+    const ext = format === 'pdf' ? 'pdf' : 'html';
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: suggestedName ?? `untitled.${ext}`,
+      filters: [
+        format === 'pdf'
+          ? { name: 'PDF', extensions: ['pdf'] }
+          : { name: 'HTML', extensions: ['html', 'htm'] },
+      ],
+    });
+    if (result.canceled || !result.filePath) return null;
+    if (format === 'pdf') {
+      await exportToPdf(html, result.filePath);
+    } else {
+      await writeFile(result.filePath, html, 'utf8');
+    }
+    return { path: result.filePath };
+  });
+
+  ipcMain.handle('dialog:confirmDiscard', async (event, filename: string): Promise<DiscardChoice> => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return 'cancel';
+    const prefs = await getPreferences();
+    const lang = resolveLang(prefs.language);
+    const r = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: [t('discard.save', lang), t('discard.discard', lang), t('discard.cancel', lang)],
+      defaultId: 0,
+      cancelId: 2,
+      message: t('discard.message', lang, { name: filename }),
+      detail: t('discard.detail', lang),
+    });
+    return (['save', 'discard', 'cancel'] as const)[r.response] ?? 'cancel';
+  });
+
+  ipcMain.handle('prefs:get', async (): Promise<Preferences> => getPreferences());
+  ipcMain.handle('prefs:set', async (_e, patch: Partial<Preferences>) => setPreferences(patch));
+
+  ipcMain.handle('window:setTitle', async (event, title: string) => {
+    BrowserWindow.fromWebContents(event.sender)?.setTitle(title);
+  });
+
+  ipcMain.handle(
+    'image:save',
+    async (
+      _e,
+      buffer: Uint8Array,
+      mimeType: string,
+      contextFilePath: string | null,
+    ) => saveImage(buffer, mimeType, contextFilePath),
+  );
+
+  ipcMain.handle('dialog:openFolder', async () => openFolderDialog());
+  ipcMain.handle('fs:listDirectory', async (_e, p: string) => listDirectory(p));
+  ipcMain.handle('fs:watchRoot', async (_e, p: string) => {
+    await watchRoot(p, (changed) => {
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('fs:change', changed));
+    });
+  });
+  ipcMain.handle('fs:unwatchRoot', async (_e, p: string) => unwatchRoot(p));
+  ipcMain.handle('fs:unwatchAllRoots', async () => unwatchAllRoots());
+
+  ipcMain.handle('customCss:get', async () => getCustomCss());
+  ipcMain.handle('macros:get', async () => getMacros());
+
+  ipcMain.handle('git:getStatus', async (_e, rootPath: string) => getRepoStatus(rootPath));
+
+  nativeTheme.on('updated', () => {
+    const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('theme:changed', theme));
+  });
+}
