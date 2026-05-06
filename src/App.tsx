@@ -214,12 +214,29 @@ export function App() {
   }, [filePath, content, isDirty, themePreference, addFolder, removeFolder, updateGitStatus, toggleSidebarVisible, showWith]);
 
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
+    return window.api.onAppRequestClose(async () => {
+      const state = useAppStore.getState();
+      if (!state.isDirty) return true;
+      const choice = await window.api.confirmDiscard(basenameOf(state.filePath));
+      if (choice === 'cancel') return false;
+      if (choice === 'discard') return true;
+      // 'save'
+      try {
+        if (state.filePath) {
+          await window.api.fileSave(state.filePath, state.content);
+          useAppStore.getState().markClean();
+          return true;
+        }
+        const r = await window.api.fileSaveAs(state.content, 'untitled.md');
+        if (!r) return false;
+        useAppStore.getState().setFile(r.path, state.content);
+        useAppStore.getState().markClean();
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let active = true;

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { registerIpcHandlers } from './ipc';
@@ -6,7 +6,8 @@ import { getPreferences, onPreferencesChanged, setPreferences } from './preferen
 import { buildMenu } from './menu';
 import { registerAutoUpdater } from './autoUpdater';
 import { getCustomCss, watchCustomCss } from './customCss';
-import { watchMacros } from './macros';
+import { getMacros, watchMacros } from './macros';
+import { attachCloseGuard } from './closeGuard';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -34,6 +35,10 @@ async function createWindow(prefsOverride?: Awaited<ReturnType<typeof getPrefere
     const [x, y] = win.getPosition();
     void setPreferences({ lastWindow: { width: w, height: h, x, y } });
   });
+
+  // Intercept close so the renderer can prompt Save/Discard/Cancel for a dirty
+  // document. Without this, beforeunload merely cancels the close silently.
+  attachCloseGuard(win, ipcMain);
 
   win.webContents.on('did-finish-load', () => {
     const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
@@ -63,11 +68,12 @@ void app.whenReady().then(async () => {
   buildMenu(initialPrefs, onNewWindow);
   onPreferencesChanged((prefs) => buildMenu(prefs, onNewWindow));
 
-  // Race window creation with custom-CSS file init so first paint isn't
-  // blocked on disk I/O. getCustomCss creates the file on first launch,
+  // Race window creation with config-file init so first paint isn't blocked
+  // on disk I/O. getCustomCss / getMacros create their files on first launch,
   // which fs.watch needs to exist before subscribing.
-  const [, win] = await Promise.all([
+  const [, , win] = await Promise.all([
     getCustomCss(),
+    getMacros(),
     createWindow(initialPrefs),
   ]);
   watchCustomCss((css) => broadcast('customCss:changed', css));

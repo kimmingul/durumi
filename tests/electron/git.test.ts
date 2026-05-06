@@ -44,8 +44,19 @@ describe('mapStatus (porcelain XY -> bucket)', () => {
 });
 
 describe('getRepoStatus', () => {
+  // Helper: program revparse to answer the two calls getRepoStatus makes.
+  function mockRevparse(opts: { inside?: string; toplevel?: string } = {}) {
+    const inside = opts.inside ?? 'true\n';
+    const toplevel = opts.toplevel ?? '/repo\n';
+    revparse.mockImplementation(async (args: string[]) => {
+      if (args.includes('--is-inside-work-tree')) return inside;
+      if (args.includes('--show-toplevel')) return toplevel;
+      throw new Error(`unexpected revparse args: ${args.join(' ')}`);
+    });
+  }
+
   it('returns an empty map when the path is not inside a git work tree', async () => {
-    revparse.mockResolvedValue('false\n');
+    mockRevparse({ inside: 'false\n' });
     const result = await getRepoStatus('/some/plain/folder');
     expect(result).toEqual({});
     expect(raw).not.toHaveBeenCalled();
@@ -59,14 +70,14 @@ describe('getRepoStatus', () => {
   });
 
   it('returns an empty map when status raw call throws', async () => {
-    revparse.mockResolvedValue('true\n');
+    mockRevparse();
     raw.mockRejectedValue(new Error('boom'));
     const result = await getRepoStatus('/repo');
     expect(result).toEqual({});
   });
 
   it('parses a porcelain v1 sample into its status buckets', async () => {
-    revparse.mockResolvedValue('true\n');
+    mockRevparse();
     raw.mockResolvedValue(
       [
         '?? new-file.md',
@@ -92,9 +103,37 @@ describe('getRepoStatus', () => {
   });
 
   it('skips short / blank lines without throwing', async () => {
-    revparse.mockResolvedValue('true\n');
+    mockRevparse();
     raw.mockResolvedValue('\n\n M short.md\n');
     const result = await getRepoStatus('/repo');
     expect(result).toEqual({ 'short.md': 'modified' });
+  });
+
+  it('rebases repo-relative paths to be relative to a subfolder workspace root', async () => {
+    // Workspace root is /repo/docs but porcelain reports paths relative to /repo.
+    mockRevparse({ toplevel: '/repo\n' });
+    raw.mockResolvedValue(
+      [
+        ' M docs/a.md',
+        '?? docs/sub/new.md',
+        ' M src/outside.ts',
+        '',
+      ].join('\n'),
+    );
+    const result = await getRepoStatus('/repo/docs');
+    expect(result).toEqual({
+      'a.md': 'modified',
+      'sub/new.md': 'untracked',
+    });
+  });
+
+  it('returns an empty map when --show-toplevel fails', async () => {
+    revparse.mockImplementation(async (args: string[]) => {
+      if (args.includes('--is-inside-work-tree')) return 'true\n';
+      throw new Error('toplevel exploded');
+    });
+    const result = await getRepoStatus('/repo');
+    expect(result).toEqual({});
+    expect(raw).not.toHaveBeenCalled();
   });
 });

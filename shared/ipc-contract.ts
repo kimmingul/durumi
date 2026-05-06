@@ -83,6 +83,7 @@ export interface IpcApi {
   ) => Promise<{ relPath: string } | { error: 'no-file' }>;
   macrosGet: () => Promise<Macro[]>;
   onMacrosChanged: (cb: (macros: Macro[]) => void) => () => void;
+  onAppRequestClose: (decide: () => boolean | Promise<boolean>) => () => void;
 }
 
 declare global {

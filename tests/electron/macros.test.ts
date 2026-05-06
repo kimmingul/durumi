@@ -154,4 +154,26 @@ describe('watchMacros', () => {
     expect(() => stop()).not.toThrow();
     warn.mockRestore();
   });
+
+  it('attaches successfully after getMacros has materialised the file (first-launch sequence)', async () => {
+    // Simulate first launch: readFile ENOENT → mkdir/writeFile, then watcher
+    // attaches against an existing file (no throw). This mirrors the bootstrap
+    // ordering in main.ts so the hot-reload path works without restart.
+    const enoent = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    readFileMock.mockRejectedValueOnce(enoent);
+    mkdirMock.mockResolvedValueOnce(undefined);
+    writeFileMock.mockResolvedValueOnce(undefined);
+    await getMacros();
+
+    let attached = false;
+    const close = vi.fn();
+    watchMock.mockImplementationOnce(() => {
+      attached = true;
+      return { close } as unknown as ReturnType<typeof fsWatch>;
+    });
+    const stop = watchMacros(() => undefined);
+    expect(attached).toBe(true);
+    stop();
+    expect(close).toHaveBeenCalled();
+  });
 });

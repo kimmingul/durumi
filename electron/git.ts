@@ -9,15 +9,17 @@ export type StatusBucket =
   | 'ignored';
 
 /**
- * Returns a map of repo-relative paths to their status bucket for the given
- * workspace root.
+ * Returns a map of workspace-relative paths to their status bucket for the
+ * given workspace root.
  *
  * Behaviour contract:
  * - If `rootPath` is not inside a git work tree (e.g. plain folder, `git`
  *   binary missing, permission denied), returns an empty map. Never throws.
- * - Paths in the result are exactly as `git status --porcelain=v1` reports
- *   them, relative to the repo root. Renames are reduced to the new path
- *   (the part after `->`).
+ * - `git status --porcelain=v1` reports paths relative to the *repo* root
+ *   regardless of cwd. We rebase those paths to be relative to `rootPath`
+ *   (the opened workspace folder) and drop entries outside it, so callers can
+ *   look up entries by `path.relative(rootPath, entry.path)` directly.
+ *   Renames are reduced to the new path (the part after `->`).
  */
 export async function getRepoStatus(
   rootPath: string,
@@ -34,12 +36,22 @@ export async function getRepoStatus(
   }
   if (!inside) return out;
 
+  let topLevel = '';
+  try {
+    topLevel = (await git.revparse(['--show-toplevel'])).trim();
+  } catch {
+    return out;
+  }
+
   let raw = '';
   try {
     raw = await git.raw(['status', '--porcelain=v1', '--ignored']);
   } catch {
     return out;
   }
+
+  const normRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '');
+  const normTop = topLevel.replace(/\\/g, '/').replace(/\/$/, '');
 
   for (const line of raw.split('\n')) {
     if (!line) continue;
@@ -48,9 +60,18 @@ export async function getRepoStatus(
     const x = line[0];
     const y = line[1];
     const rest = line.slice(3);
-    const path = rest.split(' -> ').pop()!;
+    const repoRel = rest.split(' -> ').pop()!;
     const bucket = mapStatus(x, y);
-    if (bucket) out[path] = bucket;
+    if (!bucket) continue;
+    const abs = normTop === '' ? repoRel : `${normTop}/${repoRel}`;
+    let workspaceRel: string | null = null;
+    if (abs === normRoot) {
+      workspaceRel = '';
+    } else if (abs.startsWith(`${normRoot}/`)) {
+      workspaceRel = abs.slice(normRoot.length + 1);
+    }
+    if (workspaceRel === null) continue;
+    out[workspaceRel] = bucket;
   }
   return out;
 }

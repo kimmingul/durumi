@@ -53,6 +53,19 @@ const api: IpcApi = {
     ipcRenderer.on('git:status:invalidated', handler);
     return () => { ipcRenderer.removeListener('git:status:invalidated', handler); };
   },
+  onAppRequestClose: (decide) => {
+    const handler = async (_: unknown, reqId: number) => {
+      let allow = false;
+      try {
+        allow = await decide();
+      } catch {
+        allow = false;
+      }
+      ipcRenderer.send(`app:closeResponse:${reqId}`, allow);
+    };
+    ipcRenderer.on('app:requestClose', handler);
+    return () => { ipcRenderer.removeListener('app:requestClose', handler); };
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);
