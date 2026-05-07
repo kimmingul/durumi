@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.js');
+const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
 async function launch() {
   const app = await electron.launch({ args: [APP_ENTRY] });
@@ -38,7 +38,7 @@ test('HTML export produces a valid file with rendered body', async () => {
     expect(fs.existsSync(tmpFile)).toBe(true);
     const html = fs.readFileSync(tmpFile, 'utf8');
     expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('<h1>Hello</h1>');
+    expect(html).toContain('<h1 id="hello">Hello</h1>');
     expect(html).toContain('body text');
   } finally {
     if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);

@@ -24,7 +24,7 @@ async function createWindow(prefsOverride?: Awaited<ReturnType<typeof getPrefere
     minHeight: 360,
     title: 'Durumi',
     webPreferences: {
-      preload: join(__dirname, '../preload/preload.mjs'),
+      preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
 
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.js');
+const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
 async function launch() {
   const app = await electron.launch({ args: [APP_ENTRY] });

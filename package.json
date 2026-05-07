@@ -13,7 +13,7 @@
   "bugs": {
     "url": "https://github.com/kimmingul/durumi/issues"
   },
-  "main": "out/main/main.js",
+  "main": "out/main/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
@@ -27,7 +27,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "ELECTRON_RUN_AS_NODE= playwright test"
   },
   "dependencies": {
     "@codemirror/commands": "^6.6.0",

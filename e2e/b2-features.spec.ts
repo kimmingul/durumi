@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.js');
+const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
 async function launch() {
   const app = await electron.launch({ args: [APP_ENTRY] });
