@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { promises as fs } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import type { DiscardChoice, FileResult, Preferences } from '@shared/ipc-contract';
+import type { DiscardChoice, FilePickerOptions, FileResult, Preferences } from '@shared/ipc-contract';
 import { addRecentFile, getPreferences, setPreferences } from './preferences';
 import { listDirectory, watchRoot, unwatchRoot, unwatchAllRoots, openFolderDialog } from './fs';
 import { exportToPdf } from './pdf';
@@ -249,6 +249,21 @@ export function registerIpcHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0]!;
   });
+
+  ipcMain.handle(
+    'dialog:pickFile',
+    async (event, opts?: FilePickerOptions) => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
+      if (!win) return null;
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openFile'],
+        title: opts?.title,
+        filters: opts?.filters,
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      return result.filePaths[0]!;
+    },
+  );
 
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
     if (!isExternalUrlAllowed(url)) {

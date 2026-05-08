@@ -4,6 +4,7 @@ import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { QuickOpen } from './components/QuickOpen';
 import { PandocInstallDialog } from './components/PandocInstallDialog';
+import { SettingsDialog } from './components/SettingsDialog';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
 import type { Macro, MenuCommand } from '@shared/ipc-contract';
@@ -51,11 +52,13 @@ export function App() {
   const showWith = useSidebarStore((s) => s.showWith);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // When Pandoc is missing, we surface a guided install dialog and remember
   // the operation that triggered it so the user can retry after installing.
   const [pandocInstallOp, setPandocInstallOp] = useState<
     | { kind: 'export'; format: 'docx' | 'latex' }
     | { kind: 'import' }
+    | { kind: 'configure' }
     | null
   >(null);
   const { setLang } = useLanguage();
@@ -222,6 +225,7 @@ export function App() {
       if (cmd === 'showOutline') { showWith('outline'); return; }
       if (cmd === 'showSearch') { showWith('search'); return; }
       if (cmd === 'quickOpen') { setQuickOpen(true); return; }
+      if (cmd === 'openSettings') { setSettingsOpen(true); return; }
       if (cmd === 'toggleFocusMode' && view) {
         const cur = view.state.field(focusModeField, false);
         view.dispatch({ effects: setFocusMode.of(!cur) });
@@ -380,9 +384,19 @@ export function App() {
           if (!op) return;
           if (op.kind === 'export') {
             void doPandocExport(op.format);
-          } else {
+          } else if (op.kind === 'import') {
             void doPandocImportDocx();
           }
+          // 'configure': nothing to retry — the user opened the install dialog
+          // from Settings just to get pandoc on the system.
+        }}
+      />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onRequestPandocInstall={() => {
+          setSettingsOpen(false);
+          setPandocInstallOp({ kind: 'configure' });
         }}
       />
     </div>

@@ -52,10 +52,16 @@ export type MenuCommand =
   | 'importDocx'
   | { type: 'newFromTemplate'; templateId: string }
   | 'openMacrosConfig'
+  | 'openSettings'
   | 'languageChanged'
   | { type: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { type: 'openRecent'; path: string }
   | { type: 'closeFolder'; path: string };
+
+export interface FilePickerOptions {
+  title?: string;
+  filters?: Array<{ name: string; extensions: string[] }>;
+}
 
 export interface DirEntry {
   name: string;
@@ -128,6 +134,8 @@ export interface IpcApi {
     path: string,
   ) => Promise<{ binary: string; version: string } | null>;
   pandocPickCustomPath: () => Promise<string | null>;
+  /** Generic single-file picker for the settings panel (style refs, templates). */
+  dialogPickFile: (opts?: FilePickerOptions) => Promise<string | null>;
   onPandocInstallProgress: (cb: (chunk: string) => void) => () => void;
   shellOpenExternal: (url: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   searchWorkspace: (

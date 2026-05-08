@@ -67,6 +67,12 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           submenu: [
             { role: 'about' as const },
             { type: 'separator' as const },
+            {
+              label: tr('menu.app.settings'),
+              accelerator: 'Cmd+,',
+              click: () => send('openSettings'),
+            },
+            { type: 'separator' as const },
             { role: 'hide' as const },
             { role: 'hideOthers' as const },
             { role: 'unhide' as const },
@@ -119,6 +125,16 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           ],
         },
         { type: 'separator' },
+        ...(!isMac
+          ? [
+              {
+                label: tr('menu.file.settings'),
+                accelerator: 'Ctrl+,',
+                click: () => send('openSettings'),
+              } as MenuItemConstructorOptions,
+              { type: 'separator' as const },
+            ]
+          : []),
         { label: tr('menu.file.closeWindow'), accelerator: 'CmdOrCtrl+W', role: 'close' },
         ...(isMac ? [] : [{ role: 'quit' as const }]),
       ],

@@ -61,6 +61,7 @@ const api: IpcApi = {
   pandocInstallViaHomebrew: () => ipcRenderer.invoke('pandoc:installViaHomebrew'),
   pandocSetCustomPath: (path) => ipcRenderer.invoke('pandoc:setCustomPath', path),
   pandocPickCustomPath: () => ipcRenderer.invoke('pandoc:pickCustomPath'),
+  dialogPickFile: (opts) => ipcRenderer.invoke('dialog:pickFile', opts),
   onPandocInstallProgress: (cb) => {
     const handler = (_: unknown, chunk: string) => cb(chunk);
     ipcRenderer.on('pandoc:install:progress', handler);
