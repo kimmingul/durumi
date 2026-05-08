@@ -13,6 +13,7 @@ import { TocExtension } from './markdownExt/toc';
 import { InlineExtrasExtension } from './markdownExt/inlineExtras';
 import { CitationExtension } from './markdownExt/citation';
 import { liveDecorations } from './decorations';
+import { spellcheckExclusion } from './spellcheckExclusion';
 import { markdownKeymap } from './keymap';
 import { buildMacroKeymap } from './keymap/macros';
 import { autoPair } from './keymap/autoPair';
@@ -64,6 +65,7 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
           ],
         }),
         ...liveDecorations,
+        spellcheckExclusion(),
         viewModes(),
         markdownKeymap(),
         macroCompartmentRef.current.of(buildMacroKeymap(macros)),
