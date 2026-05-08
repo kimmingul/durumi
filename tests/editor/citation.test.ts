@@ -26,7 +26,11 @@ function setup(doc: string, cursor = 0): EditorView {
   });
   const parent = document.createElement('div');
   document.body.appendChild(parent);
-  return new EditorView({ state, parent });
+  const view = new EditorView({ state, parent });
+  // Simulate user interaction so the userActiveField flips to true and the
+  // active-line-based decorations behave as in a real session.
+  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  return view;
 }
 
 function nodesOfType(view: EditorView, name: string) {

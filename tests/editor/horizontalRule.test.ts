@@ -5,13 +5,15 @@ import { markdown } from '@codemirror/lang-markdown';
 import { horizontalRuleDecoration } from '../../src/editor/decorations/horizontalRule';
 
 function setup(doc: string, cursor: number) {
-  return new EditorView({
+  const view = new EditorView({
     state: EditorState.create({
       doc, selection: { anchor: cursor },
       extensions: [markdown(), horizontalRuleDecoration()],
     }),
     parent: document.body.appendChild(document.createElement('div')),
   });
+  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  return view;
 }
 
 describe('horizontalRule decoration', () => {

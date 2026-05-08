@@ -1,3 +1,4 @@
+import { userActiveExtension } from './activeLine';
 import { citationDecoration, citationTheme } from './citation';
 import { footnoteDecoration, footnoteTheme } from './footnote';
 import { frontMatterDecoration, frontMatterTheme } from './frontMatter';
@@ -19,6 +20,7 @@ import { mathDecorations } from './math';
 import { mermaidDecorations } from './mermaid';
 
 export const liveDecorations = [
+  userActiveExtension(),
   frontMatterDecoration(),
   frontMatterTheme,
   footnoteDecoration(),

@@ -12,7 +12,9 @@ function setup(doc: string, cursor: number): EditorView {
   });
   const parent = document.createElement('div');
   document.body.appendChild(parent);
-  return new EditorView({ state, parent });
+  const view = new EditorView({ state, parent });
+  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  return view;
 }
 
 describe('heading decoration', () => {

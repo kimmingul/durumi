@@ -1,6 +1,7 @@
 import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
+import { hasActiveLine, userActiveField } from './activeLine';
 
 /**
  * Renders footnote references and definitions in live preview:
@@ -81,10 +82,11 @@ function collectFootnotes(state: EditorState): {
 function buildDecorations(state: EditorState): DecorationSet {
   const decos: Range<Decoration>[] = [];
   const sel = state.selection.main;
+  const active = hasActiveLine(state);
   const { refs, defs } = collectFootnotes(state);
 
   for (const ref of refs) {
-    const cursorTouches = sel.from <= ref.to && sel.to >= ref.from;
+    const cursorTouches = active && sel.from <= ref.to && sel.to >= ref.from;
     if (cursorTouches) continue;
     decos.push(
       Decoration.replace({
@@ -96,7 +98,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   for (const def of defs) {
     const startLine = state.doc.lineAt(def.from);
     decos.push(Decoration.line({ class: 'cm-md-footnote-def-line' }).range(startLine.from));
-    const cursorOnLine = sel.from >= startLine.from && sel.from <= startLine.to;
+    const cursorOnLine = active && sel.from >= startLine.from && sel.from <= startLine.to;
     if (!cursorOnLine) {
       // Hide the [^id]: prefix; show only " text…"
       const colonEnd = def.labelTo + 2; // `]:` after label
@@ -161,7 +163,7 @@ const footnoteJumpHandler = EditorView.domEventHandlers({
 });
 
 export function footnoteDecoration(): Extension {
-  return [footnoteField, footnoteJumpHandler];
+  return [userActiveField, footnoteField, footnoteJumpHandler];
 }
 
 export const footnoteTheme = EditorView.theme({

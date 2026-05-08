@@ -11,7 +11,7 @@ const LEVEL: Record<string, number> = {
   ATXHeading4: 4, ATXHeading5: 5, ATXHeading6: 6,
 };
 
-class HiddenMarkerWidget extends WidgetType {
+export class HiddenMarkerWidget extends WidgetType {
   toDOM() {
     const span = document.createElement('span');
     span.className = 'cm-md-marker-hidden';

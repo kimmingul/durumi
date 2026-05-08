@@ -14,7 +14,9 @@ function makeView(doc: string, cursor: number): EditorView {
       strikethroughDecoration(),
     ],
   });
-  return new EditorView({ state });
+  const view = new EditorView({ state });
+  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  return view;
 }
 
 function rangesAt(view: EditorView): Array<{ from: number; to: number; spec: unknown }> {

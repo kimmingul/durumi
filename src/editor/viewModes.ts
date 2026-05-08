@@ -1,6 +1,7 @@
 import { syntaxTree } from '@codemirror/language';
 import { Compartment, EditorState, Extension, Range, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
+import { hasActiveLine, userActiveField } from './decorations/activeLine';
 
 /**
  * Focus Mode and Typewriter Mode, mirroring Typora's behaviour.
@@ -93,6 +94,8 @@ const focusDecorationField = StateField.define<DecorationSet>({
 
 function computeFocusDecorations(state: EditorState): DecorationSet {
   if (!state.field(focusModeField, false)) return Decoration.none;
+  // No user interaction yet → don't fade anything; the doc looks normal.
+  if (!hasActiveLine(state)) return Decoration.none;
   const block = activeBlockRange(state);
   if (!block) return Decoration.none;
   const decos: Range<Decoration>[] = [];
@@ -139,7 +142,14 @@ const viewModesTheme = EditorView.theme({
 });
 
 export function viewModes(): Extension {
-  return [focusModeField, typewriterModeField, focusDecorationField, typewriterPlugin, viewModesTheme];
+  return [
+    userActiveField,
+    focusModeField,
+    typewriterModeField,
+    focusDecorationField,
+    typewriterPlugin,
+    viewModesTheme,
+  ];
 }
 
 export const viewModesCompartment = new Compartment();

@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { parseFrontMatter, frontMatterString } from '../../../shared/frontMatter';
+import { hasActiveLine, userActiveField } from './activeLine';
 
 class FrontMatterSummaryWidget extends WidgetType {
   constructor(private readonly summary: string) {
@@ -47,7 +48,7 @@ function buildDecorations(state: EditorState): DecorationSet {
       const from = node.from;
       const lineEnd = state.doc.lineAt(node.to).to;
       const sel = state.selection.main;
-      const inside = sel.from <= lineEnd && sel.to >= from;
+      const inside = hasActiveLine(state) && sel.from <= lineEnd && sel.to >= from;
       if (inside) {
         const startLine = state.doc.lineAt(from).number;
         const endLine = state.doc.lineAt(lineEnd).number;
@@ -83,7 +84,7 @@ const frontMatterField = StateField.define<DecorationSet>({
 });
 
 export function frontMatterDecoration(): Extension {
-  return frontMatterField;
+  return [userActiveField, frontMatterField];
 }
 
 export const frontMatterTheme = EditorView.theme({

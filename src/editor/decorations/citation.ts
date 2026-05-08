@@ -1,6 +1,7 @@
 import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
+import { hasActiveLine, userActiveField } from './activeLine';
 
 /**
  * Renders citation spans as compact superscript markers when the caret is not
@@ -64,6 +65,7 @@ function collectSpans(state: EditorState): CitationSpan[] {
 function buildDecorations(state: EditorState): DecorationSet {
   const decos: Range<Decoration>[] = [];
   const sel = state.selection.main;
+  const active = hasActiveLine(state);
   const spans = collectSpans(state);
   const numbers = new Map<string, number>();
   let next = 1;
@@ -77,7 +79,7 @@ function buildDecorations(state: EditorState): DecorationSet {
       }
       ns.push(String(n));
     }
-    const cursorTouches = sel.from <= span.to && sel.to >= span.from;
+    const cursorTouches = active && sel.from <= span.to && sel.to >= span.from;
     if (cursorTouches) continue;
     decos.push(Decoration.replace({ widget: new CitationWidget(ns) }).range(span.from, span.to));
   }
@@ -96,7 +98,7 @@ const citationField = StateField.define<DecorationSet>({
 });
 
 export function citationDecoration(): Extension {
-  return citationField;
+  return [userActiveField, citationField];
 }
 
 export const citationTheme = EditorView.theme({

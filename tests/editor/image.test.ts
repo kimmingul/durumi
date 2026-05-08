@@ -5,13 +5,15 @@ import { markdown } from '@codemirror/lang-markdown';
 import { imageDecoration } from '../../src/editor/decorations/image';
 
 function setup(doc: string, cursor: number) {
-  return new EditorView({
+  const view = new EditorView({
     state: EditorState.create({
       doc, selection: { anchor: cursor },
       extensions: [markdown(), imageDecoration()],
     }),
     parent: document.body.appendChild(document.createElement('div')),
   });
+  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  return view;
 }
 
 describe('image decoration', () => {

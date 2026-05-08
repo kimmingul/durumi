@@ -1,7 +1,8 @@
 import { syntaxTree } from '@codemirror/language';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { EditorState, Extension, RangeSetBuilder } from '@codemirror/state';
-import { getActiveLineRange } from './activeLine';
+import type { SyntaxNodeRef } from '@lezer/common';
+import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
 
 export interface VisitArgs {
   view: EditorView;
@@ -10,6 +11,7 @@ export interface VisitArgs {
   nodeName: string;
   lineActive: boolean;
   doc: string;
+  node: SyntaxNodeRef;
 }
 
 export interface NodeVisitor {
@@ -18,12 +20,13 @@ export interface NodeVisitor {
 }
 
 function rangeTouchesActiveLine(state: EditorState, from: number, to: number): boolean {
+  if (!hasActiveLine(state)) return false;
   const active = getActiveLineRange(state);
   return !(to < active.from || from > active.to);
 }
 
 export function decorationPlugin(visitor: NodeVisitor): Extension {
-  return ViewPlugin.fromClass(
+  const plugin = ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
       constructor(view: EditorView) {
@@ -37,6 +40,10 @@ export function decorationPlugin(visitor: NodeVisitor): Extension {
     },
     { decorations: (v) => v.decorations },
   );
+  // Bundle the user-active field so consumers don't have to register it
+  // separately. Extensions are deduplicated by reference identity, so
+  // including it from every decorationPlugin() call is harmless.
+  return [userActiveField, plugin];
 }
 
 function build(view: EditorView, visitor: NodeVisitor): DecorationSet {
@@ -57,6 +64,7 @@ function build(view: EditorView, visitor: NodeVisitor): DecorationSet {
           nodeName: node.name,
           lineActive,
           doc,
+          node,
         });
       },
     });

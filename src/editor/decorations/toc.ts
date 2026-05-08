@@ -3,6 +3,7 @@ import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { parseHeadings, buildOutlineTree, OutlineNode } from '../outline';
 import { parseFrontMatter } from '../../../shared/frontMatter';
+import { hasActiveLine, userActiveField } from './activeLine';
 
 class TocWidget extends WidgetType {
   constructor(private readonly nodes: OutlineNode[]) {
@@ -60,11 +61,12 @@ function buildToc(state: EditorState): DecorationSet {
   const decos: Range<Decoration>[] = [];
   const tree = syntaxTree(state);
   const sel = state.selection.main;
+  const active = hasActiveLine(state);
   let headings: OutlineNode[] | null = null;
   tree.iterate({
     enter(node) {
       if (node.name !== 'TocDirective') return;
-      if (sel.from <= node.to && sel.to >= node.from) {
+      if (active && sel.from <= node.to && sel.to >= node.from) {
         // Caret on the directive line: leave the source visible so the user
         // can edit / delete it.
         return;
@@ -116,7 +118,7 @@ const tocClickHandler = EditorView.domEventHandlers({
 });
 
 export function tocDecoration(): Extension {
-  return [tocField, tocClickHandler];
+  return [userActiveField, tocField, tocClickHandler];
 }
 
 export const tocTheme = EditorView.theme({
