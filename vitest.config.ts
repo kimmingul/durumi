@@ -8,6 +8,11 @@ export default defineConfig({
     globals: false,
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
   },
+  // Use the automatic JSX runtime so .tsx test files don't need to
+  // `import React`. Matches `tsconfig.web.json` ("jsx": "react-jsx").
+  esbuild: {
+    jsx: 'automatic',
+  },
   resolve: {
     alias: { '@shared': resolve(__dirname, 'shared') },
   },

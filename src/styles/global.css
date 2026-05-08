@@ -260,6 +260,55 @@ body {
 .cm-tree-git-renamed   { color: #0969da; }
 .cm-tree-git-ignored   { color: #888; opacity: 0.6; }
 
+/* Inline rename input that replaces the row label during a rename. */
+.cm-tree-rename-input {
+  flex: 1;
+  margin-left: 4px;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--accent, var(--border));
+  border-radius: 2px;
+  outline: none;
+  min-width: 0;
+}
+
+/* Right-click contextual menu for the file tree. */
+.cm-context-menu {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  min-width: 180px;
+  font-size: 13px;
+  user-select: none;
+}
+.cm-context-menu-item {
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cm-context-menu-item:hover {
+  background: var(--accent, rgba(0, 100, 200, 0.15));
+  color: var(--bg, #fff);
+}
+.cm-context-menu-item-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cm-context-menu-item-disabled:hover {
+  background: transparent;
+  color: inherit;
+}
+.cm-context-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
 .cm-panels {
   background: var(--bg);
   color: var(--fg);

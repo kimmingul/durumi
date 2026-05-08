@@ -67,6 +67,25 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sidebar.empty.outline': 'No headings yet',
     'sidebar.openFolder': 'Open Folder…',
 
+    // Sidebar context menu (right-click on file tree)
+    'sidebar.menu.newFile': 'New File',
+    'sidebar.menu.newFileInside': 'New File Inside',
+    'sidebar.menu.newFolder': 'New Folder',
+    'sidebar.menu.newFolderInside': 'New Folder Inside',
+    'sidebar.menu.rename': 'Rename…',
+    'sidebar.menu.duplicate': 'Duplicate',
+    'sidebar.menu.trash': 'Move to Trash',
+    'sidebar.menu.revealMac': 'Reveal in Finder',
+    'sidebar.menu.revealOther': 'Reveal in Explorer',
+    'sidebar.menu.copyPath': 'Copy Path',
+    'sidebar.menu.copyRelativePath': 'Copy Relative Path',
+    'sidebar.menu.closeFolder': 'Close Folder',
+    'sidebar.menu.confirmTrash': 'Move "{name}" to the Trash?',
+    'sidebar.menu.newFilePrompt': 'New file name',
+    'sidebar.menu.newFolderPrompt': 'New folder name',
+    'sidebar.menu.invalidName': 'Name cannot be empty or contain "/" or "\\".',
+    'sidebar.menu.opFailed': 'Operation failed: {error}',
+
     // Discard / unsaved-changes dialog
     'discard.message': 'Save changes to "{name}"?',
     'discard.detail': "Your changes will be lost if you don't save.",
@@ -154,6 +173,25 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sidebar.empty.files': '열린 폴더가 없습니다.',
     'sidebar.empty.outline': '제목 없음',
     'sidebar.openFolder': '폴더 열기…',
+
+    // Sidebar context menu (right-click on file tree)
+    'sidebar.menu.newFile': '새 파일',
+    'sidebar.menu.newFileInside': '하위에 새 파일',
+    'sidebar.menu.newFolder': '새 폴더',
+    'sidebar.menu.newFolderInside': '하위에 새 폴더',
+    'sidebar.menu.rename': '이름 바꾸기…',
+    'sidebar.menu.duplicate': '복제',
+    'sidebar.menu.trash': '휴지통으로 이동',
+    'sidebar.menu.revealMac': 'Finder에서 보기',
+    'sidebar.menu.revealOther': '탐색기에서 보기',
+    'sidebar.menu.copyPath': '경로 복사',
+    'sidebar.menu.copyRelativePath': '상대 경로 복사',
+    'sidebar.menu.closeFolder': '폴더 닫기',
+    'sidebar.menu.confirmTrash': '"{name}"을(를) 휴지통으로 이동할까요?',
+    'sidebar.menu.newFilePrompt': '새 파일 이름',
+    'sidebar.menu.newFolderPrompt': '새 폴더 이름',
+    'sidebar.menu.invalidName': '이름은 비어 있거나 "/" 또는 "\\"를 포함할 수 없습니다.',
+    'sidebar.menu.opFailed': '작업 실패: {error}',
 
     // Discard / unsaved-changes dialog
     'discard.message': '"{name}"의 변경사항을 저장할까요?',
