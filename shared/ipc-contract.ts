@@ -105,14 +105,31 @@ export interface IpcApi {
     format: 'docx' | 'latex',
     suggestedName?: string,
     sourceFilePath?: string | null,
-  ) => Promise<{ path: string } | { error: string; stderr?: string } | null>;
+  ) => Promise<
+    | { path: string }
+    | { error: string; stderr?: string; code?: 'pandoc-missing' }
+    | null
+  >;
   pandocImport: (
     format: 'docx' | 'odt' | 'rtf',
   ) => Promise<
     | { markdown: string; sourcePath: string }
-    | { error: string; stderr?: string }
+    | { error: string; stderr?: string; code?: 'pandoc-missing' }
     | null
   >;
+  pandocDetectHomebrew: () => Promise<{ available: boolean; path: string | null }>;
+  pandocInstallViaHomebrew: () => Promise<{
+    ok: boolean;
+    error?: string;
+    stderr?: string;
+    code?: 'brew-missing' | 'install-failed' | 'timeout';
+  }>;
+  pandocSetCustomPath: (
+    path: string,
+  ) => Promise<{ binary: string; version: string } | null>;
+  pandocPickCustomPath: () => Promise<string | null>;
+  onPandocInstallProgress: (cb: (chunk: string) => void) => () => void;
+  shellOpenExternal: (url: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   searchWorkspace: (
     rootPath: string,
     opts: {

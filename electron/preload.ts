@@ -57,6 +57,16 @@ const api: IpcApi = {
   pandocExport: (markdown, format, suggestedName, sourceFilePath) =>
     ipcRenderer.invoke('pandoc:export', markdown, format, suggestedName, sourceFilePath),
   pandocImport: (format) => ipcRenderer.invoke('pandoc:import', format),
+  pandocDetectHomebrew: () => ipcRenderer.invoke('pandoc:detectHomebrew'),
+  pandocInstallViaHomebrew: () => ipcRenderer.invoke('pandoc:installViaHomebrew'),
+  pandocSetCustomPath: (path) => ipcRenderer.invoke('pandoc:setCustomPath', path),
+  pandocPickCustomPath: () => ipcRenderer.invoke('pandoc:pickCustomPath'),
+  onPandocInstallProgress: (cb) => {
+    const handler = (_: unknown, chunk: string) => cb(chunk);
+    ipcRenderer.on('pandoc:install:progress', handler);
+    return () => { ipcRenderer.removeListener('pandoc:install:progress', handler); };
+  },
+  shellOpenExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   searchWorkspace: (rootPath, opts) =>
     ipcRenderer.invoke('search:workspace', rootPath, opts),
   filesIndex: (roots) => ipcRenderer.invoke('files:index', roots),

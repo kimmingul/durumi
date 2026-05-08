@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron';
+import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { promises as fs } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import type { DiscardChoice, FileResult, Preferences } from '@shared/ipc-contract';
@@ -10,7 +10,14 @@ import { saveImage } from './images';
 import { getMacros } from './macros';
 import { getRepoStatus } from './git';
 import { resolveLang, t } from './i18n';
-import { detectPandoc, importViaPandoc, runPandoc } from './pandoc';
+import {
+  clearPandocCache,
+  detectHomebrew,
+  detectPandoc,
+  importViaPandoc,
+  installPandocViaHomebrew,
+  runPandoc,
+} from './pandoc';
 import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
@@ -22,6 +29,28 @@ import {
   rename as renameFile,
   revealInFolder,
 } from './fileOps';
+
+/**
+ * Allowlist for `shell:openExternal`. Renderer code is untrusted by default;
+ * we only let it open the small set of URLs the install dialog needs. URLs
+ * must parse, must be `https:`, and the hostname must be in the allowlist.
+ */
+const SHELL_OPEN_HOST_ALLOWLIST: ReadonlyArray<string> = [
+  'pandoc.org',
+  'www.pandoc.org',
+  'github.com',
+];
+
+export function isExternalUrlAllowed(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:') return false;
+  return SHELL_OPEN_HOST_ALLOWLIST.includes(parsed.hostname);
+}
 
 /**
  * Pick the longest workspace root that is a prefix of `savedPath`.
@@ -186,6 +215,47 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('pandoc:detect', async () => {
     const prefs = await getPreferences();
     return detectPandoc(prefs.pandocPath);
+  });
+
+  ipcMain.handle('pandoc:detectHomebrew', async () => {
+    const path = await detectHomebrew();
+    return { available: path !== null, path };
+  });
+
+  ipcMain.handle('pandoc:installViaHomebrew', async (event) => {
+    const sender = event.sender;
+    const result = await installPandocViaHomebrew((chunk) => {
+      if (!sender.isDestroyed()) {
+        sender.send('pandoc:install:progress', chunk);
+      }
+    });
+    if (result.ok) clearPandocCache();
+    return result;
+  });
+
+  ipcMain.handle('pandoc:setCustomPath', async (_e, customPath: string) => {
+    await setPreferences({ pandocPath: customPath });
+    clearPandocCache();
+    return detectPandoc(customPath);
+  });
+
+  ipcMain.handle('pandoc:pickCustomPath', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      title: 'Select pandoc binary',
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0]!;
+  });
+
+  ipcMain.handle('shell:openExternal', async (_e, url: string) => {
+    if (!isExternalUrlAllowed(url)) {
+      return { ok: false as const, error: 'URL not allowed' };
+    }
+    await shell.openExternal(url);
+    return { ok: true as const };
   });
 
   ipcMain.handle('pandoc:import', async (event, format: 'docx' | 'odt' | 'rtf') => {

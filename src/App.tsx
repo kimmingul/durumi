@@ -3,6 +3,7 @@ import { MarkdownEditor } from './editor/MarkdownEditor';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { QuickOpen } from './components/QuickOpen';
+import { PandocInstallDialog } from './components/PandocInstallDialog';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
 import type { Macro, MenuCommand } from '@shared/ipc-contract';
@@ -50,6 +51,13 @@ export function App() {
   const showWith = useSidebarStore((s) => s.showWith);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
+  // When Pandoc is missing, we surface a guided install dialog and remember
+  // the operation that triggered it so the user can retry after installing.
+  const [pandocInstallOp, setPandocInstallOp] = useState<
+    | { kind: 'export'; format: 'docx' | 'latex' }
+    | { kind: 'import' }
+    | null
+  >(null);
   const { setLang } = useLanguage();
 
   useEffect(() => {
@@ -140,8 +148,27 @@ export function App() {
     const suggested = stripMarkdownExt(baseName) + `.${ext}`;
     const result = await window.api.pandocExport(content, format, suggested, filePath);
     if (result && 'error' in result) {
+      if (result.code === 'pandoc-missing') {
+        setPandocInstallOp({ kind: 'export', format });
+        return;
+      }
       window.alert(`Export failed: ${result.error}${result.stderr ? `\n\n${result.stderr}` : ''}`);
     }
+  }
+
+  async function doPandocImportDocx(): Promise<void> {
+    if (!(await maybeDiscard())) return;
+    const r = await window.api.pandocImport('docx');
+    if (!r) return;
+    if ('error' in r) {
+      if (r.code === 'pandoc-missing') {
+        setPandocInstallOp({ kind: 'import' });
+        return;
+      }
+      window.alert(`Import failed: ${r.error}${r.stderr ? `\n\n${r.stderr}` : ''}`);
+      return;
+    }
+    setFile(null, r.markdown);
   }
 
   useEffect(() => {
@@ -168,18 +195,7 @@ export function App() {
       if (cmd === 'exportPdf') { await doExport('pdf'); return; }
       if (cmd === 'exportDocx') { await doPandocExport('docx'); return; }
       if (cmd === 'exportLatex') { await doPandocExport('latex'); return; }
-      if (cmd === 'importDocx') {
-        if (!(await maybeDiscard())) return;
-        const r = await window.api.pandocImport('docx');
-        if (!r) return;
-        if ('error' in r) {
-          window.alert(`Import failed: ${r.error}${r.stderr ? `\n\n${r.stderr}` : ''}`);
-          return;
-        }
-        // Open as untitled — user can Save As to pick a target location.
-        setFile(null, r.markdown);
-        return;
-      }
+      if (cmd === 'importDocx') { await doPandocImportDocx(); return; }
       if (cmd === 'toggleTheme') {
         const currentTheme = useAppStore.getState().theme;
         const next = currentTheme === 'dark' ? 'light' : 'dark';
@@ -352,6 +368,20 @@ export function App() {
           if (!(await maybeDiscard())) return;
           const r = await window.api.fileOpenPath(p);
           setFile(r.path, r.content);
+        }}
+      />
+      <PandocInstallDialog
+        open={pandocInstallOp !== null}
+        onClose={() => setPandocInstallOp(null)}
+        onResolved={() => {
+          const op = pandocInstallOp;
+          setPandocInstallOp(null);
+          if (!op) return;
+          if (op.kind === 'export') {
+            void doPandocExport(op.format);
+          } else {
+            void doPandocImportDocx();
+          }
         }}
       />
     </div>

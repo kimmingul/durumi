@@ -87,6 +87,8 @@ export interface PandocResult {
   error?: string;
   /** Filled when ok=false: stderr contents from pandoc, if available. */
   stderr?: string;
+  /** Stable error code — currently only 'pandoc-missing'. */
+  code?: 'pandoc-missing';
 }
 
 export interface ImportPandocOptions {
@@ -105,6 +107,8 @@ export interface ImportResult {
   markdown?: string;
   error?: string;
   stderr?: string;
+  /** Stable error code — currently only 'pandoc-missing'. */
+  code?: 'pandoc-missing';
 }
 
 /**
@@ -116,6 +120,7 @@ export async function importViaPandoc(opts: ImportPandocOptions): Promise<Import
   if (!info) {
     return {
       ok: false,
+      code: 'pandoc-missing',
       error:
         'Pandoc not found on your system. Install it from https://pandoc.org/installing.html or set a custom path in preferences.',
     };
@@ -143,6 +148,7 @@ export async function runPandoc(opts: RunPandocOptions): Promise<PandocResult> {
   if (!info) {
     return {
       ok: false,
+      code: 'pandoc-missing',
       error:
         'Pandoc not found on your system. Install it from https://pandoc.org/installing.html or set a custom path in preferences.',
     };
@@ -171,6 +177,92 @@ interface ProcessResult {
   stdout: string;
   stderr: string;
   error?: string;
+}
+
+export interface InstallResult {
+  ok: boolean;
+  /** stderr captured from the install process (if any). */
+  stderr?: string;
+  /** Optional human-readable error reason. */
+  error?: string;
+  /** Specific failure mode, e.g. 'brew-missing'. */
+  code?: 'brew-missing' | 'install-failed' | 'timeout';
+}
+
+/**
+ * Detects whether the Homebrew CLI is on PATH. Uses `which brew` (spawn) so it
+ * stays consistent with the rest of the module's no-shell-eval policy.
+ * Returns the resolved binary path, or null when brew is missing.
+ */
+export async function detectHomebrew(): Promise<string | null> {
+  const r = await runProcess('which', ['brew'], '', 5_000);
+  if (!r.ok) return null;
+  const path = r.stdout.split('\n')[0]?.trim();
+  return path && path.length > 0 ? path : null;
+}
+
+/**
+ * Spawns `brew install pandoc` and streams stdout/stderr chunks via `onChunk`.
+ * Resolves only when the process closes (or the 300s default timeout fires).
+ *
+ * Note: caller is responsible for showing the missing-brew dialog up front;
+ * this helper still re-checks via `detectHomebrew` to avoid spawning a phantom
+ * binary if the environment shifted between detection and install.
+ */
+export async function installPandocViaHomebrew(
+  onChunk: (chunk: string) => void,
+  timeoutMs = 300_000,
+): Promise<InstallResult> {
+  const brew = await detectHomebrew();
+  if (!brew) {
+    return {
+      ok: false,
+      code: 'brew-missing',
+      error: 'Homebrew is not installed. Install it from https://brew.sh first.',
+    };
+  }
+  return new Promise((resolve) => {
+    let stderr = '';
+    let settled = false;
+    const child = spawn(brew, ['install', 'pandoc'], { windowsHide: true });
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      resolve({ ok: false, code: 'timeout', stderr, error: `timeout after ${timeoutMs}ms` });
+    }, timeoutMs);
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      try { onChunk(chunk); } catch { /* ignore listener errors */ }
+    });
+    child.stderr?.on('data', (chunk: string) => {
+      stderr += chunk;
+      try { onChunk(chunk); } catch { /* ignore listener errors */ }
+    });
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ ok: false, code: 'install-failed', stderr, error: err.message });
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) {
+        clearPandocCache();
+        resolve({ ok: true });
+      } else {
+        resolve({
+          ok: false,
+          code: 'install-failed',
+          stderr,
+          error: `brew install pandoc exited with code ${code}`,
+        });
+      }
+    });
+  });
 }
 
 function runProcess(

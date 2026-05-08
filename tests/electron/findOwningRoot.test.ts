@@ -8,6 +8,7 @@ vi.mock('electron', () => ({
   dialog: {},
   ipcMain: { handle: vi.fn() },
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+  shell: { openExternal: vi.fn() },
 }));
 
 import { findOwningRoot } from '../../electron/ipc';
