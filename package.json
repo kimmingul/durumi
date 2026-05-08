@@ -27,7 +27,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "ELECTRON_RUN_AS_NODE= playwright test"
+    "test:e2e": "ELECTRON_RUN_AS_NODE= playwright test",
+    "release:tag": "bash scripts/release.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.6.0",
