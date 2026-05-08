@@ -15,7 +15,12 @@ vi.mock('node:fs', () => ({
   promises: { access: fsAccessMock },
 }));
 
-import { detectPandoc, runPandoc, clearPandocCache } from '../../electron/pandoc';
+import {
+  detectPandoc,
+  runPandoc,
+  importViaPandoc,
+  clearPandocCache,
+} from '../../electron/pandoc';
 
 class FakeChild extends EventEmitter {
   stdin: Writable;
@@ -143,5 +148,44 @@ describe('runPandoc', () => {
     expect(r.ok).toBe(false);
     expect(r.stderr).toContain('parse error');
     expect(r.error).toMatch(/exited with code 99/);
+  });
+});
+
+describe('importViaPandoc', () => {
+  it('returns the converted markdown on stdout', async () => {
+    fsAccessMock.mockResolvedValue(undefined);
+    let callCount = 0;
+    spawnMock.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return new FakeChild({ stdoutChunks: ['pandoc 3.0\n'], exitCode: 0 });
+      return new FakeChild({
+        stdoutChunks: ['# Title\n\nBody from docx\n'],
+        exitCode: 0,
+      });
+    });
+    const r = await importViaPandoc({ inputPath: '/x.docx', fromFormat: 'docx' });
+    expect(r.ok).toBe(true);
+    expect(r.markdown).toContain('Body from docx');
+  });
+
+  it('reports an error when pandoc cannot read the source', async () => {
+    fsAccessMock.mockResolvedValue(undefined);
+    let callCount = 0;
+    spawnMock.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return new FakeChild({ stdoutChunks: ['pandoc 3.0\n'], exitCode: 0 });
+      return new FakeChild({ stderrChunks: ['could not read'], exitCode: 1 });
+    });
+    const r = await importViaPandoc({ inputPath: '/missing.docx', fromFormat: 'docx' });
+    expect(r.ok).toBe(false);
+    expect(r.stderr).toContain('could not read');
+  });
+
+  it('returns an install hint when pandoc itself is missing', async () => {
+    fsAccessMock.mockRejectedValue(new Error('ENOENT'));
+    spawnMock.mockImplementation(() => new FakeChild({ exitCode: 1 }));
+    const r = await importViaPandoc({ inputPath: '/x.docx', fromFormat: 'docx' });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/Pandoc not found/);
   });
 });

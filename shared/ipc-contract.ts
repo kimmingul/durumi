@@ -49,6 +49,8 @@ export type MenuCommand =
   | 'exportPdf'
   | 'exportDocx'
   | 'exportLatex'
+  | 'importDocx'
+  | { type: 'newFromTemplate'; templateId: string }
   | 'openMacrosConfig'
   | 'languageChanged'
   | { type: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
@@ -102,7 +104,15 @@ export interface IpcApi {
     markdown: string,
     format: 'docx' | 'latex',
     suggestedName?: string,
+    sourceFilePath?: string | null,
   ) => Promise<{ path: string } | { error: string; stderr?: string } | null>;
+  pandocImport: (
+    format: 'docx' | 'odt' | 'rtf',
+  ) => Promise<
+    | { markdown: string; sourcePath: string }
+    | { error: string; stderr?: string }
+    | null
+  >;
   searchWorkspace: (
     rootPath: string,
     opts: {
@@ -124,6 +134,10 @@ export interface IpcApi {
   filesIndex: (
     roots: string[],
   ) => Promise<Array<{ name: string; relPath: string; absPath: string }>>;
+  bibliographyFind: (
+    filePath: string | null,
+    roots: string[],
+  ) => Promise<{ path: string; source: string } | null>;
   filesCreate: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   filesCreateFolder: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   filesRename: (

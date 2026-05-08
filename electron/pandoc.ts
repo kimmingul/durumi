@@ -89,6 +89,50 @@ export interface PandocResult {
   stderr?: string;
 }
 
+export interface ImportPandocOptions {
+  /** Absolute path to the source document. */
+  inputPath: string;
+  /** Pandoc input format, e.g. `docx`, `odt`, `rtf`. */
+  fromFormat: string;
+  /** Optional explicit pandoc binary; null/undefined = auto-detect. */
+  override?: string | null;
+  /** Soft timeout (default 30s). */
+  timeoutMs?: number;
+}
+
+export interface ImportResult {
+  ok: boolean;
+  markdown?: string;
+  error?: string;
+  stderr?: string;
+}
+
+/**
+ * Reads a non-markdown source via pandoc and returns the converted Markdown
+ * string. Used by the .docx import flow.
+ */
+export async function importViaPandoc(opts: ImportPandocOptions): Promise<ImportResult> {
+  const info = await detectPandoc(opts.override ?? null);
+  if (!info) {
+    return {
+      ok: false,
+      error:
+        'Pandoc not found on your system. Install it from https://pandoc.org/installing.html or set a custom path in preferences.',
+    };
+  }
+  const args = [
+    '-f',
+    opts.fromFormat,
+    '-t',
+    'markdown+yaml_metadata_block+footnotes+definition_lists+pipe_tables-raw_html',
+    '--wrap=none',
+    opts.inputPath,
+  ];
+  const r = await runProcess(info.binary, args, '', opts.timeoutMs ?? 30_000);
+  if (!r.ok) return { ok: false, error: r.error ?? 'import failed', stderr: r.stderr };
+  return { ok: true, markdown: r.stdout };
+}
+
 /**
  * Runs pandoc with `markdown+yaml_metadata_block+footnotes` as the input
  * format and the given output path. Returns a structured result rather than

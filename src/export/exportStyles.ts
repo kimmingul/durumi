@@ -118,6 +118,32 @@ nav.toc .toc-empty { color: #888; font-style: italic; margin: 0; }
 .footnotes ol { padding-left: 1.5em; }
 .footnote-ref a, .footnote-backref { text-decoration: none; }
 
+sup.citation {
+  font-size: 0.75em;
+  margin: 0 1px;
+  color: #0a66c2;
+}
+sup.citation a { color: inherit; text-decoration: none; }
+sup.citation a:hover { text-decoration: underline; }
+sup.citation.has-missing { color: #cf222e; }
+.citation-missing { color: #cf222e; cursor: help; }
+section.references {
+  margin-top: 2.4em;
+  padding-top: 1em;
+  border-top: 1px solid #eaecef;
+}
+section.references h2 {
+  font-size: 1.15em;
+  margin-top: 0;
+}
+section.references ol { padding-left: 1.6em; }
+section.references li {
+  margin-bottom: 0.4em;
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+.citation-doi, .citation-url { word-break: break-all; }
+
 mark { background: #fff5b1; padding: 0 2px; border-radius: 2px; }
 
 .markdown-alert {

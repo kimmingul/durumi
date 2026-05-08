@@ -11,6 +11,7 @@ import { FrontMatterExtension } from './markdownExt/frontMatter';
 import { FootnoteExtension } from './markdownExt/footnote';
 import { TocExtension } from './markdownExt/toc';
 import { InlineExtrasExtension } from './markdownExt/inlineExtras';
+import { CitationExtension } from './markdownExt/citation';
 import { liveDecorations } from './decorations';
 import { markdownKeymap } from './keymap';
 import { buildMacroKeymap } from './keymap/macros';
@@ -53,7 +54,14 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
         markdown({
           base: markdownLanguage,
           codeLanguages: lezerLangs,
-          extensions: [GFM, FrontMatterExtension, FootnoteExtension, TocExtension, InlineExtrasExtension],
+          extensions: [
+            GFM,
+            FrontMatterExtension,
+            FootnoteExtension,
+            TocExtension,
+            InlineExtrasExtension,
+            CitationExtension,
+          ],
         }),
         ...liveDecorations,
         viewModes(),

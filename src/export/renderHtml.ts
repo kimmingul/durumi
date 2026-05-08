@@ -23,6 +23,12 @@ import { escapeHtml } from './escapeHtml';
 import { parseFrontMatter, frontMatterString } from '../../shared/frontMatter';
 import { parseHeadings, buildOutlineTree, OutlineNode } from '../editor/outline';
 import { slugify } from './slug';
+import { parseBibTeX, indexBibEntries } from '../../shared/bibtex';
+import {
+  applyCitations,
+  collectCitationKeys,
+  formatBibliography,
+} from '../../shared/citation';
 
 const taskLists = taskListsPlugin as unknown as MarkdownIt.PluginWithOptions<{
   enabled?: boolean;
@@ -105,16 +111,43 @@ function renderTocHtml(headings: OutlineNode[]): string {
   return `<nav class="toc">${renderList(headings)}</nav>`;
 }
 
+export interface RenderHtmlOptions {
+  /** Optional BibTeX source. When provided, `[@key]` citations are resolved. */
+  bibliography?: string | null;
+}
+
 export async function renderHtml(
   markdown: string,
   title: string,
   customCss = '',
+  options: RenderHtmlOptions = {},
 ): Promise<string> {
   const fm = parseFrontMatter(markdown);
-  const source = fm.endOffset > 0 ? fm.body : markdown;
-  // Compute TOC from headings, then substitute `[toc]` lines with the rendered
-  // <nav>. Done before markdown-it sees the source so the TOC is treated as
-  // raw HTML (md.html=true allows passthrough).
+  let source = fm.endOffset > 0 ? fm.body : markdown;
+
+  // Citations: replace `[@key]` with numbered <sup> markers and append a
+  // References section before the rest of the rendering pipeline runs. Done
+  // pre-markdown-it because the rendered HTML must pass through `html: true`.
+  let bibliographyHtml = '';
+  if (options.bibliography) {
+    const parsed = parseBibTeX(options.bibliography);
+    const idx = indexBibEntries(parsed);
+    const orderedKeys = collectCitationKeys(source);
+    const numberMap = new Map<string, number>();
+    let n = 1;
+    for (const k of orderedKeys) {
+      if (idx.has(k)) {
+        numberMap.set(k, n);
+        n++;
+      }
+    }
+    if (numberMap.size > 0) {
+      source = applyCitations(source, numberMap);
+      const formatted = formatBibliography(orderedKeys, idx);
+      bibliographyHtml = renderBibliography(formatted);
+    }
+  }
+
   const headings = buildOutlineTree(parseHeadings(source));
   const tocHtml = renderTocHtml(headings);
   const withToc = source.replace(TOC_LINE_RE, () => tocHtml);
@@ -125,7 +158,6 @@ export async function renderHtml(
   const bodyWithMath = injectMath(body);
   const styles = getExportStyles();
   const userBlock = customCss ? `\n${customCss}` : '';
-  // Front matter overrides the caller-supplied title and contributes meta tags.
   const fmTitle = frontMatterString(fm, 'title');
   const finalTitle = fmTitle && fmTitle.trim().length > 0 ? fmTitle : title;
   const meta = renderMetaTags(fm);
@@ -140,10 +172,18 @@ export async function renderHtml(
 </head>
 <body>
 <main class="export-content">
-${bodyWithMath}
+${bodyWithMath}${bibliographyHtml}
 </main>
 </body>
 </html>`;
+}
+
+function renderBibliography(items: ReturnType<typeof formatBibliography>): string {
+  if (items.length === 0) return '';
+  const lis = items
+    .map((c) => `<li id="ref-${encodeURIComponent(c.entry.key)}">${c.html}</li>`)
+    .join('\n');
+  return `\n<section class="references">\n<h2>References</h2>\n<ol>\n${lis}\n</ol>\n</section>`;
 }
 
 function renderMetaTags(fm: ReturnType<typeof parseFrontMatter>): string {

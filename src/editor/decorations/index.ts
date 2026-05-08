@@ -1,3 +1,4 @@
+import { citationDecoration, citationTheme } from './citation';
 import { footnoteDecoration, footnoteTheme } from './footnote';
 import { frontMatterDecoration, frontMatterTheme } from './frontMatter';
 import { headingDecoration } from './heading';
@@ -22,6 +23,8 @@ export const liveDecorations = [
   frontMatterTheme,
   footnoteDecoration(),
   footnoteTheme,
+  citationDecoration(),
+  citationTheme,
   tocDecoration(),
   tocTheme,
   headingDecoration(),

@@ -57,9 +57,13 @@ describe('getMacros', () => {
 
     expect(mkdirMock).toHaveBeenCalledTimes(1);
     expect(writeFileMock).toHaveBeenCalledTimes(1);
-    expect(macros).toHaveLength(2);
+    // First-launch ships the date + horizontal-rule defaults plus the
+    // medical-research presets layered in by Phase M3.
+    expect(macros.length).toBeGreaterThanOrEqual(2);
     expect(macros[0]?.keybind).toBe('Mod-Shift-D');
     expect(macros[1]?.keybind).toBe('Mod-Shift-H');
+    expect(macros.some((m) => m.keybind === 'Mod-Alt-P')).toBe(true);
+    expect(macros.some((m) => m.keybind === 'Mod-Alt-K')).toBe(true);
   });
 
   it('parses a valid macros.json', async () => {

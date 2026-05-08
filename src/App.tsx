@@ -15,6 +15,7 @@ import { insertCodeBlock as insertCodeBlockHelper } from './editor/keymap/insert
 import { toggleTask as toggleTaskHelper } from './editor/keymap/toggleTask';
 import { openSearch, openSearchAndReplace, gotoNext, gotoPrev } from './editor/openSearch';
 import { renderHtml } from './export/renderHtml';
+import { findTemplate } from '../shared/manuscriptTemplates';
 import { useLanguage, resolveRendererLang } from './i18n/t';
 import { basenameOf, stripMarkdownExt } from './utils/path';
 
@@ -117,12 +118,19 @@ export function App() {
     return true;
   }
 
+  async function loadBibliography(): Promise<string | null> {
+    const roots = useSidebarStore.getState().workspaceFolders;
+    const hit = await window.api.bibliographyFind(filePath, roots);
+    return hit?.source ?? null;
+  }
+
   async function doExport(format: 'html' | 'pdf'): Promise<void> {
     const baseName = basenameOf(filePath, 'untitled');
     const title = stripMarkdownExt(baseName) || 'untitled';
     const suggested = stripMarkdownExt(baseName) + `.${format}`;
     const customCss = await window.api.customCssGet();
-    const html = await renderHtml(content, title, customCss);
+    const bibliography = await loadBibliography();
+    const html = await renderHtml(content, title, customCss, { bibliography });
     await window.api.exportFile(html, format, suggested);
   }
 
@@ -130,9 +138,8 @@ export function App() {
     const baseName = basenameOf(filePath, 'untitled');
     const ext = format === 'docx' ? 'docx' : 'tex';
     const suggested = stripMarkdownExt(baseName) + `.${ext}`;
-    const result = await window.api.pandocExport(content, format, suggested);
+    const result = await window.api.pandocExport(content, format, suggested, filePath);
     if (result && 'error' in result) {
-      // Surface failure inline; a richer dialog can come in a follow-up.
       window.alert(`Export failed: ${result.error}${result.stderr ? `\n\n${result.stderr}` : ''}`);
     }
   }
@@ -161,6 +168,18 @@ export function App() {
       if (cmd === 'exportPdf') { await doExport('pdf'); return; }
       if (cmd === 'exportDocx') { await doPandocExport('docx'); return; }
       if (cmd === 'exportLatex') { await doPandocExport('latex'); return; }
+      if (cmd === 'importDocx') {
+        if (!(await maybeDiscard())) return;
+        const r = await window.api.pandocImport('docx');
+        if (!r) return;
+        if ('error' in r) {
+          window.alert(`Import failed: ${r.error}${r.stderr ? `\n\n${r.stderr}` : ''}`);
+          return;
+        }
+        // Open as untitled — user can Save As to pick a target location.
+        setFile(null, r.markdown);
+        return;
+      }
       if (cmd === 'toggleTheme') {
         const currentTheme = useAppStore.getState().theme;
         const next = currentTheme === 'dark' ? 'light' : 'dark';
@@ -234,6 +253,13 @@ export function App() {
         if (cmd.type === 'closeFolder') {
           // Main process already updated prefs + unwatched the root.
           removeFolder(cmd.path);
+          return;
+        }
+        if (cmd.type === 'newFromTemplate') {
+          const tpl = findTemplate(cmd.templateId);
+          if (!tpl) return;
+          if (!(await maybeDiscard())) return;
+          setFile(null, tpl.content);
           return;
         }
       }

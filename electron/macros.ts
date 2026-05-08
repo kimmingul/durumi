@@ -12,8 +12,26 @@ const TEMPLATE = {
   macros: [
     { name: "Insert today's date", keybind: 'Mod-Shift-D', insertion: '${date}' },
     { name: 'Insert horizontal rule', keybind: 'Mod-Shift-H', insertion: '\n\n---\n\n' },
+    // Medical-research presets — common statistical notations. The keybinds
+    // pile under Mod-Alt to stay clear of standard editing shortcuts.
+    { name: 'Insert p-value', keybind: 'Mod-Alt-P', insertion: '*p* < 0.05' },
+    { name: 'Insert 95% CI', keybind: 'Mod-Alt-C', insertion: '95% CI [, ]' },
+    { name: 'Insert mean ± SD', keybind: 'Mod-Alt-M', insertion: 'M ± SD' },
+    { name: 'Insert sample size', keybind: 'Mod-Alt-N', insertion: '(*n* = )' },
+    { name: 'Insert hazard ratio', keybind: 'Mod-Alt-H', insertion: 'HR  (95% CI [, ])' },
+    { name: 'Insert odds ratio', keybind: 'Mod-Alt-O', insertion: 'OR  (95% CI [, ])' },
+    { name: 'Insert relative risk', keybind: 'Mod-Alt-R', insertion: 'RR  (95% CI [, ])' },
+    { name: 'Insert reference (cite)', keybind: 'Mod-Alt-K', insertion: '[@]' },
+    { name: 'Insert footnote', keybind: 'Mod-Alt-F', insertion: '[^]' },
+    { name: 'Insert NOTE callout', keybind: 'Mod-Alt-Shift-N', insertion: '\n> [!NOTE]\n> ' },
   ],
 };
+
+/**
+ * Public re-export so a "Reset to medical defaults" action can rewrite the
+ * user's macros.json without rebuilding the same content.
+ */
+export const DEFAULT_MACROS_TEMPLATE = TEMPLATE;
 
 export function getMacrosPath(): string {
   return join(app.getPath('userData'), 'macros.json');
@@ -77,4 +95,22 @@ export async function openMacrosConfig(): Promise<void> {
   // Ensure file exists before opening so the user always sees something.
   await getMacros();
   await shell.openPath(getMacrosPath());
+}
+
+/**
+ * Overwrites the user's macros.json with the bundled medical-research
+ * preset. The previous file is preserved alongside as `macros.backup.json`
+ * so an accidental reset can be recovered manually.
+ */
+export async function resetMacrosToDefaults(): Promise<void> {
+  const p = getMacrosPath();
+  try {
+    const existing = await fs.readFile(p, 'utf8');
+    const backup = join(dirname(p), 'macros.backup.json');
+    await fs.writeFile(backup, existing, 'utf8');
+  } catch {
+    // No existing file; nothing to back up.
+  }
+  await fs.mkdir(dirname(p), { recursive: true });
+  await fs.writeFile(p, JSON.stringify(DEFAULT_MACROS_TEMPLATE, null, 2), 'utf8');
 }

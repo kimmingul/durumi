@@ -3,10 +3,11 @@ import { basename } from 'node:path';
 import type { MenuCommand, Preferences } from '@shared/ipc-contract';
 import { checkForUpdatesManually } from './autoUpdater';
 import { openCustomCss } from './customCss';
-import { openMacrosConfig } from './macros';
+import { openMacrosConfig, resetMacrosToDefaults } from './macros';
 import { setPreferences } from './preferences';
 import { unwatchRoot } from './fs';
 import { resolveLang, t, type Lang } from './i18n';
+import { MANUSCRIPT_TEMPLATES } from '../shared/manuscriptTemplates';
 
 function send(cmd: MenuCommand) {
   // Native macOS menu items can fire while no window holds focus (e.g.
@@ -97,6 +98,18 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
         { label: tr('menu.file.save'), accelerator: 'CmdOrCtrl+S', click: () => send('save') },
         { label: tr('menu.file.saveAs'), accelerator: 'CmdOrCtrl+Shift+S', click: () => send('saveAs') },
         {
+          label: tr('menu.file.newFromTemplate'),
+          submenu: MANUSCRIPT_TEMPLATES.map((tpl) => ({
+            label: tpl.label,
+            sublabel: tpl.description,
+            click: () => send({ type: 'newFromTemplate', templateId: tpl.id }),
+          })),
+        },
+        {
+          label: tr('menu.file.import'),
+          submenu: [{ label: tr('menu.file.importDocx'), click: () => send('importDocx') }],
+        },
+        {
           label: tr('menu.file.export'),
           submenu: [
             { label: tr('menu.file.exportHtml'), click: () => send('exportHtml') },
@@ -157,6 +170,10 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
         { label: tr('menu.edit.codeBlock'), accelerator: 'CmdOrCtrl+Shift+C', click: () => send('codeBlock') },
         { type: 'separator' },
         { label: tr('menu.edit.openMacrosConfig'), click: () => { void openMacrosConfig(); } },
+        {
+          label: tr('menu.edit.resetMacrosDefaults'),
+          click: () => { void resetMacrosToDefaults(); },
+        },
       ],
     },
     {

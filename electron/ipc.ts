@@ -10,9 +10,10 @@ import { saveImage } from './images';
 import { getMacros } from './macros';
 import { getRepoStatus } from './git';
 import { resolveLang, t } from './i18n';
-import { detectPandoc, runPandoc } from './pandoc';
+import { detectPandoc, importViaPandoc, runPandoc } from './pandoc';
 import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
+import { findBibliographyFor } from './bibliography';
 import {
   createFile,
   createFolder,
@@ -167,6 +168,12 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('files:index', async (_e, roots: string[]) => indexWorkspace(roots));
 
+  ipcMain.handle(
+    'bibliography:find',
+    async (_e, filePath: string | null, roots: string[]) =>
+      findBibliographyFor(filePath, roots),
+  );
+
   ipcMain.handle('files:create', async (_e, path: string) => createFile(path));
   ipcMain.handle('files:createFolder', async (_e, path: string) => createFolder(path));
   ipcMain.handle('files:rename', async (_e, oldPath: string, newPath: string) =>
@@ -181,9 +188,37 @@ export function registerIpcHandlers(): void {
     return detectPandoc(prefs.pandocPath);
   });
 
+  ipcMain.handle('pandoc:import', async (event, format: 'docx' | 'odt' | 'rtf') => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
+    if (!win) return null;
+    const filterName = format === 'docx' ? 'Word' : format === 'odt' ? 'OpenDocument' : 'RTF';
+    const dialogResult = await dialog.showOpenDialog(win, {
+      filters: [{ name: filterName, extensions: [format] }],
+      properties: ['openFile'],
+    });
+    if (dialogResult.canceled || dialogResult.filePaths.length === 0) return null;
+    const inputPath = dialogResult.filePaths[0]!;
+    const prefs = await getPreferences();
+    const r = await importViaPandoc({
+      inputPath,
+      fromFormat: format,
+      override: prefs.pandocPath,
+    });
+    if (!r.ok) {
+      return { error: r.error ?? 'import failed', stderr: r.stderr };
+    }
+    return { markdown: r.markdown ?? '', sourcePath: inputPath };
+  });
+
   ipcMain.handle(
     'pandoc:export',
-    async (event, markdown: string, format: 'docx' | 'latex', suggestedName?: string) => {
+    async (
+      event,
+      markdown: string,
+      format: 'docx' | 'latex',
+      suggestedName?: string,
+      sourceFilePath?: string | null,
+    ) => {
       const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
       if (!win) return null;
       const ext = format === 'docx' ? 'docx' : 'tex';
@@ -200,6 +235,16 @@ export function registerIpcHandlers(): void {
       }
       if (format === 'latex' && prefs.latexTemplate) {
         extra.push('--template', prefs.latexTemplate);
+      }
+      // Wire citation processing through Pandoc when a bibliography file is
+      // discoverable from the source document. Pandoc's --citeproc resolves
+      // [@key] for both docx and latex outputs.
+      const bib = await findBibliographyFor(
+        sourceFilePath ?? null,
+        prefs.workspaceFolders,
+      );
+      if (bib) {
+        extra.push('--citeproc', '--bibliography', bib.path);
       }
       const result = await runPandoc({
         input: markdown,
