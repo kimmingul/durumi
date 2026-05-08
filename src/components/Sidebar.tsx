@@ -13,9 +13,10 @@ interface SidebarProps {
   view: EditorView | null;
   onOpenFile: (path: string) => void;
   onOpenHit?: (absPath: string, line: number, column: number) => void;
+  onApplyOutlineMove?: (newDoc: string) => void;
 }
 
-export function Sidebar({ content, view, onOpenFile, onOpenHit }: SidebarProps) {
+export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMove }: SidebarProps) {
   const visible = useSidebarStore((s) => s.visible);
   const activeTab = useSidebarStore((s) => s.activeTab);
   const width = useSidebarStore((s) => s.width);
@@ -92,7 +93,9 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit }: SidebarProps) 
         </div>
         <div className="cm-sidebar-body">
           {activeTab === 'files' && <FileTree onOpenFile={onOpenFile} />}
-          {activeTab === 'outline' && <Outline content={content} onJump={onJump} />}
+          {activeTab === 'outline' && (
+            <Outline content={content} onJump={onJump} onApplyOutlineMove={onApplyOutlineMove} />
+          )}
           {activeTab === 'search' && (
             <SearchTab onOpenHit={onOpenHit ?? (() => undefined)} />
           )}

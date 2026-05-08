@@ -201,6 +201,28 @@ body {
   color: var(--bg, #fff);
   font-weight: 600;
 }
+.cm-outline-row {
+  position: relative;
+}
+.cm-outline-row-dragging {
+  opacity: 0.5;
+}
+.cm-outline-row-drop-before::before,
+.cm-outline-row-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent, rgba(0, 100, 200, 0.7));
+  pointer-events: none;
+}
+.cm-outline-row-drop-before::before { top: 0; }
+.cm-outline-row-drop-after::after { bottom: 0; }
+.cm-outline-row-drop-inside {
+  outline: 2px solid var(--accent, rgba(0, 100, 200, 0.7));
+  outline-offset: -2px;
+}
 .cm-tree-caret {
   width: 14px;
   display: inline-block;

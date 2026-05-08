@@ -327,6 +327,7 @@ export function App() {
         <Sidebar
           content={content}
           view={editorViewRef.current}
+          onApplyOutlineMove={(newDoc) => setContent(newDoc)}
           onOpenFile={async (p) => {
             if (!(await maybeDiscard())) return;
             const r = await window.api.fileOpenPath(p);
