@@ -507,6 +507,12 @@ BibTeX 연결 방법은 § 5와 § 8에서 다룹니다.
 | :--- | :--- |
 | `Cmd/Ctrl + Alt + M` | 선택 영역을 `%% … %%`로 감싸기 (선택 없으면 빈 메모 삽입) |
 | `Cmd/Ctrl + Shift + M` | 메모 채팅 패널 토글 |
+| `F3` / `Shift + F3` | 다음 / 이전 메모로 이동(wrap-around, 캐럿이 들어 있는 메모는 건너뜀) |
+
+메뉴 **검토 → 메모 추가** 또는 본문 우클릭 → **메모 추가**도 동일한 동작입니다
+(v0.1.5에서 추가된 진입점). 단축키를 외우지 않아도 동일하게 동작하도록
+의도적으로 메뉴 라벨에 단축키를 함께 표기했습니다. `F3` / `Shift + F3`로
+다음/이전 메모로 점프해 답글이나 해결 표시를 빠르게 처리할 수 있습니다.
 
 #### 3.9.6 채팅 패널 (MS Word 스타일, v0.1.3+)
 
@@ -648,6 +654,20 @@ v0.1.4 Track B에서 [Fletcher CriticMarkup](https://fletcher.github.io/MultiMar
 - 코드 펜스 안의 `{++ ... ++}` 같은 패턴은 그대로 보존됩니다(메모와 동일).
 - 라이브 프리뷰의 active-line invariant는 유지됩니다 — 캐럿이 같은 줄에
   있으면 소스가 그대로 보이고, 떠나면 색깔 데코레이션이 적용됩니다.
+
+진입점(v0.1.5에서 추가):
+
+- 메뉴 **검토 → 변경 추적 ▶** 서브메뉴 — 다섯 항목 모두 노출
+  (삽입 표시 / 삭제 표시 / 치환 표시 / 강조 표시 / 주석 표시).
+- 본문 우클릭 → **변경 추적 ▶** 서브메뉴 — 동일 다섯 항목.
+- 단축키는 의도적으로 부여하지 않습니다. 5종 operator × 3-modifier 조합은
+  chord space를 너무 많이 차지해서 키맵이 혼란스러워지고, CriticMarkup
+  자체가 일상적으로 빈번하게 쓰는 기능이 아니기 때문에 메뉴/우클릭 진입을
+  표준 워크플로로 잡았습니다.
+- 치환(`{~~ ~> ~~}`) 캐럿 동작: 선택 영역이 있으면 캐럿이 비어 있는 새 글자
+  슬롯(`{~~ 선택본 ~> ⎵ ~~}`)에 자리잡고, 선택이 없으면 기존 글자
+  슬롯(`{~~ ⎵ ~>  ~~}`)에 자리잡습니다 — 현실적인 워크플로(선택 = "이걸
+  뭘로 바꿀까", 무선택 = "어디서 바꿔야 할지 정하는 중")에 맞춥니다.
 
 ### 3.10.2 사이드바와 상태바
 
@@ -1127,7 +1147,8 @@ pandoc -f markdown+yaml_metadata_block+footnotes+definition_lists+pipe_tables+ra
 | `Mod + Shift + L` | 라이트/다크 테마 토글 |
 | `Mod + \` | 사이드바 토글 |
 | `Mod + Shift + E` / `O` / `F` | 사이드바: 파일 / 아웃라인 / 검색 |
-| `Mod + Shift + M` | 메모 채팅 패널 토글 |
+| `Mod + Shift + M` | 메모 채팅 패널 토글 (검토 메뉴) |
+| `F3` / `Shift + F3` | 다음 / 이전 메모로 이동 (wrap-around) |
 | `F8` | Focus Mode 토글 |
 | `F9` | Typewriter Mode 토글 |
 
@@ -1154,6 +1175,11 @@ pandoc -f markdown+yaml_metadata_block+footnotes+definition_lists+pipe_tables+ra
   `{== ==}` / `{>> <<}` 다섯 연산자, 사이드바 5번째 변경 탭, 상태바 배지,
   기본 accept-all-changes 내보내기 + opt-in preserve 모드. Typora에는 없는
   기능.
+- **MS Word 스타일 검토 메뉴 + 본문 우클릭 메뉴(v0.1.5)**: 메모와 변경
+  추적(CriticMarkup) 5종 작업, 사이드바 메모/변경 탭 이동, 다음/이전 메모
+  이동(`F3` / `Shift + F3`), 내보내기 토글(메모 포함 / 변경 표시 포함)
+  미러까지 한 곳에서 접근. Typora의 "Edit → Toggle Comment" 한 항목보다
+  훨씬 두꺼운 검토 워크플로를 메뉴에 노출합니다.
 - **Pandoc 스타일 인용(`[@key]`)**: 본문 인라인 인용 + 자동 번호 부여 +
   Vancouver 참고문헌 섹션 자동 생성. BibTeX 자동 발견 포함.
 - **매뉴스크립트 템플릿**: IMRaD, CONSORT, PRISMA, CARE 증례보고, STROBE
@@ -1235,6 +1261,11 @@ pandoc -f markdown+yaml_metadata_block+footnotes+definition_lists+pipe_tables+ra
   수락(accept all changes)"이라 `{== ==}`도 review-mark로 간주되어 평문
   텍스트로 떨어집니다. 영구적인 강조가 필요하면 `==text==`(InlineExtras,
   § 3.1)를 사용하거나, `설정 → 변경 사항 포함`을 ON으로 두세요(§ 3.10.3).
+- **메뉴/우클릭에 변경 추적(CriticMarkup) 단축키가 없음**: 5종 operator ×
+  3-modifier 조합은 chord space를 너무 차지해서 의도적으로 단축키를 부여
+  하지 않았습니다. 메뉴 **검토 → 변경 추적 ▶** 또는 본문 우클릭 → **변경
+  추적 ▶**으로 사용하세요. 자주 쓰는 메모(`%% %%`)는 `Cmd/Ctrl + Alt + M`
+  으로 빠르게 감쌀 수 있고, `F3` / `Shift + F3`으로 메모 사이를 점프합니다.
 
 ---
 

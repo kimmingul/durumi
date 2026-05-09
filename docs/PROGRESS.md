@@ -1,6 +1,70 @@
 # Durumi — Progress
 
-## v0.1.4 (current) — Memo maturation + CriticMarkup
+## v0.1.5 (current) — 검토 menu + context-menu discovery
+
+A polish/discoverability release on top of v0.1.4. The memo and CriticMarkup
+features that shipped in v0.1.3 + v0.1.4 were discoverable only through
+keyboard shortcuts (or the sidebar tabs); v0.1.5 adds a native **검토 / Review**
+menu and an editor right-click context menu so every operation has a visible
+home. No source-syntax or export changes — purely an entry-point release.
+
+### Native 검토 / Review menu (between View and Help)
+
+- 메모 추가 (`Cmd/Ctrl + Alt + M`)
+- 메모 패널 표시/숨기기 (`Cmd/Ctrl + Shift + M`) — moved here from the View menu
+- 변경 추적 (CriticMarkup) ▶ submenu — 5 items, no shortcuts: 삽입 표시 /
+  삭제 표시 / 치환 표시 / 강조 표시 / 주석 표시
+- 메모 탭 보이기 / 변경 탭 보이기 (sidebar tab navigation)
+- 다음 메모로 이동 (`F3`) / 이전 메모로 이동 (`Shift + F3`) — wrap-around;
+  skips the memo the caret is currently inside (matches Word UX)
+- ☐ 내보내기에 메모 포함 (checkbox; mirrors `prefs.exportIncludeComments`)
+- ☐ 내보내기에 변경 표시 포함 (checkbox; mirrors
+  `prefs.exportPreserveAnnotations`)
+
+### Editor right-click context menu (gated on `params.isEditable`)
+
+- Cut / Copy / Paste (Electron standard; preserved from previous behavior)
+- 메모 추가 (Cmd+Alt+M label)
+- 변경 추적 ▶ — same 5 CriticMarkup operators as the native menu
+- 링크 삽입 (Cmd+K label)
+- (Existing spell-check items: dictionary suggestions / Add to dictionary /
+  Ignore)
+
+### Substitute caret behavior
+
+When wrapping in `{~~ ~> ~~}`:
+
+- With selection → caret lands in the empty NEW slot of `{~~ selection ~> ⎵ ~~}`
+- Without selection → caret lands in the OLD slot of `{~~ ⎵ ~>  ~~}`
+
+### Implementation
+
+- New `src/editor/keymap/wrapCriticMarkup.ts` — 5 wrap functions for the CM
+  operators, shared by the menu, context menu, and any future shortcut.
+- New `src/editor/keymap/memoNav.ts` — `nextMemo` / `prevMemo` with
+  wrap-around; skips the memo currently containing the caret.
+- File rename: `electron/spellCheck.ts` → `electron/contextMenu.ts`. The
+  file now absorbs both spell-check items and the new memo / CriticMarkup /
+  link-insert items, gated on `params.isEditable`. Rebuilt per popup so the
+  current language preference is honored on every right-click.
+- New tests:
+  - `tests/editor/wrapCriticMarkup.test.ts` (11)
+  - `tests/editor/memoNav.test.ts` (8)
+
+### Quality gates
+- 804 Vitest unit tests across ~109 files (v0.1.4 was 785 → +19 from the two
+  new test files)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean
+
+Reference commit: `db1951a`. No new architecture invariants — this is a
+discovery layer over existing v0.1.3 + v0.1.4 features.
+
+---
+
+## v0.1.4 — Memo maturation + CriticMarkup
 
 The post-v0.1.2 line of work split into three commits across two minor releases. Together they evolve the memo system from a flat list of `%% %%` annotations into a Word-style review surface with author identity, threading, resolution state, and grouping — and add a full CriticMarkup track-changes notation alongside it. Every code path remains backward compatible: a v0.1.2 document with no sidecar and no `{++ ++}` markers continues to render byte-identically.
 
@@ -165,7 +229,7 @@ Cross-platform (macOS + Windows 11) Typora-style markdown editor with:
 
 ## Roadmap
 
-The shape of post-v0.1.4 work, in rough priority order. Each item gets its own design + plan cycle when picked up.
+The shape of post-v0.1.5 work, in rough priority order. Each item gets its own design + plan cycle when picked up.
 
 > ✓ **Shipped in v0.1.4** — CriticMarkup track-changes (`{++ ++}` / `{-- --}` / `{~~ ~> ~~}` / `{== ==}` / `{>> <<}`), commit `381a6ba`. Originally roadmap item 7.
 
