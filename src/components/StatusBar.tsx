@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useDocComments } from '../hooks/useDocComments';
+import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { useLanguage, t } from '../i18n/t';
 import { basenameOf } from '../utils/path';
 import { computeWordStats, WordStats } from '../utils/wordCount';
@@ -29,6 +30,7 @@ export function StatusBar() {
   const name = filePath ? basenameOf(filePath) : t('status.untitled');
   const stats = useWordStats(content);
   const comments = useDocComments(content);
+  const { counts: cmCounts } = useDocCriticMarkup(content);
   const counters = useMemo(
     () => ({
       words: t('status.words', { count: formatNumber(stats.words) }),
@@ -44,6 +46,15 @@ export function StatusBar() {
         {counters.words} · {counters.chars} · {counters.reading}
         {comments.length > 0 && (
           <> · <span className="status-bar-comments">{t('status.comments', { count: String(comments.length) })}</span></>
+        )}
+        {cmCounts.total > 0 && (
+          <> · <span className="status-bar-cm" data-testid="status-cm-badges">
+            <span className="status-bar-cm-badge status-bar-cm-insert" title={t('status.cm.insert')}>+{cmCounts.insert}</span>
+            {' '}<span className="status-bar-cm-badge status-bar-cm-delete" title={t('status.cm.delete')}>-{cmCounts.delete}</span>
+            {' '}<span className="status-bar-cm-badge status-bar-cm-substitution" title={t('status.cm.substitution')}>~{cmCounts.substitution}</span>
+            {' '}<span className="status-bar-cm-badge status-bar-cm-highlight" title={t('status.cm.highlight')}>▮{cmCounts.highlight}</span>
+            {' '}<span className="status-bar-cm-badge status-bar-cm-comment" title={t('status.cm.comment')}>💬{cmCounts.comment}</span>
+          </span></>
         )}
       </span>
     </div>

@@ -24,6 +24,7 @@ import { toggleTask as toggleTaskHelper } from './editor/keymap/toggleTask';
 import { openSearch, openSearchAndReplace, gotoNext, gotoPrev } from './editor/openSearch';
 import { renderHtml } from './export/renderHtml';
 import { promoteComments, stripComments } from '../shared/comments';
+import { transformCm } from '../shared/criticMarkup';
 import { findTemplate } from '../shared/manuscriptTemplates';
 import { useLanguage, resolveRendererLang } from './i18n/t';
 import { basenameOf, stripMarkdownExt } from './utils/path';
@@ -218,7 +219,12 @@ export function App() {
     const bibliography = await loadBibliography();
     const prefs = await window.api.prefsGet();
     const includeComments = prefs.exportIncludeComments ?? false;
-    const html = await renderHtml(content, title, customCss, { bibliography, includeComments });
+    const preserveAnnotations = prefs.exportPreserveAnnotations ?? false;
+    const html = await renderHtml(content, title, customCss, {
+      bibliography,
+      includeComments,
+      preserveAnnotations,
+    });
     await window.api.exportFile(html, format, suggested);
   }
 
@@ -232,7 +238,18 @@ export function App() {
     // present in any file the user shares with a journal.
     const prefs = await window.api.prefsGet();
     const includeComments = prefs.exportIncludeComments ?? false;
-    const transformed = includeComments ? promoteComments(content) : stripComments(content);
+    const preserveAnnotations = prefs.exportPreserveAnnotations ?? false;
+    // Two-pass: comments first (memo policy), then CriticMarkup. Order
+    // matters because a `%% memo %%` may wrap a `{++ ... ++}` run, and we
+    // want the comment policy to win at the outer level.
+    const afterComments = includeComments
+      ? promoteComments(content)
+      : stripComments(content);
+    const transformed = transformCm(
+      afterComments,
+      preserveAnnotations ? 'preserve' : 'accept',
+      'pandoc',
+    );
     const result = await window.api.pandocExport(transformed, format, suggested, filePath);
     if (result && 'error' in result) {
       if (result.code === 'pandoc-missing') {

@@ -289,6 +289,20 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 </span>
               </label>
             </Field>
+
+            <Field label={t('settings.export.preserveAnnotations')}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  data-testid="settings-preserve-annotations"
+                  checked={prefs.exportPreserveAnnotations}
+                  onChange={(e) => { void update({ exportPreserveAnnotations: e.target.checked }); }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--muted-fg, var(--fg))' }}>
+                  {t('settings.export.preserveAnnotations.help')}
+                </span>
+              </label>
+            </Field>
           </Section>
 
           <Section heading={t('settings.author')}>

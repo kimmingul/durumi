@@ -65,9 +65,11 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sidebar.outline': 'Outline',
     'sidebar.search': 'Search',
     'sidebar.comments': 'Memos',
+    'sidebar.changes': 'Changes',
     'sidebar.empty.files': 'No folders open.',
     'sidebar.empty.outline': 'No headings yet',
     'sidebar.empty.comments': 'No memos yet',
+    'sidebar.empty.changes': 'No tracked changes yet',
     'sidebar.openFolder': 'Open Folder…',
 
     // Sidebar context menu (right-click on file tree)
@@ -120,7 +122,22 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'status.chars': '{count} chars',
     'status.reading': '~{count} min read',
     'status.comments': '{count} memos',
+    'status.cm.insert': 'Insertions',
+    'status.cm.delete': 'Deletions',
+    'status.cm.substitution': 'Substitutions',
+    'status.cm.highlight': 'Highlights',
+    'status.cm.comment': 'Reviewer comments',
     'comment.untagged': 'memo',
+
+    // CriticMarkup track-changes
+    'cm.kind.insert': 'Insertions',
+    'cm.kind.delete': 'Deletions',
+    'cm.kind.substitution': 'Substitutions',
+    'cm.kind.highlight': 'Highlights',
+    'cm.kind.comment': 'Reviewer comments',
+    'cm.help.title': 'About track changes',
+    'cm.help.body':
+      'Track-changes operators ({++ ins ++}, {-- del --}, {~~ old ~> new ~~}, {== mark ==}, {>> note <<}) are review markers. By default they are stripped on export ("accept all changes"). The {== mark ==} highlight is separate from the regular ==text== highlight: only the curly form is review-tracked.',
 
     // Memo chat panel (right column, v0.1.3)
     'memo.panel.title': 'Memos',
@@ -185,6 +202,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'settings.latexTemplate.placeholder': 'Optional template passed to --template',
     'settings.export.includeComments': 'Include memos in export',
     'settings.export.includeComments.help': 'When off (default), `%% memo %%` notes are stripped from exported HTML / PDF / DOCX / LaTeX. Turn on to keep them as visible blockquotes.',
+    'settings.export.preserveAnnotations': 'Include track changes',
+    'settings.export.preserveAnnotations.help': 'When off (default), CriticMarkup operators are accepted and stripped (the safe default for medical manuscripts). Turn on to preserve insertions / deletions / substitutions as visible <ins>/<del>/<mark> spans on export.',
     'settings.browse': 'Browse…',
     'settings.clear': 'Clear',
     'settings.spellCheck': 'Spell check',
@@ -254,9 +273,11 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sidebar.outline': '목차',
     'sidebar.search': '검색',
     'sidebar.comments': '메모',
+    'sidebar.changes': '변경',
     'sidebar.empty.files': '열린 폴더가 없습니다.',
     'sidebar.empty.outline': '제목 없음',
     'sidebar.empty.comments': '메모 없음',
+    'sidebar.empty.changes': '변경 사항 없음',
     'sidebar.openFolder': '폴더 열기…',
 
     // Sidebar context menu (right-click on file tree)
@@ -309,7 +330,22 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'status.chars': '{count}자',
     'status.reading': '~{count}분 읽기',
     'status.comments': '{count}개 메모',
+    'status.cm.insert': '추가',
+    'status.cm.delete': '삭제',
+    'status.cm.substitution': '치환',
+    'status.cm.highlight': '강조',
+    'status.cm.comment': '검토 의견',
     'comment.untagged': '메모',
+
+    // CriticMarkup 변경 추적
+    'cm.kind.insert': '추가',
+    'cm.kind.delete': '삭제',
+    'cm.kind.substitution': '치환',
+    'cm.kind.highlight': '강조',
+    'cm.kind.comment': '검토 의견',
+    'cm.help.title': '변경 사항 안내',
+    'cm.help.body':
+      '변경 추적 연산자({++ ins ++}, {-- del --}, {~~ old ~> new ~~}, {== mark ==}, {>> note <<})는 검토용 표시입니다. 기본값에서는 내보낼 때 모두 적용/제거됩니다("모든 변경 사항 적용"). {== 강조 ==}는 일반 ==강조==와 별개로 변경 추적 대상으로만 처리됩니다.',
 
     // Memo chat panel (right column, v0.1.3)
     'memo.panel.title': '메모',
@@ -374,6 +410,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'settings.latexTemplate.placeholder': '--template 으로 전달할 템플릿 (선택)',
     'settings.export.includeComments': '내보내기에 메모 포함',
     'settings.export.includeComments.help': '꺼짐(기본): `%% 메모 %%`은 HTML/PDF/DOCX/LaTeX 내보내기에서 제거됩니다. 켜짐: 인용 블록으로 보존됩니다.',
+    'settings.export.preserveAnnotations': '변경 사항 포함',
+    'settings.export.preserveAnnotations.help': '꺼짐(기본): CriticMarkup 변경 추적 연산자는 적용 후 제거됩니다(의학 원고의 안전한 기본값). 켜짐: 추가/삭제/치환을 <ins>/<del>/<mark> 스팬으로 내보냅니다.',
     'settings.browse': '찾아보기…',
     'settings.clear': '지우기',
     'settings.spellCheck': '맞춤법 검사',

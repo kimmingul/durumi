@@ -43,6 +43,7 @@ const DEFAULTS: Preferences = {
   spellCheckLanguages: ['en-US'],
   spellCheckCustomWords: [],
   exportIncludeComments: false,
+  exportPreserveAnnotations: false,
 };
 
 let cache: Preferences | null = null;

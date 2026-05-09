@@ -13,6 +13,7 @@ import { TocExtension } from './markdownExt/toc';
 import { InlineExtrasExtension } from './markdownExt/inlineExtras';
 import { CitationExtension } from './markdownExt/citation';
 import { CommentsExtension } from './markdownExt/comments';
+import { CriticMarkupExtension } from './markdownExt/criticMarkup';
 import { liveDecorations } from './decorations';
 import { spellcheckExclusion } from './spellcheckExclusion';
 import { markdownKeymap } from './keymap';
@@ -64,6 +65,7 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
             InlineExtrasExtension,
             CitationExtension,
             CommentsExtension,
+            CriticMarkupExtension,
           ],
         }),
         ...liveDecorations,

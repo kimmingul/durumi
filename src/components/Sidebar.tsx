@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useSidebarStore } from '../store/sidebarStore';
 import { CommentsTab } from './sidebar/CommentsTab';
+import { ChangesTab } from './sidebar/ChangesTab';
+import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { FileTree } from './sidebar/FileTree';
 import { Outline } from './sidebar/Outline';
 import { SearchTab } from './sidebar/SearchTab';
@@ -25,6 +27,7 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMo
   const setWidth = useSidebarStore((s) => s.setWidth);
   // Subscribe to language so tab labels re-render on switch.
   useLanguage();
+  const { counts: cmCounts } = useDocCriticMarkup(content);
 
   useActiveHeading(view, content);
 
@@ -97,6 +100,18 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMo
           >
             {t('sidebar.comments')}
           </button>
+          <button
+            className={'cm-sidebar-tab' + (activeTab === 'changes' ? ' cm-sidebar-tab-active' : '')}
+            onClick={() => setActiveTab('changes')}
+            data-testid="sidebar-tab-changes"
+          >
+            {t('sidebar.changes')}
+            {cmCounts.total > 0 && (
+              <span className="cm-sidebar-tab-badge" data-testid="sidebar-tab-changes-badge">
+                {cmCounts.total}
+              </span>
+            )}
+          </button>
         </div>
         <div className="cm-sidebar-body">
           {activeTab === 'files' && <FileTree onOpenFile={onOpenFile} />}
@@ -108,6 +123,9 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMo
           )}
           {activeTab === 'comments' && (
             <CommentsTab content={content} onJump={onJump} />
+          )}
+          {activeTab === 'changes' && (
+            <ChangesTab content={content} onJump={onJump} />
           )}
         </div>
       </aside>

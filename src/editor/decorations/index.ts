@@ -2,6 +2,7 @@ import { userActiveExtension } from './activeLine';
 import { autolinkDecoration, autolinkTheme } from './autolink';
 import { citationDecoration, citationTheme } from './citation';
 import { commentDecoration, commentTheme } from './comment';
+import { criticMarkupDecoration, criticMarkupTheme } from './criticMarkup';
 import { footnoteDecoration, footnoteTheme } from './footnote';
 import { frontMatterDecoration, frontMatterTheme } from './frontMatter';
 import { headingDecoration } from './heading';
@@ -35,6 +36,8 @@ export const liveDecorations = [
   citationTheme,
   commentDecoration(),
   commentTheme,
+  criticMarkupDecoration(),
+  criticMarkupTheme,
   tocDecoration(),
   tocTheme,
   headingDecoration(),

@@ -22,6 +22,7 @@ import { preprocessMermaid } from './renderMermaid';
 import { escapeHtml } from './escapeHtml';
 import { parseFrontMatter, frontMatterString } from '../../shared/frontMatter';
 import { promoteComments, stripComments } from '../../shared/comments';
+import { transformCm } from '../../shared/criticMarkup';
 import { parseHeadings, buildOutlineTree, OutlineNode } from '../editor/outline';
 import { slugify } from './slug';
 import { parseBibTeX, indexBibEntries } from '../../shared/bibtex';
@@ -121,6 +122,13 @@ export interface RenderHtmlOptions {
    * default for medical-research manuscript submission.
    */
   includeComments?: boolean;
+  /**
+   * `true` keeps CriticMarkup track-changes operators visible in the rendered
+   * output as `<ins>/<del>/<mark>/<aside>` (preserve mode). Default `false`
+   * applies an "accept all changes" pass — insertions kept, deletions
+   * dropped, substitutions resolved to the new text, comments dropped.
+   */
+  preserveAnnotations?: boolean;
 }
 
 export async function renderHtml(
@@ -136,6 +144,13 @@ export async function renderHtml(
   // smuggle a `[@key]` into the citation numbering pass, and so the TOC
   // regex never matches a `[toc]` written inside a memo.
   source = options.includeComments ? promoteComments(source) : stripComments(source);
+
+  // CriticMarkup transforms run AFTER comment processing — a `%% memo %%`
+  // could have wrapped a `{++ ... ++}` run, and we want the comment policy
+  // to win. Default mode is `accept` (matching `exportPreserveAnnotations
+  // === false`), which strips visible review markers and produces a clean
+  // submission-ready document.
+  source = transformCm(source, options.preserveAnnotations ? 'preserve' : 'accept', 'html');
 
   // Citations: replace `[@key]` with numbered <sup> markers and append a
   // References section before the rest of the rendering pipeline runs. Done

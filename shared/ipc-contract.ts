@@ -23,7 +23,7 @@ export interface Preferences {
   recentFiles: string[];
   sidebar: {
     visible: boolean;
-    activeTab: 'files' | 'outline' | 'search' | 'comments';
+    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes';
     width: number;
   };
   /**
@@ -60,6 +60,14 @@ export interface Preferences {
    * notes never leak into a submitted manuscript.
    */
   exportIncludeComments: boolean;
+  /**
+   * When true, CriticMarkup track-changes operators are rendered into the
+   * exported document as visible `<ins>/<del>/<mark>/<aside>` (HTML) or
+   * Pandoc-styled spans (DOCX/LaTeX). Default `false` ACCEPTs all changes
+   * (insertions kept, deletions dropped, substitutions resolved to the new
+   * text, comments dropped) — the safe default for medical manuscripts.
+   */
+  exportPreserveAnnotations: boolean;
 }
 
 export type MenuCommand =
