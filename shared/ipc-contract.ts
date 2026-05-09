@@ -18,7 +18,7 @@ export interface Preferences {
   recentFiles: string[];
   sidebar: {
     visible: boolean;
-    activeTab: 'files' | 'outline' | 'search';
+    activeTab: 'files' | 'outline' | 'search' | 'comments';
     width: number;
   };
   workspaceFolders: string[];
@@ -32,6 +32,12 @@ export interface Preferences {
   spellCheckLanguages: string[];
   /** Words the user has added to the dictionary across sessions. */
   spellCheckCustomWords: string[];
+  /**
+   * When true, `%%` memos are kept in the exported document (HTML/PDF/DOCX/
+   * LaTeX) as visible blockquotes. Default `false` strips memos so review
+   * notes never leak into a submitted manuscript.
+   */
+  exportIncludeComments: boolean;
 }
 
 export type MenuCommand =

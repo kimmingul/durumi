@@ -13,6 +13,11 @@ import { attachSpellCheck } from './spellCheck';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Tracks an in-flight `app.quit()` (e.g. Cmd+Q on macOS, File ▸ Quit). Cleared
+// when the user cancels the close prompt so the app doesn't keep limping
+// toward quit on the next user action.
+let isAppQuitting = false;
+
 async function createWindow(prefsOverride?: Awaited<ReturnType<typeof getPreferences>>) {
   const prefs = prefsOverride ?? (await getPreferences());
   const win = new BrowserWindow({
@@ -39,7 +44,10 @@ async function createWindow(prefsOverride?: Awaited<ReturnType<typeof getPrefere
 
   // Intercept close so the renderer can prompt Save/Discard/Cancel for a dirty
   // document. Without this, beforeunload merely cancels the close silently.
-  attachCloseGuard(win, ipcMain);
+  // If the user cancels (or the renderer hangs), abort an in-flight Cmd+Q too.
+  attachCloseGuard(win, ipcMain, {
+    onCancel: () => { isAppQuitting = false; },
+  });
 
   void attachSpellCheck(win);
 
@@ -88,6 +96,13 @@ void app.whenReady().then(async () => {
   });
 });
 
+app.on('before-quit', () => {
+  isAppQuitting = true;
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // On macOS apps normally stay alive in the dock when all windows close, but
+  // when the user explicitly chose Quit (Cmd+Q / menu) we must follow through —
+  // otherwise the process becomes a zombie and a second Cmd+Q seems to hang.
+  if (process.platform !== 'darwin' || isAppQuitting) app.quit();
 });

@@ -21,6 +21,7 @@ import { injectMath } from './renderMath';
 import { preprocessMermaid } from './renderMermaid';
 import { escapeHtml } from './escapeHtml';
 import { parseFrontMatter, frontMatterString } from '../../shared/frontMatter';
+import { promoteComments, stripComments } from '../../shared/comments';
 import { parseHeadings, buildOutlineTree, OutlineNode } from '../editor/outline';
 import { slugify } from './slug';
 import { parseBibTeX, indexBibEntries } from '../../shared/bibtex';
@@ -114,6 +115,12 @@ function renderTocHtml(headings: OutlineNode[]): string {
 export interface RenderHtmlOptions {
   /** Optional BibTeX source. When provided, `[@key]` citations are resolved. */
   bibliography?: string | null;
+  /**
+   * `true` keeps `%%` memos in the rendered output as visible blockquotes
+   * (review-mode export). Default `false` strips them entirely — the safe
+   * default for medical-research manuscript submission.
+   */
+  includeComments?: boolean;
 }
 
 export async function renderHtml(
@@ -124,6 +131,11 @@ export async function renderHtml(
 ): Promise<string> {
   const fm = parseFrontMatter(markdown);
   let source = fm.endOffset > 0 ? fm.body : markdown;
+
+  // Apply the comment policy BEFORE citation/TOC processing so a memo can't
+  // smuggle a `[@key]` into the citation numbering pass, and so the TOC
+  // regex never matches a `[toc]` written inside a memo.
+  source = options.includeComments ? promoteComments(source) : stripComments(source);
 
   // Citations: replace `[@key]` with numbered <sup> markers and append a
   // References section before the rest of the rendering pipeline runs. Done

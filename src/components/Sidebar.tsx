@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useSidebarStore } from '../store/sidebarStore';
+import { CommentsTab } from './sidebar/CommentsTab';
 import { FileTree } from './sidebar/FileTree';
 import { Outline } from './sidebar/Outline';
 import { SearchTab } from './sidebar/SearchTab';
@@ -90,6 +91,12 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMo
           >
             {t('sidebar.search')}
           </button>
+          <button
+            className={'cm-sidebar-tab' + (activeTab === 'comments' ? ' cm-sidebar-tab-active' : '')}
+            onClick={() => setActiveTab('comments')}
+          >
+            {t('sidebar.comments')}
+          </button>
         </div>
         <div className="cm-sidebar-body">
           {activeTab === 'files' && <FileTree onOpenFile={onOpenFile} />}
@@ -98,6 +105,9 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMo
           )}
           {activeTab === 'search' && (
             <SearchTab onOpenHit={onOpenHit ?? (() => undefined)} />
+          )}
+          {activeTab === 'comments' && (
+            <CommentsTab content={content} onJump={onJump} />
           )}
         </div>
       </aside>

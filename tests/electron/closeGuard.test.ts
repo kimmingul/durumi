@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { attachCloseGuard } from '../../electron/closeGuard';
 
@@ -8,6 +8,10 @@ class FakeIpcMain {
   private once_handlers = new Map<string, IpcReplyHandler>();
   once(channel: string, listener: IpcReplyHandler) {
     this.once_handlers.set(channel, listener);
+    return this;
+  }
+  removeListener(channel: string, _listener: IpcReplyHandler) {
+    this.once_handlers.delete(channel);
     return this;
   }
   reply(channel: string, ...args: unknown[]) {
@@ -54,15 +58,20 @@ function makeEvent() {
   };
 }
 
-function attach() {
+function attach(opts: Parameters<typeof attachCloseGuard>[2] = {}) {
   const win = new FakeBrowserWindow();
   const ipc = new FakeIpcMain();
-  attachCloseGuard(win as never, ipc as never);
+  attachCloseGuard(win as never, ipc as never, opts);
   return { win, ipc };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('attachCloseGuard', () => {
@@ -120,5 +129,49 @@ describe('attachCloseGuard', () => {
     win.emit('close', e);
     expect(e.defaultPrevented).toBe(true);
     expect(win.sent).toHaveLength(0);
+  });
+
+  it('invokes onCancel when the renderer denies', () => {
+    const onCancel = vi.fn();
+    const { win, ipc } = attach({ onCancel });
+    win.emit('close', makeEvent());
+    const reqId = win.sent[0]!.reqId;
+    ipc.reply(`app:closeResponse:${reqId}`, false);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('times out and cancels when the renderer never responds', () => {
+    const onCancel = vi.fn();
+    const { win } = attach({ onCancel, timeoutMs: 1000 });
+    win.emit('close', makeEvent());
+    expect(onCancel).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    // After a timeout the next close attempt must be allowed to proceed —
+    // otherwise the window stays permanently stuck.
+    win.emit('close', makeEvent());
+    expect(win.sent).toHaveLength(2);
+  });
+
+  it('does not fire onCancel when the renderer allows the close', () => {
+    const onCancel = vi.fn();
+    const { win, ipc } = attach({ onCancel });
+    win.emit('close', makeEvent());
+    const reqId = win.sent[0]!.reqId;
+    ipc.reply(`app:closeResponse:${reqId}`, true);
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(win.destroyed).toBe(true);
+  });
+
+  it('clears the timeout once the renderer replies', () => {
+    const onCancel = vi.fn();
+    const { win, ipc } = attach({ onCancel, timeoutMs: 1000 });
+    win.emit('close', makeEvent());
+    const reqId = win.sent[0]!.reqId;
+    ipc.reply(`app:closeResponse:${reqId}`, false);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    // Advancing past the timeout must NOT fire onCancel again.
+    vi.advanceTimersByTime(2000);
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

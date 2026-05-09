@@ -21,6 +21,7 @@ const DEFAULTS: Preferences = {
   latexTemplate: null,
   spellCheckLanguages: ['en-US'],
   spellCheckCustomWords: [],
+  exportIncludeComments: false,
 };
 
 let cache: Preferences | null = null;

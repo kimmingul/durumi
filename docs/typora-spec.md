@@ -308,7 +308,7 @@ Durumi implementation:
   CodeMirror extensions), then highlight/sub/sup, then callouts,
   then emoji, then sidebar file ops.
 
-After C-6 lands cleanly, declare `v0.2.0 — Typora-parity foundation`
+After C-6 lands cleanly, declare `v0.1.2 — Typora-parity foundation`
 and start medical-research v1 design.
 
 ---

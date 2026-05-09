@@ -63,8 +63,10 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sidebar.files': 'Files',
     'sidebar.outline': 'Outline',
     'sidebar.search': 'Search',
+    'sidebar.comments': 'Memos',
     'sidebar.empty.files': 'No folders open.',
     'sidebar.empty.outline': 'No headings yet',
+    'sidebar.empty.comments': 'No memos yet',
     'sidebar.openFolder': 'Open Folder…',
 
     // Sidebar context menu (right-click on file tree)
@@ -116,6 +118,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'status.words': '{count} words',
     'status.chars': '{count} chars',
     'status.reading': '~{count} min read',
+    'status.comments': '{count} memos',
+    'comment.untagged': 'memo',
 
     // Settings dialog
     'settings.title': 'Settings',
@@ -140,6 +144,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'settings.docxStyle.placeholder': 'Optional reference document for --reference-doc',
     'settings.latexTemplate': 'LaTeX template',
     'settings.latexTemplate.placeholder': 'Optional template passed to --template',
+    'settings.export.includeComments': 'Include memos in export',
+    'settings.export.includeComments.help': 'When off (default), `%% memo %%` notes are stripped from exported HTML / PDF / DOCX / LaTeX. Turn on to keep them as visible blockquotes.',
     'settings.browse': 'Browse…',
     'settings.clear': 'Clear',
     'settings.spellCheck': 'Spell check',
@@ -204,8 +210,10 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sidebar.files': '파일',
     'sidebar.outline': '목차',
     'sidebar.search': '검색',
+    'sidebar.comments': '메모',
     'sidebar.empty.files': '열린 폴더가 없습니다.',
     'sidebar.empty.outline': '제목 없음',
+    'sidebar.empty.comments': '메모 없음',
     'sidebar.openFolder': '폴더 열기…',
 
     // Sidebar context menu (right-click on file tree)
@@ -257,6 +265,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'status.words': '{count}단어',
     'status.chars': '{count}자',
     'status.reading': '~{count}분 읽기',
+    'status.comments': '{count}개 메모',
+    'comment.untagged': '메모',
 
     // Settings dialog
     'settings.title': '설정',
@@ -281,6 +291,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'settings.docxStyle.placeholder': '--reference-doc 에 사용할 참조 문서 (선택)',
     'settings.latexTemplate': 'LaTeX 템플릿',
     'settings.latexTemplate.placeholder': '--template 으로 전달할 템플릿 (선택)',
+    'settings.export.includeComments': '내보내기에 메모 포함',
+    'settings.export.includeComments.help': '꺼짐(기본): `%% 메모 %%`은 HTML/PDF/DOCX/LaTeX 내보내기에서 제거됩니다. 켜짐: 인용 블록으로 보존됩니다.',
     'settings.browse': '찾아보기…',
     'settings.clear': '지우기',
     'settings.spellCheck': '맞춤법 검사',

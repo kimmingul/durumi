@@ -17,6 +17,7 @@ import { insertCodeBlock as insertCodeBlockHelper } from './editor/keymap/insert
 import { toggleTask as toggleTaskHelper } from './editor/keymap/toggleTask';
 import { openSearch, openSearchAndReplace, gotoNext, gotoPrev } from './editor/openSearch';
 import { renderHtml } from './export/renderHtml';
+import { promoteComments, stripComments } from '../shared/comments';
 import { findTemplate } from '../shared/manuscriptTemplates';
 import { useLanguage, resolveRendererLang } from './i18n/t';
 import { basenameOf, stripMarkdownExt } from './utils/path';
@@ -141,7 +142,9 @@ export function App() {
     const suggested = stripMarkdownExt(baseName) + `.${format}`;
     const customCss = await window.api.customCssGet();
     const bibliography = await loadBibliography();
-    const html = await renderHtml(content, title, customCss, { bibliography });
+    const prefs = await window.api.prefsGet();
+    const includeComments = prefs.exportIncludeComments ?? false;
+    const html = await renderHtml(content, title, customCss, { bibliography, includeComments });
     await window.api.exportFile(html, format, suggested);
   }
 
@@ -149,7 +152,14 @@ export function App() {
     const baseName = basenameOf(filePath, 'untitled');
     const ext = format === 'docx' ? 'docx' : 'tex';
     const suggested = stripMarkdownExt(baseName) + `.${ext}`;
-    const result = await window.api.pandocExport(content, format, suggested, filePath);
+    // Pre-process the source so Pandoc never sees raw `%%` memos. Pandoc's
+    // LaTeX writer would otherwise leak the body as `%`-prefixed comments
+    // sitting in the .tex source — invisible in the rendered PDF but
+    // present in any file the user shares with a journal.
+    const prefs = await window.api.prefsGet();
+    const includeComments = prefs.exportIncludeComments ?? false;
+    const transformed = includeComments ? promoteComments(content) : stripComments(content);
+    const result = await window.api.pandocExport(transformed, format, suggested, filePath);
     if (result && 'error' in result) {
       if (result.code === 'pandoc-missing') {
         setPandocInstallOp({ kind: 'export', format });

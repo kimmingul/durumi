@@ -30,4 +30,24 @@ describe('image decoration', () => {
     expect(v.dom.querySelector('img.cm-md-image')).toBeNull();
     v.destroy();
   });
+
+  it('strips an optional "title" from the image src', () => {
+    const doc = '![alt](https://example.com/x.png "the title")\nnext';
+    const v = setup(doc, doc.length);
+    const img = v.dom.querySelector('img.cm-md-image');
+    expect(img).not.toBeNull();
+    // The previous regex absorbed the trailing `"title"` into the URL — the
+    // lezer-children path keeps src clean.
+    expect(img?.getAttribute('src')).toBe('https://example.com/x.png');
+    v.destroy();
+  });
+
+  it('handles parens inside the URL', () => {
+    const doc = '![alt](https://example.com/path/(group).png)\nnext';
+    const v = setup(doc, doc.length);
+    const img = v.dom.querySelector('img.cm-md-image');
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute('src')).toBe('https://example.com/path/(group).png');
+    v.destroy();
+  });
 });

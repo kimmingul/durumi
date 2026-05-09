@@ -274,6 +274,20 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 testId="latex-template"
               />
             </Field>
+
+            <Field label={t('settings.export.includeComments')}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  data-testid="settings-include-comments"
+                  checked={prefs.exportIncludeComments}
+                  onChange={(e) => { void update({ exportIncludeComments: e.target.checked }); }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--muted-fg, var(--fg))' }}>
+                  {t('settings.export.includeComments.help')}
+                </span>
+              </label>
+            </Field>
           </Section>
 
           <Section heading={t('settings.spellCheck')}>

@@ -9,7 +9,7 @@ available for smoke-testing.
 ```bash
 pnpm release:tag patch        # or: minor | major
 git push origin main
-git push origin v0.1.1        # whatever tag the helper printed
+git push origin v0.1.2        # whatever tag the helper printed
 ```
 
 `pnpm release:tag` is a thin wrapper around `scripts/release.sh`. It:

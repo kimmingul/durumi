@@ -1,12 +1,18 @@
 import { userActiveExtension } from './activeLine';
+import { autolinkDecoration, autolinkTheme } from './autolink';
 import { citationDecoration, citationTheme } from './citation';
+import { commentDecoration, commentTheme } from './comment';
 import { footnoteDecoration, footnoteTheme } from './footnote';
 import { frontMatterDecoration, frontMatterTheme } from './frontMatter';
 import { headingDecoration } from './heading';
 import { tocDecoration, tocTheme } from './toc';
 import { emphasisDecoration } from './emphasis';
+import { escapeDecoration } from './escape';
+import { htmlBlockDecoration, htmlBlockTheme } from './htmlBlock';
+import { htmlInlineDecoration, htmlInlineTheme } from './htmlInline';
 import { inlineCodeDecoration } from './inlineCode';
-import { linkDecoration } from './link';
+import { lineBreakDecoration, lineBreakTheme } from './lineBreak';
+import { linkDecoration, linkReferenceDecoration } from './link';
 import { imageDecoration } from './image';
 import { codeBlockDecoration } from './codeBlock';
 import { codeHighlight } from './codeHighlight';
@@ -27,12 +33,24 @@ export const liveDecorations = [
   footnoteTheme,
   citationDecoration(),
   citationTheme,
+  commentDecoration(),
+  commentTheme,
   tocDecoration(),
   tocTheme,
   headingDecoration(),
   emphasisDecoration(),
+  escapeDecoration(),
+  htmlInlineDecoration(),
+  htmlInlineTheme,
+  htmlBlockDecoration(),
+  htmlBlockTheme,
   inlineCodeDecoration(),
+  lineBreakDecoration(),
+  lineBreakTheme,
   linkDecoration(),
+  linkReferenceDecoration(),
+  autolinkDecoration(),
+  autolinkTheme,
   imageDecoration(),
   codeBlockDecoration(),
   codeHighlight(),

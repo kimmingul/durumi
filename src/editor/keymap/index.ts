@@ -6,6 +6,7 @@ import { insertTable } from './insertTable';
 import { insertCodeBlock } from './insertCodeBlock';
 import { toggleTask } from './toggleTask';
 import { tableNextCell, tablePrevCell, tableExitDown, tableInsertRowBelow } from './table';
+import { wrapComment } from './wrapComment';
 
 export function markdownKeymap(): Extension {
   const tableKeys = Prec.high(
@@ -21,6 +22,7 @@ export function markdownKeymap(): Extension {
     { key: 'Mod-i', run: (view) => toggleWrap(view, '*'), preventDefault: true },
     { key: 'Mod-Shift-k', run: (view) => toggleWrap(view, '`'), preventDefault: true },
     { key: 'Mod-Shift-x', run: (view) => toggleWrap(view, '~~'), preventDefault: true },
+    { key: 'Mod-Alt-m', run: wrapComment, preventDefault: true },
     { key: 'Mod-Shift-t', run: insertTable, preventDefault: true },
     { key: 'Mod-Shift-c', run: insertCodeBlock, preventDefault: true },
     { key: 'Mod-Enter', run: toggleTask, preventDefault: true },

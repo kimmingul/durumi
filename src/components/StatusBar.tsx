@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { useDocComments } from '../hooks/useDocComments';
 import { useLanguage, t } from '../i18n/t';
 import { basenameOf } from '../utils/path';
 import { computeWordStats, WordStats } from '../utils/wordCount';
@@ -27,6 +28,7 @@ export function StatusBar() {
   useLanguage();
   const name = filePath ? basenameOf(filePath) : t('status.untitled');
   const stats = useWordStats(content);
+  const comments = useDocComments(content);
   const counters = useMemo(
     () => ({
       words: t('status.words', { count: formatNumber(stats.words) }),
@@ -40,6 +42,9 @@ export function StatusBar() {
       <span>{isDirty ? '●' : '◯'} {name}</span>
       <span className="status-bar-counters" title={`${counters.words} · ${counters.chars}`}>
         {counters.words} · {counters.chars} · {counters.reading}
+        {comments.length > 0 && (
+          <> · <span className="status-bar-comments">{t('status.comments', { count: String(comments.length) })}</span></>
+        )}
       </span>
     </div>
   );
