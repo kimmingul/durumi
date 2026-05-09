@@ -1,3 +1,4 @@
+import type { BibEntry } from './bibtex';
 import type { MemoSidecar } from './memoSidecar';
 
 export interface FileResult {
@@ -23,7 +24,7 @@ export interface Preferences {
   recentFiles: string[];
   sidebar: {
     visible: boolean;
-    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes';
+    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes' | 'references';
     width: number;
   };
   /**
@@ -68,6 +69,20 @@ export interface Preferences {
    * text, comments dropped) — the safe default for medical manuscripts.
    */
   exportPreserveAnnotations: boolean;
+  /**
+   * Bibliography / live-reference-search preferences (v0.1.6). All fields are
+   * optional from the user's perspective: with empty values the feature
+   * still works, just slower (Crossref polite pool benefits an email; NCBI
+   * E-utilities triples its rate-limit when an API key is supplied).
+   */
+  bibliography: {
+    /** Crossref polite-pool email. Empty = anonymous (slower). */
+    email: string | null;
+    /** NCBI E-utilities API key. Empty = 3 req/s; with key = 10 req/s. */
+    ncbiApiKey: string | null;
+    /** Personal ORCID iD (e.g. `0000-0002-1825-0097`). Used by Track C. */
+    orcidId: string | null;
+  };
 }
 
 export type MenuCommand =
@@ -84,8 +99,9 @@ export type MenuCommand =
   | 'toggleMemoPanel'
   | 'addMemo'
   | 'cmInsert' | 'cmDelete' | 'cmSubstitute' | 'cmHighlight' | 'cmComment'
-  | 'showMemos' | 'showChanges'
+  | 'showMemos' | 'showChanges' | 'showReferences'
   | 'nextMemo' | 'prevMemo'
+  | 'insertCitationFromDoi'
   | 'toggleExportIncludeComments' | 'toggleExportPreserveAnnotations'
   | 'exportHtml'
   | 'exportPdf'
@@ -222,6 +238,38 @@ export interface IpcApi {
   memoSidecarRead: (docPath: string) => Promise<MemoSidecar | null>;
   /** Atomically write the sidecar JSON next to the document. */
   memoSidecarWrite: (docPath: string, sidecar: MemoSidecar) => Promise<void>;
+  /**
+   * v0.1.6 Track A — DOI → BibEntry via Crossref. The renderer never makes
+   * outbound HTTP itself; main owns the User-Agent, polite-pool email, and
+   * timeout budget.
+   */
+  bibliographyResolveDoi: (
+    doi: string,
+  ) => Promise<
+    | { ok: true; entry: BibEntry }
+    | { ok: false; code: 'not-found' | 'network' | 'parse' | 'timeout' | 'rate-limit' | 'http'; message: string }
+  >;
+  /**
+   * Locate the `.bib` file we should write into for the active document.
+   * Discovery order matches `bibliographyFind` for read symmetry. When
+   * none exists, this creates `references.bib` next to the document.
+   */
+  bibliographyEnsureFile: (
+    docPath: string | null,
+  ) => Promise<{ ok: true; path: string; created: boolean } | { ok: false; error: string }>;
+  /**
+   * Append an entry to the `.bib` file at `filePath`. The caller passes a
+   * `BibEntry` whose `key` may be empty — main mints a unique key via
+   * `makeCitationKey` and returns the final value.
+   */
+  bibliographyAppendEntry: (
+    filePath: string,
+    entry: BibEntry,
+  ) => Promise<{ ok: true; key: string; path: string } | { ok: false; error: string }>;
+  /** Read + parse `.bib` so the renderer doesn't reimplement BibTeX parsing. */
+  bibliographyReadEntries: (
+    filePath: string,
+  ) => Promise<{ ok: true; entries: BibEntry[]; warnings: string[] } | { ok: false; error: string }>;
 }
 
 declare global {

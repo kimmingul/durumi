@@ -44,6 +44,11 @@ const DEFAULTS: Preferences = {
   spellCheckCustomWords: [],
   exportIncludeComments: false,
   exportPreserveAnnotations: false,
+  bibliography: {
+    email: null,
+    ncbiApiKey: null,
+    orcidId: null,
+  },
 };
 
 let cache: Preferences | null = null;
@@ -89,6 +94,10 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
     author: {
       ...DEFAULTS.author,
       ...(migrated.author ?? {}),
+    },
+    bibliography: {
+      ...DEFAULTS.bibliography,
+      ...(migrated.bibliography ?? {}),
     },
     lastWindow: {
       ...DEFAULTS.lastWindow,

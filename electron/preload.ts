@@ -82,6 +82,13 @@ const api: IpcApi = {
   memoSidecarRead: (docPath) => ipcRenderer.invoke('memoSidecar:read', docPath),
   memoSidecarWrite: (docPath, sidecar) =>
     ipcRenderer.invoke('memoSidecar:write', docPath, sidecar),
+  bibliographyResolveDoi: (doi) => ipcRenderer.invoke('bibliography:resolveDoi', doi),
+  bibliographyEnsureFile: (docPath) =>
+    ipcRenderer.invoke('bibliography:ensureFile', docPath),
+  bibliographyAppendEntry: (filePath, entry) =>
+    ipcRenderer.invoke('bibliography:appendEntry', filePath, entry),
+  bibliographyReadEntries: (filePath) =>
+    ipcRenderer.invoke('bibliography:readEntries', filePath),
   onAppRequestClose: (decide) => {
     const handler = async (_: unknown, reqId: number) => {
       let allow = false;

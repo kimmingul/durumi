@@ -6,6 +6,8 @@ import { MemoPanel } from './components/MemoPanel';
 import { QuickOpen } from './components/QuickOpen';
 import { PandocInstallDialog } from './components/PandocInstallDialog';
 import { SettingsDialog } from './components/SettingsDialog';
+import { InsertCitationDialog } from './components/InsertCitationDialog';
+import { useBibliographyStore } from './store/bibliographyStore';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
 import { useMemoPanelStore } from './store/memoPanelStore';
@@ -75,6 +77,7 @@ export function App() {
   const [macros, setMacros] = useState<Macro[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [citationDialogOpen, setCitationDialogOpen] = useState(false);
   // When Pandoc is missing, we surface a guided install dialog and remember
   // the operation that triggered it so the user can retry after installing.
   const [pandocInstallOp, setPandocInstallOp] = useState<
@@ -135,6 +138,13 @@ export function App() {
   // changes. The store handles autosaving in-memory edits with a 1s debounce.
   useEffect(() => {
     void useMemoSidecarStore.getState().loadFor(filePath);
+  }, [filePath]);
+
+  // Bind the bibliography store to the active document. Discovers the existing
+  // .bib (32-level walk) or, when none, records the path that ensureBibFile
+  // would create — both enable Cmd+Shift+B "Insert citation from DOI".
+  useEffect(() => {
+    void useBibliographyStore.getState().bindToDocument(filePath);
   }, [filePath]);
 
   // Prune orphaned sidecar entries against the live set of memo ids in the
@@ -357,6 +367,7 @@ export function App() {
       }
       if (cmd === 'quickOpen') { setQuickOpen(true); return; }
       if (cmd === 'openSettings') { setSettingsOpen(true); return; }
+      if (cmd === 'insertCitationFromDoi') { setCitationDialogOpen(true); return; }
       if (cmd === 'toggleFocusMode' && view) {
         const cur = view.state.field(focusModeField, false);
         view.dispatch({ effects: setFocusMode.of(!cur) });
@@ -534,6 +545,20 @@ export function App() {
         onRequestPandocInstall={() => {
           setSettingsOpen(false);
           setPandocInstallOp({ kind: 'configure' });
+        }}
+      />
+      <InsertCitationDialog
+        open={citationDialogOpen}
+        onClose={() => setCitationDialogOpen(false)}
+        onInsert={(citation) => {
+          const view = editorViewRef.current;
+          if (!view) return;
+          const { from, to } = view.state.selection.main;
+          view.dispatch({
+            changes: { from, to, insert: citation },
+            selection: { anchor: from + citation.length },
+          });
+          view.focus();
         }}
       />
     </div>

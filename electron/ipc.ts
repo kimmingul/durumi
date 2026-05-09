@@ -23,6 +23,10 @@ import {
 import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
+import { resolveDOI } from './bibliographyFetch';
+import { appendEntry as appendBibEntry, ensureBibFile } from './bibliographyWrite';
+import { parseBibTeX } from '@shared/bibtex';
+import type { BibEntry } from '@shared/bibtex';
 import {
   createFile,
   createFolder,
@@ -266,6 +270,50 @@ export function registerIpcHandlers(): void {
     'memoSidecar:write',
     async (_e, docPath: string, sidecar: MemoSidecar): Promise<void> =>
       writeMemoSidecar(docPath, sidecar),
+  );
+
+  ipcMain.handle('bibliography:resolveDoi', async (_e, doi: string) => {
+    const prefs = await getPreferences();
+    const r = await resolveDOI(doi, {
+      email: prefs.bibliography?.email ?? null,
+      ncbiApiKey: prefs.bibliography?.ncbiApiKey ?? null,
+    });
+    if (r.ok) return { ok: true as const, entry: r.data };
+    return { ok: false as const, code: r.code, message: r.message };
+  });
+
+  ipcMain.handle(
+    'bibliography:ensureFile',
+    async (_e, docPath: string | null) => {
+      const r = await ensureBibFile(docPath);
+      if ('error' in r) return { ok: false as const, error: r.error };
+      return { ok: true as const, path: r.path, created: r.created };
+    },
+  );
+
+  ipcMain.handle(
+    'bibliography:appendEntry',
+    async (_e, filePath: string, entry: BibEntry) => {
+      const r = await appendBibEntry(filePath, entry);
+      if (!r.ok) return { ok: false as const, error: r.error };
+      return { ok: true as const, key: r.key, path: r.path };
+    },
+  );
+
+  ipcMain.handle(
+    'bibliography:readEntries',
+    async (_e, filePath: string) => {
+      try {
+        const source = await fs.readFile(filePath, 'utf8');
+        const parsed = parseBibTeX(source);
+        return { ok: true as const, entries: parsed.entries, warnings: parsed.warnings };
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          return { ok: true as const, entries: [], warnings: [] };
+        }
+        return { ok: false as const, error: (err as Error).message };
+      }
+    },
   );
 
   ipcMain.handle('pandoc:detect', async () => {

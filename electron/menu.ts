@@ -244,6 +244,12 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           ],
         },
         { type: 'separator' },
+        {
+          label: tr('menu.review.insertCitationFromDoi'),
+          accelerator: 'CommandOrControl+Shift+B',
+          click: () => send('insertCitationFromDoi'),
+        },
+        { type: 'separator' },
         { label: tr('menu.review.showMemos'), click: () => send('showMemos') },
         { label: tr('menu.review.showChanges'), click: () => send('showChanges') },
         { type: 'separator' },

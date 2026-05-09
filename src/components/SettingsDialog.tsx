@@ -327,6 +327,72 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </Field>
           </Section>
 
+          <Section heading={t('settings.bibliography')}>
+            <Field label={t('settings.bibliography.email')}>
+              <input
+                type="email"
+                data-testid="settings-bib-email"
+                value={prefs.bibliography?.email ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  void update({
+                    bibliography: {
+                      ...prefs.bibliography,
+                      email: v.length > 0 ? v : null,
+                    },
+                  });
+                }}
+                placeholder="you@example.org"
+                style={inputStyle}
+              />
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
+                {t('settings.bibliography.email.help')}
+              </p>
+            </Field>
+            <Field label={t('settings.bibliography.ncbiKey')}>
+              <input
+                type="text"
+                data-testid="settings-bib-ncbi-key"
+                value={prefs.bibliography?.ncbiApiKey ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  void update({
+                    bibliography: {
+                      ...prefs.bibliography,
+                      ncbiApiKey: v.length > 0 ? v : null,
+                    },
+                  });
+                }}
+                placeholder={t('settings.bibliography.ncbiKey.placeholder')}
+                style={inputStyle}
+              />
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
+                {t('settings.bibliography.ncbiKey.help')}
+              </p>
+            </Field>
+            <Field label={t('settings.bibliography.orcid')}>
+              <input
+                type="text"
+                data-testid="settings-bib-orcid"
+                value={prefs.bibliography?.orcidId ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  void update({
+                    bibliography: {
+                      ...prefs.bibliography,
+                      orcidId: v.length > 0 ? v : null,
+                    },
+                  });
+                }}
+                placeholder="0000-0002-1825-0097"
+                style={inputStyle}
+              />
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
+                {t('settings.bibliography.orcid.help')}
+              </p>
+            </Field>
+          </Section>
+
           <Section heading={t('settings.spellCheck')}>
             <Field label={t('settings.spellCheck.languages')}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
