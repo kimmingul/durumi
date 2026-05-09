@@ -4,58 +4,86 @@ import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/v
 import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
 
 /**
- * Live decoration for `%%` memos. Both inline and block forms get a colored
- * sticky-note style; `%%` markers and the optional `@tag` are hidden behind
- * a chip widget when the caret is off the line so a paragraph reads cleanly,
- * but the source becomes visible the moment the caret lands on the run.
+ * Live decoration for `%%` memos.
  *
- * The chip widget colors itself per known tag (`@ai`, `@todo`, `@reviewer`,
- * `@stats`) — see the theme's CSS variables — and falls back to a neutral
- * style for arbitrary tags or untagged memos.
+ * v0.1.3 redesign: the body of a memo is no longer rendered inline in the
+ * editor. Instead, when the caret is OFF the memo's line(s) we collapse the
+ * whole `%% … %%` range to zero width and drop a small color-coded chat icon
+ * (💬) at the end of the line. Editing happens in the right-side memo panel
+ * (see `MemoPanel.tsx`); clicking the icon focuses the matching card.
+ *
+ * The active-line invariant is preserved: when the caret lands on a memo line,
+ * the source text becomes visible again — non-negotiable for IME safety and
+ * for letting power users still edit the markdown directly.
  */
-class HiddenMarkerWidget extends WidgetType {
+class ZeroWidthWidget extends WidgetType {
+  eq() { return true; }
   toDOM() {
     const s = document.createElement('span');
     s.className = 'cm-md-marker-hidden';
+    s.setAttribute('aria-hidden', 'true');
     return s;
   }
   ignoreEvent() { return true; }
 }
 
-class CommentTagChipWidget extends WidgetType {
-  constructor(private readonly tag: string) {
+class ChatIconWidget extends WidgetType {
+  constructor(
+    private readonly tag: string | null,
+    private readonly memoFrom: number,
+  ) {
     super();
   }
   eq(other: WidgetType) {
-    return other instanceof CommentTagChipWidget && other.tag === this.tag;
+    return (
+      other instanceof ChatIconWidget &&
+      other.tag === this.tag &&
+      other.memoFrom === this.memoFrom
+    );
   }
   toDOM() {
-    const span = document.createElement('span');
-    span.className = `cm-md-comment-chip cm-md-comment-chip-${tagClassFragment(this.tag)}`;
-    span.textContent = `@${this.tag}`;
-    return span;
+    const tagClass = tagClassFragment(this.tag);
+    const btn = document.createElement('span');
+    btn.className = `cm-memo-chat-icon cm-memo-chat-icon-${tagClass}`;
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('aria-label', this.tag ? `memo @${this.tag}` : 'memo');
+    btn.setAttribute('data-memo-from', String(this.memoFrom));
+    btn.textContent = '💬';
+    btn.addEventListener('mousedown', (e) => {
+      // Stop CodeMirror from re-positioning the caret to the line-end where
+      // the icon sits — we want the click to feel like a UI action, not a
+      // text-edit selection.
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ev = new CustomEvent('durumi:memo-focus', {
+        detail: { from: this.memoFrom },
+        bubbles: true,
+      });
+      btn.dispatchEvent(ev);
+    });
+    return btn;
   }
-  ignoreEvent() { return false; }
+  ignoreEvent(event: Event) {
+    // Allow click to reach our handler.
+    return event.type !== 'mousedown' && event.type !== 'click';
+  }
 }
 
 const KNOWN_TAGS = new Set(['ai', 'todo', 'reviewer', 'stats']);
 
-function tagClassFragment(tag: string): string {
+function tagClassFragment(tag: string | null): string {
+  if (!tag) return 'untagged';
   return KNOWN_TAGS.has(tag) ? tag : 'other';
 }
 
 interface CommentSpan {
   from: number;
   to: number;
-  tagFrom: number | null;
-  tagTo: number | null;
   tagText: string | null;
-  /** Range of the opening `%%` marker. */
-  openFrom: number;
-  openTo: number;
-  /** Range of the closing `%%` marker. */
-  closeFrom: number;
-  closeTo: number;
   block: boolean;
 }
 
@@ -66,48 +94,19 @@ function collectComments(state: EditorState): CommentSpan[] {
     enter(node) {
       if (node.name !== 'Comment' && node.name !== 'CommentBlock') return;
       const block = node.name === 'CommentBlock';
-      let openFrom = node.from;
-      let openTo = node.from;
-      let closeFrom = node.to;
-      let closeTo = node.to;
-      let tagFrom: number | null = null;
-      let tagTo: number | null = null;
       let tagText: string | null = null;
       let child = node.node.firstChild;
-      const marks: Array<{ from: number; to: number }> = [];
+      let markCount = 0;
       while (child) {
-        if (child.name === 'CommentMark') {
-          marks.push({ from: child.from, to: child.to });
-        } else if (child.name === 'CommentTag') {
-          tagFrom = child.from;
-          tagTo = child.to;
+        if (child.name === 'CommentMark') markCount++;
+        else if (child.name === 'CommentTag') {
           const raw = doc.sliceString(child.from, child.to).trim();
-          // Strip leading `@` and any trailing `:`.
           tagText = raw.replace(/^@/, '').replace(/:$/, '').toLowerCase();
         }
         child = child.nextSibling;
       }
-      if (marks.length >= 2) {
-        openFrom = marks[0].from;
-        openTo = marks[0].to;
-        closeFrom = marks[marks.length - 1].from;
-        closeTo = marks[marks.length - 1].to;
-      } else if (marks.length === 1) {
-        // Unbalanced — only an opening mark. Skip rendering.
-        return;
-      }
-      out.push({
-        from: node.from,
-        to: node.to,
-        tagFrom,
-        tagTo,
-        tagText,
-        openFrom,
-        openTo,
-        closeFrom,
-        closeTo,
-        block,
-      });
+      if (markCount < 2) return;
+      out.push({ from: node.from, to: node.to, tagText, block });
     },
   });
   return out;
@@ -124,40 +123,34 @@ function buildDecorations(state: EditorState): DecorationSet {
   const spans = collectComments(state);
   for (const span of spans) {
     const cursorTouches = rangeTouchesActiveLine(state, span.from, span.to);
-    const tagClass = span.tagText ? tagClassFragment(span.tagText) : 'untagged';
-    const baseClass = `cm-md-comment cm-md-comment-${tagClass}`;
+    const tagClass = tagClassFragment(span.tagText);
     if (cursorTouches) {
-      // Source mode — keep markers + tag visible, just dim them and color
-      // the body so the user knows what they're editing.
-      ranges.push(Decoration.mark({ class: 'cm-md-comment-mark' }).range(span.openFrom, span.openTo));
-      if (span.tagFrom !== null && span.tagTo !== null) {
-        ranges.push(Decoration.mark({ class: `cm-md-comment-tag-source cm-md-comment-tag-${tagClass}` }).range(span.tagFrom, span.tagTo));
-      }
-      ranges.push(Decoration.mark({ class: 'cm-md-comment-mark' }).range(span.closeFrom, span.closeTo));
-      const bodyFrom = span.tagTo ?? span.openTo;
-      const bodyTo = span.closeFrom;
-      if (bodyTo > bodyFrom) {
-        ranges.push(Decoration.mark({ class: baseClass }).range(bodyFrom, bodyTo));
-      }
+      // Active line: render the source as-is, just give the range a faint
+      // highlight so the user sees the memo they're editing. No replace, no
+      // chat icon — they're inside the markdown.
+      ranges.push(
+        Decoration.mark({ class: `cm-memo-active cm-memo-active-${tagClass}` }).range(
+          span.from,
+          span.to,
+        ),
+      );
       continue;
     }
-    // Off-line: hide opening `%%`, replace tag with a colored chip widget,
-    // mark the body, hide closing `%%`.
+    // Off-line: hide the whole `%% … %%` range with a single zero-width
+    // replacement, then drop a chat icon at the line-end (after the closing
+    // `%%`). For block-form memos this means the icon lands at the end of
+    // the closing-`%%` line.
     ranges.push(
-      Decoration.replace({ widget: new HiddenMarkerWidget() }).range(span.openFrom, span.openTo),
+      Decoration.replace({ widget: new ZeroWidthWidget(), block: false }).range(
+        span.from,
+        span.to,
+      ),
     );
-    if (span.tagFrom !== null && span.tagTo !== null && span.tagText) {
-      ranges.push(
-        Decoration.replace({ widget: new CommentTagChipWidget(span.tagText) }).range(span.tagFrom, span.tagTo),
-      );
-    }
-    const bodyFrom = span.tagTo ?? span.openTo;
-    const bodyTo = span.closeFrom;
-    if (bodyTo > bodyFrom) {
-      ranges.push(Decoration.mark({ class: baseClass }).range(bodyFrom, bodyTo));
-    }
     ranges.push(
-      Decoration.replace({ widget: new HiddenMarkerWidget() }).range(span.closeFrom, span.closeTo),
+      Decoration.widget({
+        widget: new ChatIconWidget(span.tagText, span.from),
+        side: 1,
+      }).range(span.to),
     );
   }
   ranges.sort((a, b) => a.from - b.from || a.to - b.to);
@@ -180,74 +173,49 @@ export function commentDecoration(): Extension {
 }
 
 export const commentTheme = EditorView.theme({
-  '.cm-md-comment': {
-    background: 'var(--cm-comment-bg, rgba(255, 235, 130, 0.35))',
-    borderRadius: '3px',
-    padding: '0 2px',
-  },
-  '.cm-md-comment-mark': {
-    color: 'var(--cm-comment-mark, rgba(120, 110, 0, 0.55))',
-    opacity: '0.6',
-  },
-  '.cm-md-comment-tag-source': {
-    fontWeight: '600',
-  },
-  // Tag-specific tints: ai = blue, todo = orange, reviewer = green, stats = purple, other = gray.
-  '.cm-md-comment-ai': {
-    background: 'var(--cm-comment-ai-bg, rgba(64, 124, 220, 0.18))',
-  },
-  '.cm-md-comment-tag-ai': {
-    color: 'var(--cm-comment-ai-fg, #2553a0)',
-  },
-  '.cm-md-comment-todo': {
-    background: 'var(--cm-comment-todo-bg, rgba(228, 137, 36, 0.20))',
-  },
-  '.cm-md-comment-tag-todo': {
-    color: 'var(--cm-comment-todo-fg, #a55c15)',
-  },
-  '.cm-md-comment-reviewer': {
-    background: 'var(--cm-comment-reviewer-bg, rgba(46, 160, 67, 0.20))',
-  },
-  '.cm-md-comment-tag-reviewer': {
-    color: 'var(--cm-comment-reviewer-fg, #1f7a35)',
-  },
-  '.cm-md-comment-stats': {
-    background: 'var(--cm-comment-stats-bg, rgba(140, 80, 200, 0.20))',
-  },
-  '.cm-md-comment-tag-stats': {
-    color: 'var(--cm-comment-stats-fg, #6a3f9c)',
-  },
-  '.cm-md-comment-other, .cm-md-comment-untagged': {
-    background: 'var(--cm-comment-bg, rgba(180, 180, 180, 0.20))',
-  },
-  '.cm-md-comment-tag-other': {
-    color: 'var(--cm-comment-other-fg, #555)',
-  },
-  '.cm-md-comment-chip': {
-    fontFamily: 'var(--cm-mono, ui-monospace, monospace)',
-    fontSize: '0.78em',
-    padding: '0 5px',
+  '.cm-memo-chat-icon': {
+    display: 'inline-block',
+    fontSize: '0.85em',
+    padding: '0 4px',
+    marginLeft: '4px',
     borderRadius: '8px',
-    marginRight: '3px',
-    fontWeight: '600',
-    background: 'var(--cm-comment-chip-bg, rgba(180, 180, 180, 0.30))',
-    color: 'var(--cm-comment-chip-fg, #444)',
-    cursor: 'default',
+    cursor: 'pointer',
+    userSelect: 'none',
+    background: 'var(--cm-memo-chat-other-bg, rgba(180, 180, 180, 0.25))',
+    verticalAlign: 'middle',
   },
-  '.cm-md-comment-chip-ai': {
-    background: 'rgba(64, 124, 220, 0.25)',
-    color: '#1c3e7a',
+  '.cm-memo-chat-icon:hover': {
+    filter: 'brightness(0.95)',
   },
-  '.cm-md-comment-chip-todo': {
-    background: 'rgba(228, 137, 36, 0.30)',
-    color: '#7a420f',
+  '.cm-memo-chat-icon-ai': {
+    background: 'var(--cm-memo-chat-ai-bg, rgba(64, 124, 220, 0.25))',
   },
-  '.cm-md-comment-chip-reviewer': {
-    background: 'rgba(46, 160, 67, 0.30)',
-    color: '#15522a',
+  '.cm-memo-chat-icon-todo': {
+    background: 'var(--cm-memo-chat-todo-bg, rgba(228, 137, 36, 0.30))',
   },
-  '.cm-md-comment-chip-stats': {
-    background: 'rgba(140, 80, 200, 0.25)',
-    color: '#4d2a78',
+  '.cm-memo-chat-icon-reviewer': {
+    background: 'var(--cm-memo-chat-reviewer-bg, rgba(46, 160, 67, 0.30))',
+  },
+  '.cm-memo-chat-icon-stats': {
+    background: 'var(--cm-memo-chat-stats-bg, rgba(140, 80, 200, 0.25))',
+  },
+  '.cm-memo-chat-icon-other, .cm-memo-chat-icon-untagged': {
+    background: 'var(--cm-memo-chat-other-bg, rgba(180, 180, 180, 0.25))',
+  },
+  '.cm-memo-active': {
+    background: 'var(--cm-memo-active-bg, rgba(255, 235, 130, 0.25))',
+    borderRadius: '3px',
+  },
+  '.cm-memo-active-ai': {
+    background: 'var(--cm-memo-active-ai-bg, rgba(64, 124, 220, 0.15))',
+  },
+  '.cm-memo-active-todo': {
+    background: 'var(--cm-memo-active-todo-bg, rgba(228, 137, 36, 0.18))',
+  },
+  '.cm-memo-active-reviewer': {
+    background: 'var(--cm-memo-active-reviewer-bg, rgba(46, 160, 67, 0.18))',
+  },
+  '.cm-memo-active-stats': {
+    background: 'var(--cm-memo-active-stats-bg, rgba(140, 80, 200, 0.18))',
   },
 });

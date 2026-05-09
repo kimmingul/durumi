@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { MarkdownEditor } from './editor/MarkdownEditor';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
+import { MemoPanel } from './components/MemoPanel';
 import { QuickOpen } from './components/QuickOpen';
 import { PandocInstallDialog } from './components/PandocInstallDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
+import { useMemoPanelStore } from './store/memoPanelStore';
+import { useMemoCaretFocus } from './hooks/useMemoCaretFocus';
+import { parseComments } from '../shared/comments';
 import type { Macro, MenuCommand } from '@shared/ipc-contract';
 import { EditorView } from '@codemirror/view';
 import { focusModeField, setFocusMode, setTypewriterMode, typewriterModeField } from './editor/viewModes';
@@ -51,6 +55,11 @@ export function App() {
   const updateGitStatus = useSidebarStore((s) => s.updateGitStatus);
   const toggleSidebarVisible = useSidebarStore((s) => s.toggleVisible);
   const showWith = useSidebarStore((s) => s.showWith);
+  const memoPanelManuallyHidden = useMemoPanelStore((s) => s.manuallyHidden);
+  const setMemoPanelManuallyHidden = useMemoPanelStore((s) => s.setManuallyHidden);
+  const toggleMemoPanel = useMemoPanelStore((s) => s.toggle);
+  const setMemoPanelFocusedFrom = useMemoPanelStore((s) => s.setFocusedFrom);
+  const setMemoPanelWidth = useMemoPanelStore((s) => s.setWidth);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -94,8 +103,42 @@ export function App() {
           width: prefs.sidebar.width,
         });
       }
+      if (prefs.memoPanel) {
+        setMemoPanelWidth(prefs.memoPanel.width);
+      }
     });
-  }, [setThemePreference, setWorkspaceFolders, updateGitStatus, setLang]);
+  }, [setThemePreference, setWorkspaceFolders, updateGitStatus, setLang, setMemoPanelWidth]);
+
+  // Reset the per-session "manually hidden" flag whenever the user opens or
+  // creates a different file. Otherwise closing the panel on doc A would
+  // leave it hidden when they switch to doc B that has many memos.
+  useEffect(() => {
+    setMemoPanelManuallyHidden(false);
+  }, [filePath, setMemoPanelManuallyHidden]);
+
+  // Listen for `durumi:memo-focus` events bubbling out of the editor's chat
+  // icons. Forward to the panel store so the matching card scrolls + pulses.
+  useEffect(() => {
+    function onMemoFocus(e: Event) {
+      const ev = e as CustomEvent<{ from: number }>;
+      // If the user closed the panel earlier this session, clicking an icon
+      // should reopen it.
+      setMemoPanelManuallyHidden(false);
+      setMemoPanelFocusedFrom(ev.detail?.from ?? null);
+    }
+    function onMemoPanelToggle() {
+      toggleMemoPanel();
+    }
+    window.addEventListener('durumi:memo-focus', onMemoFocus as EventListener);
+    window.addEventListener('durumi:memo-panel-toggle', onMemoPanelToggle as EventListener);
+    return () => {
+      window.removeEventListener('durumi:memo-focus', onMemoFocus as EventListener);
+      window.removeEventListener('durumi:memo-panel-toggle', onMemoPanelToggle as EventListener);
+    };
+  }, [setMemoPanelFocusedFrom, setMemoPanelManuallyHidden, toggleMemoPanel]);
+
+  // Auto-focus the matching card when the caret lands on a memo's line.
+  useMemoCaretFocus(editorViewRef.current, content);
 
   // Re-fetch git status when the main process broadcasts an invalidation.
   useEffect(() => {
@@ -231,6 +274,7 @@ export function App() {
         return;
       }
       if (cmd === 'toggleSidebar') { toggleSidebarVisible(); return; }
+      if (cmd === 'toggleMemoPanel') { toggleMemoPanel(); return; }
       if (cmd === 'showFiles') { showWith('files'); return; }
       if (cmd === 'showOutline') { showWith('outline'); return; }
       if (cmd === 'showSearch') { showWith('search'); return; }
@@ -295,7 +339,7 @@ export function App() {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filePath, content, isDirty, themePreference, addFolder, removeFolder, updateGitStatus, toggleSidebarVisible, showWith]);
+  }, [filePath, content, isDirty, themePreference, addFolder, removeFolder, updateGitStatus, toggleSidebarVisible, showWith, toggleMemoPanel]);
 
   useEffect(() => {
     return window.api.onAppRequestClose(async () => {
@@ -374,6 +418,12 @@ export function App() {
             macros={macros}
           />
         </div>
+        <MemoPanel
+          view={editorViewRef.current}
+          content={content}
+          visible={parseComments(content).length > 0 && !memoPanelManuallyHidden}
+          onClose={() => setMemoPanelManuallyHidden(true)}
+        />
       </div>
       <StatusBar />
       <QuickOpen

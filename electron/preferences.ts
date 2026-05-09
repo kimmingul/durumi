@@ -15,6 +15,9 @@ const DEFAULTS: Preferences = {
     activeTab: 'files',
     width: 240,
   },
+  memoPanel: {
+    width: 320,
+  },
   workspaceFolders: [],
   pandocPath: null,
   docxStyleReference: null,
@@ -59,6 +62,10 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
     sidebar: {
       ...DEFAULTS.sidebar,
       ...(migrated.sidebar ?? {}),
+    },
+    memoPanel: {
+      ...DEFAULTS.memoPanel,
+      ...(migrated.memoPanel ?? {}),
     },
     lastWindow: {
       ...DEFAULTS.lastWindow,

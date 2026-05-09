@@ -21,6 +21,14 @@ export interface Preferences {
     activeTab: 'files' | 'outline' | 'search' | 'comments';
     width: number;
   };
+  /**
+   * Right-side memo chat panel (v0.1.3). Width is persisted; visibility is
+   * derived at render time from `(memos.length > 0) && !manuallyHidden` and
+   * `manuallyHidden` itself is per-session (intentionally not persisted).
+   */
+  memoPanel: {
+    width: number;
+  };
   workspaceFolders: string[];
   /** Optional explicit path to the pandoc binary; null = auto-detect on PATH. */
   pandocPath: string | null;
@@ -51,6 +59,7 @@ export type MenuCommand =
   | 'strikethrough' | 'insertTable' | 'toggleTask' | 'codeBlock'
   | 'openFolder' | 'toggleSidebar' | 'showFiles' | 'showOutline' | 'showSearch' | 'quickOpen'
   | 'toggleFocusMode' | 'toggleTypewriterMode'
+  | 'toggleMemoPanel'
   | 'exportHtml'
   | 'exportPdf'
   | 'exportDocx'

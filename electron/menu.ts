@@ -209,6 +209,7 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
         { label: tr('menu.view.showFiles'), accelerator: 'CommandOrControl+Shift+E', click: () => send('showFiles') },
         { label: tr('menu.view.showOutline'), accelerator: 'CommandOrControl+Shift+O', click: () => send('showOutline') },
         { label: tr('menu.view.showSearch'), accelerator: 'CommandOrControl+Shift+F', click: () => send('showSearch') },
+        { label: tr('menu.view.toggleMemoPanel'), accelerator: 'CommandOrControl+Shift+M', click: () => send('toggleMemoPanel') },
         { label: tr('menu.file.quickOpen'), accelerator: 'CommandOrControl+P', click: () => send('quickOpen') },
         { type: 'separator' },
         { label: tr('menu.view.focusMode'), accelerator: 'F8', click: () => send('toggleFocusMode') },

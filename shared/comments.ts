@@ -215,6 +215,67 @@ export function promoteComments(src: string): string {
 }
 
 /**
+ * Splices a new `%% … %%` block into `src` at the position of `memo`, with the
+ * tag and body coming from `edit`.
+ *
+ * Form selection is automatic:
+ *   - body contains `\n` → block form `%%\n[@tag\n]body\n%%`
+ *   - else               → inline `%% [@tag ]body %%`
+ *
+ * Tag handling (deliberate three-state):
+ *   - `tag === undefined` → keep `memo.tag`
+ *   - `tag === null`      → drop the tag
+ *   - `tag === '<name>'`  → set to that tag (lowercased; `@` and trailing `:`
+ *     stripped if the caller accidentally included them)
+ *
+ * Validation: an empty/whitespace-only body is a no-op (returns the original
+ * source + the memo's existing range). Callers should treat that as "delete
+ * the memo" and use a different code path.
+ */
+export interface MemoEdit {
+  /** undefined = keep existing, null = remove tag, string = set tag. */
+  tag?: string | null;
+  body: string;
+}
+export interface ReplaceResult {
+  newSrc: string;
+  newRange: { from: number; to: number };
+}
+export function replaceMemo(src: string, memo: Comment, edit: MemoEdit): ReplaceResult {
+  const trimmedBody = edit.body.trim();
+  if (trimmedBody.length === 0) {
+    return { newSrc: src, newRange: { from: memo.from, to: memo.to } };
+  }
+  const nextTag: string | null =
+    edit.tag === undefined
+      ? memo.tag
+      : edit.tag === null
+        ? null
+        : normalizeTag(edit.tag);
+  const replacement = buildMemoText(nextTag, trimmedBody);
+  const newSrc = src.slice(0, memo.from) + replacement + src.slice(memo.to);
+  return {
+    newSrc,
+    newRange: { from: memo.from, to: memo.from + replacement.length },
+  };
+}
+
+function normalizeTag(raw: string): string | null {
+  const stripped = raw.trim().replace(/^@+/, '').replace(/:$/, '').toLowerCase();
+  return stripped.length > 0 ? stripped : null;
+}
+
+function buildMemoText(tag: string | null, body: string): string {
+  const hasNewline = body.includes('\n');
+  if (hasNewline) {
+    const tagLine = tag ? `@${tag}\n` : '';
+    return `%%\n${tagLine}${body}\n%%`;
+  }
+  const tagPart = tag ? `@${tag} ` : '';
+  return `%% ${tagPart}${body} %%`;
+}
+
+/**
  * Apply `transform` to each parsed memo, returning a new source string with
  * the original memo ranges replaced by the transform's output. Operates from
  * the END of the document toward the start so byte offsets stay valid as we

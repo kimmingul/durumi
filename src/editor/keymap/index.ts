@@ -23,6 +23,18 @@ export function markdownKeymap(): Extension {
     { key: 'Mod-Shift-k', run: (view) => toggleWrap(view, '`'), preventDefault: true },
     { key: 'Mod-Shift-x', run: (view) => toggleWrap(view, '~~'), preventDefault: true },
     { key: 'Mod-Alt-m', run: wrapComment, preventDefault: true },
+    {
+      key: 'Mod-Shift-m',
+      run: () => {
+        // Fire a DOM-level event so App.tsx (which owns the store) can pick
+        // it up regardless of which surface has focus. Keymap doesn't have
+        // direct access to the React store, and we deliberately avoid
+        // importing the store here so the editor module stays pure.
+        window.dispatchEvent(new CustomEvent('durumi:memo-panel-toggle'));
+        return true;
+      },
+      preventDefault: true,
+    },
     { key: 'Mod-Shift-t', run: insertTable, preventDefault: true },
     { key: 'Mod-Shift-c', run: insertCodeBlock, preventDefault: true },
     { key: 'Mod-Enter', run: toggleTask, preventDefault: true },

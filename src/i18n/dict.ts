@@ -46,6 +46,7 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'menu.view.toggleTheme': 'Toggle Theme',
     'menu.view.toggleSourceMode': 'Toggle Source Mode',
     'menu.view.toggleSidebar': 'Toggle Sidebar',
+    'menu.view.toggleMemoPanel': 'Toggle Memo Panel',
     'menu.view.showFiles': 'Show Files',
     'menu.view.showOutline': 'Show Outline',
     'menu.view.openCustomCss': 'Open Custom CSS…',
@@ -121,6 +122,17 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'status.comments': '{count} memos',
     'comment.untagged': 'memo',
 
+    // Memo chat panel (right column, v0.1.3)
+    'memo.panel.title': 'Memos',
+    'memo.panel.empty': 'No memos yet',
+    'memo.panel.toggle': 'Toggle memo panel',
+    'memo.panel.close': 'Close memo panel',
+    'memo.card.delete': 'Delete',
+    'memo.card.tagPlaceholder': '(no tag)',
+    'memo.card.customTag': 'Custom…',
+    'memo.card.customTagPrompt': 'Custom tag (without the @):',
+    'memo.card.bodyPlaceholder': 'Memo body…',
+
     // Settings dialog
     'settings.title': 'Settings',
     'settings.close': 'Close',
@@ -193,6 +205,7 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'menu.view.toggleTheme': '테마 전환',
     'menu.view.toggleSourceMode': '소스 모드 전환',
     'menu.view.toggleSidebar': '사이드바 전환',
+    'menu.view.toggleMemoPanel': '메모 패널 전환',
     'menu.view.showFiles': '파일 보기',
     'menu.view.showOutline': '목차 보기',
     'menu.view.openCustomCss': '사용자 CSS 열기…',
@@ -267,6 +280,17 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'status.reading': '~{count}분 읽기',
     'status.comments': '{count}개 메모',
     'comment.untagged': '메모',
+
+    // Memo chat panel (right column, v0.1.3)
+    'memo.panel.title': '메모',
+    'memo.panel.empty': '메모 없음',
+    'memo.panel.toggle': '메모 패널 전환',
+    'memo.panel.close': '메모 패널 닫기',
+    'memo.card.delete': '삭제',
+    'memo.card.tagPlaceholder': '(태그 없음)',
+    'memo.card.customTag': '사용자 정의…',
+    'memo.card.customTagPrompt': '사용자 정의 태그 (앞의 @는 생략):',
+    'memo.card.bodyPlaceholder': '메모 내용…',
 
     // Settings dialog
     'settings.title': '설정',
