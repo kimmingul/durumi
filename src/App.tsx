@@ -21,6 +21,15 @@ import { setHeading } from './editor/keymap/setHeading';
 import { insertTable as insertTableHelper } from './editor/keymap/insertTable';
 import { insertCodeBlock as insertCodeBlockHelper } from './editor/keymap/insertCodeBlock';
 import { toggleTask as toggleTaskHelper } from './editor/keymap/toggleTask';
+import { wrapComment } from './editor/keymap/wrapComment';
+import {
+  wrapCmInsert,
+  wrapCmDelete,
+  wrapCmSubstitute,
+  wrapCmHighlight,
+  wrapCmComment,
+} from './editor/keymap/wrapCriticMarkup';
+import { nextMemo, prevMemo } from './editor/keymap/memoNav';
 import { openSearch, openSearchAndReplace, gotoNext, gotoPrev } from './editor/openSearch';
 import { renderHtml } from './export/renderHtml';
 import { promoteComments, stripComments } from '../shared/comments';
@@ -326,6 +335,26 @@ export function App() {
       if (cmd === 'showFiles') { showWith('files'); return; }
       if (cmd === 'showOutline') { showWith('outline'); return; }
       if (cmd === 'showSearch') { showWith('search'); return; }
+      if (cmd === 'showMemos') { showWith('comments'); return; }
+      if (cmd === 'showChanges') { showWith('changes'); return; }
+      if (cmd === 'addMemo' && view) { wrapComment(view); view.focus(); return; }
+      if (cmd === 'cmInsert' && view) { wrapCmInsert(view); view.focus(); return; }
+      if (cmd === 'cmDelete' && view) { wrapCmDelete(view); view.focus(); return; }
+      if (cmd === 'cmSubstitute' && view) { wrapCmSubstitute(view); view.focus(); return; }
+      if (cmd === 'cmHighlight' && view) { wrapCmHighlight(view); view.focus(); return; }
+      if (cmd === 'cmComment' && view) { wrapCmComment(view); view.focus(); return; }
+      if (cmd === 'nextMemo' && view) { nextMemo(view); view.focus(); return; }
+      if (cmd === 'prevMemo' && view) { prevMemo(view); view.focus(); return; }
+      if (cmd === 'toggleExportIncludeComments') {
+        const prefs = await window.api.prefsGet();
+        await window.api.prefsSet({ exportIncludeComments: !prefs.exportIncludeComments });
+        return;
+      }
+      if (cmd === 'toggleExportPreserveAnnotations') {
+        const prefs = await window.api.prefsGet();
+        await window.api.prefsSet({ exportPreserveAnnotations: !prefs.exportPreserveAnnotations });
+        return;
+      }
       if (cmd === 'quickOpen') { setQuickOpen(true); return; }
       if (cmd === 'openSettings') { setSettingsOpen(true); return; }
       if (cmd === 'toggleFocusMode' && view) {

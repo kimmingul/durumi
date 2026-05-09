@@ -8,7 +8,7 @@ import { registerAutoUpdater } from './autoUpdater';
 import { getCustomCss, watchCustomCss } from './customCss';
 import { getMacros, watchMacros } from './macros';
 import { attachCloseGuard } from './closeGuard';
-import { attachSpellCheck } from './spellCheck';
+import { attachContextMenu } from './contextMenu';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,7 +49,7 @@ async function createWindow(prefsOverride?: Awaited<ReturnType<typeof getPrefere
     onCancel: () => { isAppQuitting = false; },
   });
 
-  void attachSpellCheck(win);
+  void attachContextMenu(win);
 
   win.webContents.on('did-finish-load', () => {
     const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
