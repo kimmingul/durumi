@@ -1,9 +1,24 @@
 import { app } from 'electron';
 import { promises as fs } from 'node:fs';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import type { Preferences } from '@shared/ipc-contract';
 
 const FILE = () => join(app.getPath('userData'), 'preferences.json');
+
+/**
+ * Best-effort OS username lookup. `os.userInfo()` throws on some non-POSIX
+ * setups (e.g. when no passwd entry is found); fall back to "Anonymous" so
+ * the rest of the app keeps working.
+ */
+function osDisplayName(): string {
+  try {
+    const u = userInfo({ encoding: 'utf8' }).username;
+    return u && u.length > 0 ? u : 'Anonymous';
+  } catch {
+    return 'Anonymous';
+  }
+}
 
 const DEFAULTS: Preferences = {
   theme: 'system',
@@ -17,7 +32,10 @@ const DEFAULTS: Preferences = {
   },
   memoPanel: {
     width: 320,
+    hideResolvedDefault: true,
+    groupBy: 'line',
   },
+  author: { name: osDisplayName() },
   workspaceFolders: [],
   pandocPath: null,
   docxStyleReference: null,
@@ -66,6 +84,10 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
     memoPanel: {
       ...DEFAULTS.memoPanel,
       ...(migrated.memoPanel ?? {}),
+    },
+    author: {
+      ...DEFAULTS.author,
+      ...(migrated.author ?? {}),
     },
     lastWindow: {
       ...DEFAULTS.lastWindow,

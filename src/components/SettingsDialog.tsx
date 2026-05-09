@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLanguage, t, resolveRendererLang } from '../i18n/t';
 import { usePreferences } from '../hooks/usePreferences';
 import { useAppStore } from '../store/appStore';
+import { useMemoSidecarStore } from '../store/memoSidecarStore';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -287,6 +288,28 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   {t('settings.export.includeComments.help')}
                 </span>
               </label>
+            </Field>
+          </Section>
+
+          <Section heading={t('settings.author')}>
+            <Field label={t('settings.author.name')}>
+              <input
+                type="text"
+                data-testid="settings-author-name"
+                value={prefs.author?.name ?? ''}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  // Mirror into the in-memory sidecar store so newly created
+                  // replies pick up the new author without waiting for a reload.
+                  useMemoSidecarStore.getState().setAuthor(next);
+                  void update({ author: { name: next } });
+                }}
+                placeholder={t('settings.author.help')}
+                style={inputStyle}
+              />
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
+                {t('settings.author.help')}
+              </p>
             </Field>
           </Section>
 

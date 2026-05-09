@@ -1,3 +1,5 @@
+import type { MemoSidecar } from './memoSidecar';
+
 export interface FileResult {
   path: string;
   content: string;
@@ -11,6 +13,9 @@ export interface Macro {
 
 export type DiscardChoice = 'save' | 'discard' | 'cancel';
 
+/** Card grouping modes for the memo chat panel (v0.1.4). */
+export type MemoGroupBy = 'line' | 'tag' | 'author' | 'status';
+
 export interface Preferences {
   theme: 'system' | 'light' | 'dark';
   language: 'system' | 'en' | 'ko';
@@ -22,13 +27,22 @@ export interface Preferences {
     width: number;
   };
   /**
-   * Right-side memo chat panel (v0.1.3). Width is persisted; visibility is
-   * derived at render time from `(memos.length > 0) && !manuallyHidden` and
+   * Right-side memo chat panel. `width` is persisted; visibility is derived
+   * at render time from `(memos.length > 0) && !manuallyHidden` and
    * `manuallyHidden` itself is per-session (intentionally not persisted).
+   * v0.1.4 adds `hideResolvedDefault` (initial state of the toggle when a
+   * doc opens) and `groupBy` (initial grouping mode).
    */
   memoPanel: {
     width: number;
+    hideResolvedDefault: boolean;
+    groupBy: MemoGroupBy;
   };
+  /**
+   * Author identity used as the default `createdBy` for memo metadata and
+   * thread replies. Defaults to the OS username (set by main on first run).
+   */
+  author: { name: string };
   workspaceFolders: string[];
   /** Optional explicit path to the pandoc binary; null = auto-detect on PATH. */
   pandocPath: string | null;
@@ -187,6 +201,14 @@ export interface IpcApi {
   filesDuplicate: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   filesTrash: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   filesReveal: (path: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /**
+   * Read the `<docPath>.comments.json` sidecar metadata. Returns `null` when
+   * the file is missing or malformed; callers should fall back to an empty
+   * sidecar in that case.
+   */
+  memoSidecarRead: (docPath: string) => Promise<MemoSidecar | null>;
+  /** Atomically write the sidecar JSON next to the document. */
+  memoSidecarWrite: (docPath: string, sidecar: MemoSidecar) => Promise<void>;
 }
 
 declare global {

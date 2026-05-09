@@ -9,6 +9,8 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
 import { useMemoPanelStore } from './store/memoPanelStore';
+import { useMemoSidecarStore } from './store/memoSidecarStore';
+import { memoIdFor, pruneOrphans } from '../shared/memoSidecar';
 import { useMemoCaretFocus } from './hooks/useMemoCaretFocus';
 import { parseComments } from '../shared/comments';
 import type { Macro, MenuCommand } from '@shared/ipc-contract';
@@ -106,6 +108,9 @@ export function App() {
       if (prefs.memoPanel) {
         setMemoPanelWidth(prefs.memoPanel.width);
       }
+      if (prefs.author?.name) {
+        useMemoSidecarStore.getState().setAuthor(prefs.author.name);
+      }
     });
   }, [setThemePreference, setWorkspaceFolders, updateGitStatus, setLang, setMemoPanelWidth]);
 
@@ -115,6 +120,25 @@ export function App() {
   useEffect(() => {
     setMemoPanelManuallyHidden(false);
   }, [filePath, setMemoPanelManuallyHidden]);
+
+  // Load the per-document memo sidecar metadata whenever the file path
+  // changes. The store handles autosaving in-memory edits with a 1s debounce.
+  useEffect(() => {
+    void useMemoSidecarStore.getState().loadFor(filePath);
+  }, [filePath]);
+
+  // Prune orphaned sidecar entries against the live set of memo ids in the
+  // current source. Runs on every parsed-content change with a 7-day grace
+  // window so an undo can still bring memos (and their threads) back.
+  useEffect(() => {
+    const memos = parseComments(content);
+    const ids = new Set(memos.map((m) => memoIdFor(m)));
+    const cur = useMemoSidecarStore.getState().sidecar;
+    const next = pruneOrphans(cur, ids, new Date());
+    if (next !== cur) {
+      useMemoSidecarStore.getState().setSidecar(next, true);
+    }
+  }, [content]);
 
   // Listen for `durumi:memo-focus` events bubbling out of the editor's chat
   // icons. Forward to the panel store so the matching card scrolls + pulses.
@@ -155,12 +179,19 @@ export function App() {
   async function doSave(): Promise<boolean> {
     if (filePath) {
       await window.api.fileSave(filePath, content);
+      // Force-flush any pending sidecar edits next to the document so a Cmd+S
+      // never leaves thread/resolved changes in memory only.
+      await useMemoSidecarStore.getState().saveIfDirty();
       markClean();
       return true;
     }
     const r = await window.api.fileSaveAs(content, 'untitled.md');
     if (!r) return false;
     setFile(r.path, content);
+    // After Save As, re-bind the sidecar to the new path so subsequent edits
+    // land alongside the just-saved document.
+    await useMemoSidecarStore.getState().loadFor(r.path);
+    await useMemoSidecarStore.getState().saveIfDirty();
     markClean();
     return true;
   }

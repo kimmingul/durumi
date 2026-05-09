@@ -1,7 +1,9 @@
 import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { promises as fs } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { DiscardChoice, FilePickerOptions, FileResult, Preferences } from '@shared/ipc-contract';
+import { type MemoSidecar, parseSidecar } from '@shared/memoSidecar';
 import { addRecentFile, getPreferences, setPreferences } from './preferences';
 import { listDirectory, watchRoot, unwatchRoot, unwatchAllRoots, openFolderDialog } from './fs';
 import { exportToPdf } from './pdf';
@@ -70,6 +72,49 @@ export function findOwningRoot(savedPath: string, roots: readonly string[]): str
 function broadcastGitStatusInvalidated(root: string): void {
   for (const w of BrowserWindow.getAllWindows()) {
     w.webContents.send('git:status:invalidated', root);
+  }
+}
+
+/** Path of the sidecar JSON living next to a markdown document. */
+export function memoSidecarPathFor(docPath: string): string {
+  return `${docPath}.comments.json`;
+}
+
+/**
+ * Read the sidecar that sits next to `docPath`. Returns null when the file
+ * does not exist or is malformed — callers fall back to an empty sidecar.
+ */
+export async function readMemoSidecar(docPath: string): Promise<MemoSidecar | null> {
+  const sidecarPath = memoSidecarPathFor(docPath);
+  try {
+    const raw = await fs.readFile(sidecarPath, 'utf8');
+    return parseSidecar(raw);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    return null;
+  }
+}
+
+/**
+ * Write the sidecar atomically: tmp file in the same directory, then rename.
+ * The same-directory tmp guarantees the rename is atomic on POSIX.
+ */
+export async function writeMemoSidecar(
+  docPath: string,
+  sidecar: MemoSidecar,
+): Promise<void> {
+  const sidecarPath = memoSidecarPathFor(docPath);
+  const tmpPath = `${sidecarPath}.tmp-${process.pid}-${Date.now()}`;
+  const dir = dirname(sidecarPath);
+  await fs.mkdir(dir, { recursive: true });
+  const json = JSON.stringify(sidecar, null, 2);
+  await fs.writeFile(tmpPath, json, 'utf8');
+  try {
+    await fs.rename(tmpPath, sidecarPath);
+  } catch (err) {
+    // Best-effort cleanup on rename failure.
+    await fs.unlink(tmpPath).catch(() => {});
+    throw err;
   }
 }
 
@@ -211,6 +256,17 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('files:duplicate', async (_e, path: string) => duplicateFile(path));
   ipcMain.handle('files:trash', async (_e, path: string) => moveToTrash(path));
   ipcMain.handle('files:reveal', async (_e, path: string) => revealInFolder(path));
+
+  ipcMain.handle(
+    'memoSidecar:read',
+    async (_e, docPath: string): Promise<MemoSidecar | null> => readMemoSidecar(docPath),
+  );
+
+  ipcMain.handle(
+    'memoSidecar:write',
+    async (_e, docPath: string, sidecar: MemoSidecar): Promise<void> =>
+      writeMemoSidecar(docPath, sidecar),
+  );
 
   ipcMain.handle('pandoc:detect', async () => {
     const prefs = await getPreferences();

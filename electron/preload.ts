@@ -79,6 +79,9 @@ const api: IpcApi = {
   filesDuplicate: (path) => ipcRenderer.invoke('files:duplicate', path),
   filesTrash: (path) => ipcRenderer.invoke('files:trash', path),
   filesReveal: (path) => ipcRenderer.invoke('files:reveal', path),
+  memoSidecarRead: (docPath) => ipcRenderer.invoke('memoSidecar:read', docPath),
+  memoSidecarWrite: (docPath, sidecar) =>
+    ipcRenderer.invoke('memoSidecar:write', docPath, sidecar),
   onAppRequestClose: (decide) => {
     const handler = async (_: unknown, reqId: number) => {
       let allow = false;
