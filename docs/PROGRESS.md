@@ -1,6 +1,72 @@
 # Durumi — Progress
 
-## v0.1.2 (current) — Manuscript Studio v1
+## v0.1.4 (current) — Memo maturation + CriticMarkup
+
+The post-v0.1.2 line of work split into three commits across two minor releases. Together they evolve the memo system from a flat list of `%% %%` annotations into a Word-style review surface with author identity, threading, resolution state, and grouping — and add a full CriticMarkup track-changes notation alongside it. Every code path remains backward compatible: a v0.1.2 document with no sidecar and no `{++ ++}` markers continues to render byte-identically.
+
+### v0.1.3 — MS Word-style memo chat panel (commit `ca61824`)
+
+- The memo body text is now hidden inline; a right-side **chat panel** shows each memo as a Word-style card on its own row, vertically aligned with the source line.
+- The line-end marker collapses to a small color-coded `💬` icon. Clicking it focuses the matching card.
+- Panel auto-shows when the document has at least one memo. The user can dismiss it for the session via the panel's `×` button. `Cmd/Ctrl + Shift + M` toggles.
+- Each card has a tag dropdown (`@ai` / `@todo` / `@reviewer` / `@stats` / no-tag / custom), an auto-grow textarea, and a delete button. Edits sync card ↔ markdown source through a 300 ms debounce.
+- New `replaceMemo()` helper in `shared/comments.ts` auto-promotes inline ↔ block depending on whether the body picked up a newline.
+- Source `%% memo %%` syntax, sidebar 메모 tab, status bar count, `Cmd + Alt + M` wrap shortcut, and export-strip safety are all unchanged.
+- Panel width persisted to prefs (`memoPanel.width`), default 320 px.
+
+### v0.1.4 Track A — memo threading + author + resolved + grouping (commit `a41026b`)
+
+- New **sidecar JSON** file alongside each `.md` (`<doc>.md.comments.json`) holds threading, author, timestamps, and resolved state. v0.1.3 documents without a sidecar continue to work — the sidecar is *augmenting* metadata, never the source of truth.
+- New `shared/memoSidecar.ts` with pure immutable update fns: `memoIdFor`, `ensureMeta`, `migrateMemoMeta`, `pruneOrphans`, `setResolved`, `addReply`, `removeReply`, `parseSidecar`.
+- Memo identity = `cyrb53(body + ':' + tag)` first 12 chars; ID migration on body edits via `migrateId(old, new)` in the sidecar store. Reply IDs use `crypto.randomUUID()` when available.
+- Orphan entries (sidecar IDs no longer matching any memo) get a 7-day grace before pruning.
+- New `electron/ipc.ts` handlers `memoSidecar:read` / `memoSidecar:write` (atomic tmp+rename). New Zustand `memoSidecarStore.ts` with 1 s debounced autosave; reactive to `appStore.filePath`. `Cmd+S` explicitly flushes the sidecar; Save-As re-binds the sidecar path.
+- New `useMemoMeta(memo): MemoMeta` hook with effect-based lazy `ensureMeta`.
+- `MemoCard` extensions: header with author chip, relative time ("3h ago" / "3시간 전"), resolved checkbox at top-right, reply thread list, Reply / Send / Cancel buttons.
+- `MemoPanel` extensions: group-by dropdown (라인 순 / 태그별 / 작성자별 / 상태별); hide-resolved toggle (default ON).
+- New `src/utils/relativeTime.ts` (i18n-aware).
+- New prefs: `author.name` (default = `os.userInfo().username || 'Anonymous'`), `memoPanel.hideResolvedDefault: true`, `memoPanel.groupBy: 'line'`.
+- Settings dialog gets a new "Author / 작성자" section with the name input.
+
+### v0.1.4 Track B — CriticMarkup track changes (commit `381a6ba`)
+
+The five [Fletcher CriticMarkup](https://fletcher.github.io/MultiMarkdown-6/syntax/critic.html) operators, end-to-end.
+
+| Operator | Meaning | Editor rendering |
+| :--- | :--- | :--- |
+| `{++ added text ++}` | insertion | green underline |
+| `{-- deleted text --}` | deletion | red strikethrough |
+| `{~~ old ~> new ~~}` | substitution | red-strike old + arrow + green-underline new |
+| `{== marked ==}` | review-highlight | distinct heavier-yellow tint (separate from `==text==`) |
+| `{>> short comment <<}` | margin comment | purple `💬` pill widget |
+
+- New `src/editor/markdownExt/criticMarkup.ts` — five inline parsers, registered `before:` Emphasis / Strikethrough / Subscript / Highlight; reject empty body and multi-line.
+- New `src/editor/decorations/criticMarkup.ts` — StateField with per-operator widgets/marks; active-line invariant preserved; comment widget click fires `durumi:cm-focus`.
+- New `shared/criticMarkup.ts` — pure regex `parseCmAnnotations` + `transformCm(src, mode, target)` for export pipeline. Fence-skip + idempotent on plain markdown.
+- New `src/hooks/useDocCriticMarkup.ts` — 100 ms debounced parse + per-kind counts.
+- New 5th sidebar tab **변경 / Changes** via `src/components/sidebar/ChangesTab.tsx` — grouped by kind, click → jump, includes a help blurb explaining `{== ==}` vs `==text==`.
+- Status bar: when CM count > 0, badges `+N -N ~N ▮N 💬N` next to the memo counter.
+- **Export safety**: default mode is **accept all changes** (clean submission-ready output). Settings checkbox `exportPreserveAnnotations` opts into preserve mode → emits `<ins>` / `<del>` / `<mark>` / `<aside>` (HTML) or Pandoc-styled spans `[text]{.insertion/.deletion/.highlight}` and a `::: comment` fenced div. `transformCm` runs **after** comment processing in `renderHtml` and **before** the Pandoc IPC call.
+- New pref `exportPreserveAnnotations: false` (default).
+
+### Quality gates
+- 785 Vitest unit tests across ~110 files (v0.1.2 was 643 → v0.1.3 655 → v0.1.4 Track A 709 → v0.1.4 Track B 785)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+
+### Architecture invariants added in this line of work
+
+These join the earlier list at the bottom of this file. Any future change must preserve all of them.
+
+- **Memo body text is the markdown source — sidecar is augmenting metadata only.** A reader without `<doc>.md.comments.json` still sees every memo. The sidecar holds author, timestamps, replies, and resolved state, but never the memo's text. This is what keeps `.md` files portable across editors.
+- **Memo IDs derive from the `body+tag` hash and mutate on edit.** When the user edits a memo, its `cyrb53` ID changes. The sidecar store handles this via `migrateId(old, new)` on the next sync; any existing replies / resolved state move along. Orphans (sidecar entries with no matching memo for 7 days) are pruned by `pruneOrphans`.
+- **Comment policy is applied BEFORE the CriticMarkup transform in export.** A `%% memo %%` wrapping a `{++ ... ++}` run is removed at the outer level first by `stripComments` / `promoteComments`; only then does `transformCm` see the (now-unwrapped) CriticMarkup. Reversing the order would let a strip leak the inner annotation.
+- **CriticMarkup parsers MUST register `before:` Emphasis / Strikethrough / Subscript / Highlight.** The `{~~ ~> ~~}` substitution and `{-- --}` deletion both contain runs that overlap with Strikethrough's `~~ ~~` and Subscript's `~ ~`; without explicit `before:` ordering, lezer's GFM extension consumes the inner text first and the CriticMarkup parser never fires.
+
+---
+
+## v0.1.2 — Manuscript Studio v1
 
 The post-v0.1.0 milestone: Typora 1.13 parity foundation complete, medical-research v1 features in place, manuscript memo system shipped.
 
@@ -99,7 +165,9 @@ Cross-platform (macOS + Windows 11) Typora-style markdown editor with:
 
 ## Roadmap
 
-The shape of post-v0.1.2 work, in rough priority order. Each item gets its own design + plan cycle when picked up.
+The shape of post-v0.1.4 work, in rough priority order. Each item gets its own design + plan cycle when picked up.
+
+> ✓ **Shipped in v0.1.4** — CriticMarkup track-changes (`{++ ++}` / `{-- --}` / `{~~ ~> ~~}` / `{== ==}` / `{>> <<}`), commit `381a6ba`. Originally roadmap item 7.
 
 ### 1 — Live reference search
 - API integrations: PubMed, KoreaMed, Crossref, Semantic Scholar, ORCID
@@ -127,10 +195,7 @@ The shape of post-v0.1.2 work, in rough priority order. Each item gets its own d
 - Plagiarism-style overlap warning against the local reference library
 - Journal submission helpers (cover letter, response-to-reviewers scaffolding)
 
-### 7 — CriticMarkup track-changes (opt-in)
-- Full `{++ ++}` / `{-- --}` / `{~~ ~> ~~}` / `{>> <<}` insert/delete/substitute/comment operators on top of the existing `%% %%` memo flow
-
-### 8 — Real code-signing
+### 7 — Real code-signing
 - Apple Developer ID + notarization
 - Windows OV/EV certificate + signed NSIS
 

@@ -4,7 +4,7 @@
 
 A cross-platform markdown editor (macOS + Windows 11) that grows from a Typora-style live-preview editor into an end-to-end manuscript studio for medical researchers. The crane (학, 鶴) is also a homophone for *learning* (學) — the brand carries the dual meaning of scholarship and the origami crane folded for someone's healing.
 
-**Current version: v0.1.2.** Typora-parity foundation complete; medical-research v1 features (citations, templates, statistics macros, .docx import, manuscript memos) are in place.
+**Current version: v0.1.4.** Typora-parity foundation complete; medical-research v1 features (citations, templates, statistics macros, .docx import, manuscript memos) are in place. v0.1.3 added an MS Word-style memo chat panel; v0.1.4 shipped memo threading + author + timestamps + resolved state with sidecar metadata, plus full CriticMarkup track-changes.
 
 ## Features
 
@@ -40,18 +40,51 @@ Built on CodeMirror 6 + `@lezer/markdown` + GFM, with active-line invariant (the
 - ` ```mermaid ` blocks render as inline SVG with `securityLevel: 'strict'` (lazy-loaded ~700 KB)
 - Mermaid cache keyed by fence body; HTML/PDF export inlines the rendered SVG
 
-### Manuscript memos (v0.1.2 — new)
+### Manuscript memos (Word-style review notes)
 
-Word-style review notes embedded in the markdown source.
+Word-style review notes embedded in the markdown source — extended through v0.1.3 and v0.1.4 into a full review surface.
 
-- Inline `%% memo %%` — colored sticky-note rendering when the caret leaves the line
-- Block `%%\n…\n%%` — multi-line memos for paragraph-level review
+**Source syntax (still the anchor — unchanged since v0.1.2):**
+
+- Inline `%% memo %%` and block `%%\n…\n%%`
 - Optional tag prefix: `%% @ai stats agent must verify %%`, `%% @todo add p-values %%`, `%% @reviewer cohort question %%`, `%% @stats run Wilcoxon %%`
 - Known tags get distinct colors (blue / orange / green / purple); unknown tags fall back to neutral gray
-- Sidebar **메모** tab aggregates every memo in document order — tag chip + preview + line number; click jumps to source
-- Status bar shows the running memo count
-- `Cmd/Ctrl + Alt + M` wraps the current selection (or inserts an empty memo with caret centered)
-- **Default-strip on export** — memos never leak to HTML / PDF / DOCX / LaTeX. A "메모 포함" toggle in Settings promotes them to visible blockquotes when transparency is wanted (review-mode export)
+- `Cmd/Ctrl + Alt + M` wraps the current selection (or inserts an empty memo)
+- **Default-strip on export** — memos never leak to HTML / PDF / DOCX / LaTeX. A "메모 포함" toggle in Settings promotes them to visible blockquotes when transparency is wanted
+
+**MS Word-style chat panel (v0.1.3):**
+
+- Memo body text is hidden inline; a right-side chat panel shows each memo as a card on its own row, vertically aligned with the source line
+- The line-end marker collapses to a small color-coded `💬` icon — click it to focus the matching card
+- Panel auto-shows when the document has at least one memo; close with the panel's `×` or toggle with `Cmd/Ctrl + Shift + M`
+- Each card has a tag dropdown, an auto-grow textarea, and a delete button — edits sync card ↔ markdown source through a 300 ms debounce
+- Panel width persisted to prefs (default 320 px)
+
+**Threading + author + timestamps + resolved + grouping (v0.1.4 Track A):**
+
+- Each memo gets author chip, relative timestamp ("3h ago" / "3시간 전"), a resolved checkbox, and a Reply thread underneath
+- Group-by dropdown: 라인 순 / 태그별 / 작성자별 / 상태별; hide-resolved toggle (default ON)
+- Settings → "Author / 작성자" lets you set the name that gets stamped on new memos / replies
+- The augmenting metadata (author, replies, timestamps, resolved state) lives in a sidecar JSON file `<doc>.md.comments.json` next to the markdown — atomic-write with 1 s debounce. The markdown body itself remains the source of truth, so a v0.1.2 reader (or any non-Durumi tool) still sees every memo
+
+### Track changes (CriticMarkup)
+
+Five [Fletcher CriticMarkup](https://fletcher.github.io/MultiMarkdown-6/syntax/critic.html) operators, end-to-end (added in v0.1.4 Track B).
+
+| Syntax | Meaning | Editor rendering |
+| :--- | :--- | :--- |
+| `{++ added text ++}` | insertion | green underline |
+| `{-- deleted text --}` | deletion | red strikethrough |
+| `{~~ old ~> new ~~}` | substitution | red-strike old + arrow + green-underline new |
+| `{== marked ==}` | review-highlight | distinct heavier-yellow tint |
+| `{>> short comment <<}` | margin comment | purple `💬` pill widget |
+
+- 5th sidebar tab **변경 / Changes** groups annotations by kind; click → jump
+- Status bar adds `+N -N ~N ▮N 💬N` badges next to the memo counter when CM count > 0
+- **Export modes**:
+  - *Accept all changes* (default) — clean, submission-ready output. `{++ ++}` / `{~~ ~> ~~}` collapse to the new text; `{-- --}` and `{>> <<}` disappear; `{== ==}` is unwrapped
+  - *Preserve annotations* (Settings → "Include track-changes annotations") — emits `<ins>` / `<del>` / `<mark>` / `<aside>` for HTML/PDF, or Pandoc-styled spans `[text]{.insertion/.deletion/.highlight}` and a `::: comment` fenced div for DOCX/LaTeX
+- **`==text==` vs `{== ==}`**: `==text==` (existing inlineExtras) is *permanent highlight* in the rendered document; `{== ==}` is a *review mark* that gets accepted-out by default on export. They render with deliberately different yellows so you can distinguish at a glance
 
 ### Citations & bibliography
 
@@ -93,12 +126,13 @@ Eleven default macros for medical-stat boilerplate (editable via `Edit → Open 
 
 Token expansion: `${YYYY}-${MM}-${DD}`, `${date}`, `${time}`, `${selection}`, `${cursor}`.
 
-### Sidebar (4 tabs)
+### Sidebar (5 tabs)
 
 - **Files** — multi-folder workspace; per-root `fs.watch`; `.md` filter; lazy expansion; right-click context menu (new file / new folder / rename / duplicate / move to trash / reveal / copy path); git status indicators (modified / added / untracked / deleted / renamed; aggregated to parent folders)
 - **Outline** — heading tree of the current document with active-heading highlight that follows the editor viewport; **drag-to-reorder sections** (rewrites the markdown source)
 - **Search** — across-file workspace search with case / whole-word / regex filters; results grouped by file; click jumps to line. Excludes `.git`, `node_modules`, files > 1 MB, binaries
-- **Memos** — aggregated `%% %%` notes across the current document (see [Manuscript memos](#manuscript-memos-v020--new))
+- **메모 / Memos** — aggregated `%% %%` notes across the current document; click to focus the chat-panel card
+- **변경 / Changes** — aggregated CriticMarkup annotations grouped by kind (insertion / deletion / substitution / highlight / comment); click → jump
 
 Drag-handle resize; persisted state (visibility, active tab, width, all open workspace folders).
 
@@ -134,7 +168,7 @@ Drag-handle resize; persisted state (visibility, active tab, width, all open wor
 
 - **Custom CSS** — edit `~/Library/Application Support/Durumi/custom.css` (or `%APPDATA%\Durumi\custom.css`); hot-reloads into the live editor and is included in HTML/PDF export. Open via **View → Open Custom CSS…**
 - **Macros / snippets** — JSON-configured key-bound text insertion at `~/.../Durumi/macros.json`. Open via **Edit → Open Macros Config…**
-- **Settings dialog** — theme, language, Pandoc binary path, Word style reference, LaTeX template, spell-check languages, custom dictionary, "Include memos in export"
+- **Settings dialog** — theme, language, Pandoc binary path, Word style reference, LaTeX template, spell-check languages, custom dictionary, "Include memos in export", "Include track-changes annotations" (CriticMarkup preserve mode), "Author / 작성자" name
 
 ### Image auto-upload
 
@@ -165,12 +199,18 @@ Drag-handle resize; persisted state (visibility, active tab, width, all open wor
 
 - **[docs/durumi-markdown-reference.md](docs/durumi-markdown-reference.md)** — comprehensive Korean markdown reference (Typora 1.13 baseline + Durumi extensions: citations, memos, manuscript metadata, KaTeX coverage, export pipeline, shortcut tables)
 - **[docs/typora-spec.md](docs/typora-spec.md)** — Typora 1.13 parity spec (Phases A/B/C, deliberate non-goals, references)
-- **[docs/PROGRESS.md](docs/PROGRESS.md)** — release tracker + post-v0.1.2 roadmap
+- **[docs/PROGRESS.md](docs/PROGRESS.md)** — release tracker + post-v0.1.4 roadmap
 - **[docs/RELEASE.md](docs/RELEASE.md)** — signing posture + auto-update runbook
+
+## Recent additions
+
+- **v0.1.4 Track B** — Five-operator CriticMarkup track-changes (`{++ ++}`, `{-- --}`, `{~~ ~> ~~}`, `{== ==}`, `{>> <<}`); 5th sidebar **Changes** tab; status-bar CM badges; export with accept-all-changes default and an opt-in preserve mode
+- **v0.1.4 Track A** — Memo threading + author + timestamps + resolved state + grouping; sidecar JSON metadata (`<doc>.md.comments.json`)
+- **v0.1.3** — MS Word-style memo chat panel: line-end `💬` markers, right-side cards, two-way debounced sync to source, panel toggle `Cmd/Ctrl + Shift + M`
 
 ## Roadmap — vision toward a manuscript studio
 
-The features below build on the v0.1.2 foundation:
+The features below build on the v0.1.4 foundation:
 
 ### 1 — Live reference search
 - API integrations: PubMed, KoreaMed, Crossref, Semantic Scholar, ORCID
@@ -204,10 +244,7 @@ The features below build on the v0.1.2 foundation:
 - Plagiarism-style overlap warning against the local reference library
 - Journal submission helpers (cover letter, response-to-reviewers scaffolding)
 
-### 7 — CriticMarkup track-changes (opt-in)
-- `{++ ++}` / `{-- --}` / `{~~ ~> ~~}` / `{>> <<}` for reviewers who want full insert/delete/substitute semantics on top of `%% %%` memos
-
-### 8 — Real code-signing
+### 7 — Real code-signing
 - Apple Developer ID + notarization
 - Windows OV/EV certificate + signed NSIS
 
@@ -224,8 +261,8 @@ pnpm dev
 
 ```bash
 pnpm build              # bundle main + preload + renderer
-pnpm make:mac           # produce dist-build/Durumi-0.1.2-*.dmg (run on macOS)
-pnpm make:win           # produce dist-build/Durumi Setup 0.1.2.exe (run on Windows 11)
+pnpm make:mac           # produce dist-build/Durumi-0.1.4-*.dmg (run on macOS)
+pnpm make:win           # produce dist-build/Durumi Setup 0.1.4.exe (run on Windows 11)
 ```
 
 See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, signing posture, auto-update setup).
@@ -235,7 +272,7 @@ See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, sig
 ```bash
 pnpm typecheck          # 0 errors expected
 pnpm lint               # 0 errors / 0 warnings expected
-pnpm test               # 643 Vitest unit tests
+pnpm test               # 785 Vitest unit tests
 pnpm test:e2e           # 16 Playwright Electron tests (run pnpm build first)
 ```
 
@@ -299,6 +336,7 @@ User-defined macros via `macros.json` extend / override these.
 | `Cmd/Ctrl + Shift + E` | Show Files tab |
 | `Cmd/Ctrl + Shift + O` | Show Outline tab |
 | `Cmd/Ctrl + Shift + F` | Show Search tab |
+| `Cmd/Ctrl + Shift + M` | Toggle memo chat panel |
 | `Cmd/Ctrl + P` | Quick Open (fuzzy filename palette) |
 | `F8` | Focus Mode toggle |
 | `F9` | Typewriter Mode toggle |
@@ -341,8 +379,10 @@ src/                         Renderer (React + CodeMirror 6)
 ├── editor/
 │   ├── MarkdownEditor.tsx   CM6 React wrapper
 │   ├── markdownExt/         Custom lezer parsers (frontMatter / footnote /
-│   │                        toc / inlineExtras / citation / comments)
-│   ├── decorations/         Live-preview decorations (one file per construct)
+│   │                        toc / inlineExtras / citation / comments /
+│   │                        criticMarkup)
+│   ├── decorations/         Live-preview decorations (one file per construct,
+│   │                        including criticMarkup for the 5 CM operators)
 │   ├── keymap/              Keyboard / toggle helpers + macros + wrapComment
 │   ├── math/scan.ts         Inline / block math scanner
 │   ├── mermaid/renderer.ts  Singleton async Mermaid renderer
@@ -354,21 +394,27 @@ src/                         Renderer (React + CodeMirror 6)
 │   ├── viewModes.ts         Focus / Typewriter modes
 │   └── theme.ts             CM6 theme via CSS variables
 ├── components/
-│   ├── Sidebar.tsx          Collapsible shell, 4 tabs
+│   ├── Sidebar.tsx          Collapsible shell, 5 tabs
 │   ├── sidebar/             FileTree, WorkspaceRoot, FileTreeNode, Outline,
-│   │                        OutlineItem, SearchTab, CommentsTab
+│   │                        OutlineItem, SearchTab, CommentsTab, ChangesTab
+│   ├── MemoPanel.tsx        Right-side chat panel host
+│   ├── MemoCard.tsx         Per-memo card (header / textarea / replies)
 │   ├── QuickOpen.tsx        Cmd/Ctrl+P fuzzy file palette
 │   ├── PandocInstallDialog.tsx
 │   ├── SettingsDialog.tsx
-│   └── StatusBar.tsx        Word/char/reading-time + memo count
+│   └── StatusBar.tsx        Word/char/reading-time + memo count + CM badges
 ├── hooks/                   useFolderTree / useDocOutline / useDocComments /
-│                            useActiveHeading
-├── store/                   zustand stores (appStore, sidebarStore)
+│                            useActiveHeading / useMemoSync /
+│                            useMemoCaretFocus / useMemoMeta /
+│                            useDocCriticMarkup
+├── store/                   zustand stores (appStore, sidebarStore,
+│                            memoSidecarStore)
+├── utils/                   relativeTime.ts (i18n-aware "3h ago" / "3시간 전")
 ├── export/                  markdown-it pipeline + KaTeX + Mermaid +
 │                            BibTeX renderer + escapeHtml + slug
 ├── i18n/                    dict.ts + t.ts (en + ko)
 └── styles/                  Global CSS, light/dark tokens, git status dots,
-                             memo chip colors
+                             memo chip colors, CriticMarkup decoration colors
 
 shared/
 ├── ipc-contract.ts          IPC types shared by main and renderer
@@ -376,17 +422,23 @@ shared/
 ├── bibtex.ts                BibTeX parser + indexer
 ├── citation.ts              Vancouver formatter + key collector
 ├── manuscriptTemplates.ts   IMRaD / CONSORT / PRISMA / CARE / STROBE
-└── comments.ts              %% memo %% parser + strip / promote (single
-                             source of truth for editor + export)
+├── comments.ts              %% memo %% parser + strip / promote +
+│                            replaceMemo helper (single source of truth
+│                            for editor + export)
+├── memoSidecar.ts           <doc>.md.comments.json schema + pure update fns
+│                            (memoIdFor, ensureMeta, migrateMemoMeta,
+│                            pruneOrphans, setResolved, addReply, …)
+└── criticMarkup.ts          5-operator parser + transformCm for export
+                             (accept-all-changes vs preserve modes)
 
 build/
 ├── icon.svg                 Master logo (origami crane on 한지 paper)
 └── icon.png                 1024×1024 app icon (rendered from icon.svg)
 
-tests/                       Vitest unit tests (643)
+tests/                       Vitest unit tests (785)
 e2e/                         Playwright Electron tests (16)
 docs/
-├── durumi-markdown-reference.md   Korean markdown reference (954 lines)
+├── durumi-markdown-reference.md   Korean markdown reference (~1280 lines)
 ├── typora-spec.md           Typora 1.13 parity spec
 ├── PROGRESS.md              Progress tracker + roadmap
 └── RELEASE.md               Signing + auto-update runbook
