@@ -1,6 +1,61 @@
 # Durumi — Progress
 
-## v0.1.8.2 (current) — pdfjs-dist for real PDF text extraction
+## v0.1.8.3 (current) — UI/UX polish: AI sidebar, shortcuts, i18n
+
+Three-track polish release. No new architecture invariants; everything
+sits on top of the v0.1.8.x surface area.
+
+### Track A — AI sidebar tab (commit `d37d664`)
+New 7th sidebar tab "AI" consolidates the entry points that previously
+required hunting through the 검토 menu. One panel shows:
+  • Provider status row (active provider + model + key indicator,
+    one-click ⚙ to Settings)
+  • Quick selection commands grid (the 7 v0.1.8 Track B prompts —
+    disabled when no selection or no key)
+  • Citation actions (Suggest for current paragraph, Insert from DOI)
+  • Session usage stats with deep-link to the full dashboard
+  • Recent activity (last 5 calls with source + token count)
+
+All buttons route through the existing menu-command handlers via new
+Sidebar callback props, so no new IPC and no duplicate command
+implementations. The sidebar tab is the *surface*; the business logic
+stays where v0.1.8 put it.
+
+### Track B — Keyboard shortcuts dialog (commit `171c9f9`)
+New "Keyboard shortcuts…" entry under Help (`F1`) opens a searchable
+reference of every shortcut Durumi binds, grouped by area (File / Edit
+/ View / Review / AI assist). Search input filters across both labels
+and key names so a user who remembers `Cmd+Shift+B` but not the action
+(or vice-versa) lands on the right row.
+
+`F1` chosen over `Cmd+/` to avoid the existing `Cmd+/` binding for
+source mode toggle.
+
+### Track C — Korean i18n polish (commit `fdce6f3`)
+Six targeted fixes from a full Korean-string review:
+  • `editEntry.delete.confirm` — restructured to fix particle agreement
+    when the citation key ends in alphanumerics
+  • `updates.availableDetail` — avoid version-dependent particle issue
+  • `ai.cmd.tighten.desc` — replaced bilingual "hedge word" with
+    `약화어(hedge)`
+  • `ai.cmd.simplify.desc` — more natural phrasing
+  • `ai.cmd.translateEn/Ko.desc` — differentiated descriptions so the
+    target language is visible at the desc level too
+
+en/ko key sets diffed before/after: both sections carry the identical
+442-key surface. No missing translations introduced.
+
+### Quality gates
+- 1129 Vitest unit tests across ~133 files (v0.1.8.2 was 1114 → Track A
+  1121 → Track B 1129; Track C is i18n-only, +0 new test counts).
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean
+
+---
+
+## v0.1.8.2 — pdfjs-dist for real PDF text extraction
 
 Single-track polish that replaces the v0.1.7-era regex-on-raw-bytes PDF
 scanning with pdfjs-dist. Two outcomes:
