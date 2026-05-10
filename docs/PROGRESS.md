@@ -1,6 +1,108 @@
 # Durumi — Progress
 
-## v0.1.5 (current) — 검토 menu + context-menu discovery
+## v0.1.6 (current) — Live reference search
+
+The bibliography becomes a live surface. v0.1.6 turns `references.bib` from
+a passively-discovered file into a write target the editor manages directly:
+DOIs resolve to BibTeX entries, Crossref / PubMed / KoreaMed feed a
+keyword search panel, ORCID iDs verify in Settings — all without a sidecar,
+DB, or external dependency like Zotero. The `.bib` file remains the single
+source of truth; new code only reads from and writes to it.
+
+### Track A — DOI → BibTeX (commit `c9180ff`)
+
+- New **Cmd/Ctrl + Shift + B "DOI로 인용 삽입"** modal — paste a DOI,
+  preview the resolved entry, confirm to append to `references.bib` and
+  insert `[@key]` at the editor caret in one motion.
+- New `shared/bibtexWriter.ts` — `formatEntry` BibTeX serializer with
+  canonical field ordering, balanced-brace escaping, UTF-8 preserved.
+- New `shared/citationKey.ts` — deterministic `lastnameYEARword` keys with
+  Standard Revised Romanization for Hangul authors (`김민걸 → gim`),
+  collision suffixes `a/b/c`.
+- New `electron/bibliographyFetch.ts` — Crossref `/works/{doi}` adapter,
+  10s timeout, polite-pool User-Agent, structured error codes
+  (`not-found` / `network` / `parse` / `timeout` / `rate-limit` / `http`).
+- New `electron/bibliographyWrite.ts` — `ensureBibFile(docPath)` defaults
+  to the document's folder, `appendEntry` writes atomically (tmp+rename).
+- New Zustand `bibliographyStore` — caches parsed entries, `bindToDocument`
+  on filePath change, `addFromDoi` / `addEntry` helpers.
+- New Settings section "참고문헌 / Bibliography" — Crossref polite-pool
+  email, NCBI E-utilities API key, ORCID iD.
+
+### Track B — Crossref / PubMed search panel (commit `d20143c`)
+
+- New **6th sidebar tab "참고문헌 / References"** — search bar with source
+  dropdown (Crossref / PubMed), 300ms debounce, result cards with one-click
+  "추가" button that appends to `.bib` and inserts `[@key]` at the caret.
+- Local `references.bib` entries listed below results with a fuzzy filter;
+  click → insert `[@key]`.
+- **OFFLINE mode**: navigator.onLine listener disables remote search and
+  swaps in an "오프라인" badge; local entries remain fully usable.
+- New **Cmd/Ctrl + Shift + I "인용 삽입" palette** — Quick Open-style
+  fuzzy filter over local entries; ↑/↓ Enter Esc keyboard model.
+- PubMed via NCBI E-utilities (ESearch + ESummary, JSON). API key from
+  Settings raises rate limit from 3 → 10 req/s.
+- 검토 menu gains "DOI로 인용 삽입…", "인용 삽입…", "참고문헌 탭 보이기".
+
+### Track C — KoreaMed scraper + ORCID resolver (commit `8525af8`)
+
+- KoreaMed joins the source dropdown. Since the official OpenAPI is
+  intermittent, we scrape the public `SearchBasic.php` result page —
+  entries extracted by field-by-field regex (title / authors /
+  journalInfo / DOI), each row guarded so a malformed entry never poisons
+  the result set.
+- New `parseJournalInfo` parses Vancouver-style citation lines
+  ("Korean J Med. 2024 Mar;99(2):101-110.") into year / volume / number /
+  pages.
+- New ORCID resolver (`pub.orcid.org/v3.0/{iD}/record`) — Settings
+  Bibliography section gains a "Verify" button that surfaces the credit
+  name + first employment + works count inline.
+- All four scrapers/APIs share the same `httpJson` / `httpText` helpers
+  (timeout, structured error codes, User-Agent identification).
+
+### Quality gates
+- 924 Vitest unit tests across ~117 files (v0.1.5 was 804 → Track A 878
+  → Track B 898 → Track C 924; +120 total)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean
+
+### Architecture invariants added in this line of work
+
+These join the list at the bottom of the file. Any future change must
+preserve all of them.
+
+- **`.bib` is the single source of truth — the in-memory store is a cache.**
+  No sidecar JSON, no SQLite, no Zotero coupling. External edits (manual
+  edits, other tools writing the file) flow back via `bindToDocument`'s
+  re-read; the store never holds state the file doesn't.
+- **All outbound HTTP runs in the main process.** The renderer never calls
+  `fetch` directly. This keeps the renderer security-isolated, consolidates
+  CORS / User-Agent / rate-limit handling, and makes the API-key surface
+  (NCBI) safe to read from prefs.
+- **`.bib` writes are atomic (tmp+rename, same dir).** Concurrent writes
+  during a Pandoc export, or a crash mid-write, never leave the file
+  half-corrupted. Same pattern as v0.1.4 Track A's `memoSidecar:write`.
+- **Citation-key generation is deterministic.** `makeCitationKey(entry,
+  existingKeys)` always produces the same key for the same input. The
+  algorithm: `lastname + year + firstSignificantTitleWord`, lowercased,
+  ASCII-only via NFD strip + Standard RR for Hangul. Collisions suffixed
+  `a`/`b`/…/`z`, then `-1`/`-2`/… for the pathological case.
+- **External network calls are explicitly user-initiated.** No background
+  prefetch, no autocomplete polling. The user pastes a DOI / clicks search
+  / clicks Verify — and only then does Durumi reach the network. (Privacy
+  + offline-friendly + locked-down academic networks are first-class
+  citizens of the medical-research workflow.)
+- **HTML scraping is the documented fallback for KoreaMed only.** When a
+  source has a stable JSON API (Crossref, PubMed, ORCID) we use it; when
+  it does not (KoreaMed), we scrape `SearchBasic.php` and pin the
+  selectors with synthetic-HTML tests so a parser regression is caught
+  locally before it reaches users.
+
+---
+
+## v0.1.5 — 검토 menu + context-menu discovery
 
 A polish/discoverability release on top of v0.1.4. The memo and CriticMarkup
 features that shipped in v0.1.3 + v0.1.4 were discoverable only through
@@ -232,10 +334,7 @@ Cross-platform (macOS + Windows 11) Typora-style markdown editor with:
 The shape of post-v0.1.5 work, in rough priority order. Each item gets its own design + plan cycle when picked up.
 
 > ✓ **Shipped in v0.1.4** — CriticMarkup track-changes (`{++ ++}` / `{-- --}` / `{~~ ~> ~~}` / `{== ==}` / `{>> <<}`), commit `381a6ba`. Originally roadmap item 7.
-
-### 1 — Live reference search
-- API integrations: PubMed, KoreaMed, Crossref, Semantic Scholar, ORCID
-- DOI → metadata resolution; one-click cite-and-insert into the local BibTeX
+> ✓ **Shipped in v0.1.6** — Live reference search (Crossref / PubMed / KoreaMed / ORCID), commits `c9180ff` / `d20143c` / `8525af8`. Originally roadmap item 1.
 
 ### 2 — AI-assisted writing
 - LLM drafting / summarization / rephrasing in-editor
