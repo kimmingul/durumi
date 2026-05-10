@@ -1,6 +1,62 @@
 # Durumi — Progress
 
-## v0.1.7 (current) — Bibliography polish + local reference library
+## v0.1.7.1 (current) — Bibliography ergonomics: edit, bulk, import
+
+A patch release that fills the everyday-use gaps v0.1.7 left exposed.
+No new architecture invariants — every track sits on top of the
+v0.1.7 surface (the `.bib` writer, the IPC contract, the sidebar tab).
+
+### Track A — Entry edit + delete (commit `f880ee6`)
+- Each row in the local-entries section gains ✎ (edit) and ✕ (delete)
+  icon buttons.
+- **Edit modal**: type, title, author, year, journal, volume, number,
+  pages, DOI, URL, file, abstract. Citation key is read-only — renaming
+  it would have to migrate every `[@oldKey]` in the active document
+  atomically, deferred to a future polish.
+- **Delete**: confirms, removes from the `.bib`, and per the
+  architecture invariant **leaves the `reference/` file alone**. The
+  next scan flips the abandoned file into the Unregistered Files
+  section so the user can re-register it under a different entry.
+- New IPC `bibliography:removeEntry`. The existing `upsertEntry` on
+  main is reused for the edit case.
+
+### Track B — Bulk DOI add (commit `bc73a5c`)
+- New "DOI 일괄 추가…" menu item opens a paste-many-DOIs modal.
+- Newline / comma / semicolon-separated input, deduplicated, processed
+  **sequentially** through Crossref (parallel would land in the
+  rate-limit category — Crossref's polite pool tolerates a steady
+  stream but not bursts).
+- Per-row live status (pending → resolving → ok / error) so a list of
+  30+ DOIs is never a black box.
+- Stop button is wired so a long run is interruptible; partial results
+  remain in the bib.
+
+### Track C — RIS / BibTeX import (commit `5062f5c`)
+- New "참고문헌 가져오기 (.bib / .ris)…" menu item brings in entries
+  from Zotero / EndNote / RefWorks / Web of Science exports.
+- Format auto-detect by extension first, content sniff for ambiguous
+  drops (`^\s*TY\s*-\s` for RIS, otherwise BibTeX).
+- New `shared/ris.ts` parser covers the tags reference managers actually
+  emit: TY / AU / A1-3 / ED / TI / T1 / CT / JO / JF / J2 / JA / T2 /
+  BT / PY / Y1 / DA / VL / IS / SP / EP / PB / SN / DO / UR / AB / N2
+  / ID. Continuation lines fold into the previous tag.
+- Preview dialog shows fresh vs colliding keys + parser warnings, and
+  exposes a per-import collision mode picker:
+  - **rename** (default): append `-2`, `-3`, … to the imported key
+  - **skip**: keep the existing entry
+  - **replace**: overwrite existing fields
+
+### Quality gates
+- 1021 Vitest unit tests across ~122 files (v0.1.7 was 990 → Track A
+  1000 → Track B 1005 → Track C 1021; +31 total)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean
+
+---
+
+## v0.1.7 — Bibliography polish + local reference library
 
 The bibliography becomes a proper *library*, not just an index. v0.1.6
 turned `references.bib` into a live surface; v0.1.7 makes the surrounding
