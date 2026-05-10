@@ -24,6 +24,8 @@ import { emojiAutocomplete } from './keymap/emojiAutocomplete';
 import { viewModes } from './viewModes';
 import { makeTheme } from './theme';
 import { handlePaste, handleDrop } from './imagePaste';
+import { citationAutocomplete } from './autocomplete/citationAutocomplete';
+import { citationHoverTooltip } from './decorations/citationHover';
 import type { Macro } from '@shared/ipc-contract';
 
 export interface MarkdownEditorProps {
@@ -69,6 +71,8 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
           ],
         }),
         ...liveDecorations,
+        citationAutocomplete(),
+        citationHoverTooltip(),
         spellcheckExclusion(),
         viewModes(),
         markdownKeymap(),
