@@ -101,6 +101,8 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:upsertEntry', filePath, entry),
   bibliographyRemoveEntry: (filePath, key) =>
     ipcRenderer.invoke('bibliography:removeEntry', filePath, key),
+  bibliographyRenameKey: (filePath, oldKey, newKey) =>
+    ipcRenderer.invoke('bibliography:renameKey', filePath, oldKey, newKey),
   bibliographyImportFile: (sourcePath) =>
     ipcRenderer.invoke('bibliography:importFile', sourcePath),
   aiSetApiKey: (provider, plainKey) => ipcRenderer.invoke('ai:setApiKey', provider, plainKey),

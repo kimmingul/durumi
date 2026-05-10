@@ -358,6 +358,17 @@ export interface IpcApi {
     key: string,
   ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /**
+   * v0.1.8.1 — atomically rename an entry's citation key in references.bib.
+   * The renderer is expected to migrate `[@oldKey]` references in the
+   * active document via a single CodeMirror dispatch (computed locally
+   * from `renameCitationKeyChanges`); this handler only owns the bib write.
+   */
+  bibliographyRenameKey: (
+    filePath: string,
+    oldKey: string,
+    newKey: string,
+  ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /**
    * v0.1.7.1 — read a .bib or .ris file and return its parsed entries.
    * Format is auto-detected by extension first, falling back to content
    * sniffing when the extension is ambiguous.

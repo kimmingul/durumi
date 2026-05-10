@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  countCitationKeyReferences,
   firstAuthorLastName,
   firstSignificantTitleWord,
   makeCitationKey,
+  renameCitationKeyChanges,
   romanizeHangul,
   sanitizeKey,
 } from '../../shared/citationKey';
@@ -167,5 +169,90 @@ describe('makeCitationKey', () => {
     // is to produce a fresh key. The "preserve user's key" branch lives in
     // appendEntry, not here.
     expect(makeCitationKey(e)).toBe('smith2024x');
+  });
+});
+
+describe('renameCitationKeyChanges', () => {
+  function applyChanges(
+    doc: string,
+    changes: Array<{ from: number; to: number; insert: string }>,
+  ): string {
+    let out = doc;
+    // Apply right-to-left to keep earlier offsets stable.
+    for (const c of [...changes].sort((a, b) => b.from - a.from)) {
+      out = out.slice(0, c.from) + c.insert + out.slice(c.to);
+    }
+    return out;
+  }
+
+  it('renames a single bare reference', () => {
+    const before = 'See [@smith2024deep] for details.';
+    const changes = renameCitationKeyChanges(before, 'smith2024deep', 'smith2024radiology');
+    expect(applyChanges(before, changes)).toBe('See [@smith2024radiology] for details.');
+  });
+
+  it('renames the author-suppressing form [-@key]', () => {
+    const before = 'per [-@smith2024] paper';
+    const changes = renameCitationKeyChanges(before, 'smith2024', 'smith2024deep');
+    expect(applyChanges(before, changes)).toBe('per [-@smith2024deep] paper');
+  });
+
+  it('only renames the matching key in a grouped citation', () => {
+    const before = '[@a; @b; @c] all of them';
+    const changes = renameCitationKeyChanges(before, 'b', 'b-renamed');
+    expect(applyChanges(before, changes)).toBe('[@a; @b-renamed; @c] all of them');
+  });
+
+  it('preserves a locator suffix when renaming', () => {
+    const before = '[@smith2024, p. 33]';
+    const changes = renameCitationKeyChanges(before, 'smith2024', 'smith2024deep');
+    expect(applyChanges(before, changes)).toBe('[@smith2024deep, p. 33]');
+  });
+
+  it('does NOT match a partial key (smith2024 inside smith2024deep)', () => {
+    const before = 'see [@smith2024deep] not [@smith2024]';
+    const changes = renameCitationKeyChanges(before, 'smith2024', 'renamed');
+    // Only the bare smith2024 should change; smith2024deep stays.
+    expect(applyChanges(before, changes)).toBe('see [@smith2024deep] not [@renamed]');
+  });
+
+  it('returns no changes when the key has no occurrences', () => {
+    expect(renameCitationKeyChanges('plain text', 'foo', 'bar')).toEqual([]);
+  });
+
+  it('returns no changes when oldKey === newKey or either is empty', () => {
+    expect(renameCitationKeyChanges('[@x]', 'x', 'x')).toEqual([]);
+    expect(renameCitationKeyChanges('[@x]', '', 'x')).toEqual([]);
+    expect(renameCitationKeyChanges('[@x]', 'x', '')).toEqual([]);
+  });
+
+  it('handles repeated references on multiple lines', () => {
+    const before = 'first [@key] line\nsecond [@key] line\n';
+    const changes = renameCitationKeyChanges(before, 'key', 'newkey');
+    expect(changes).toHaveLength(2);
+    expect(applyChanges(before, changes)).toBe(
+      'first [@newkey] line\nsecond [@newkey] line\n',
+    );
+  });
+
+  it('escapes regex metacharacters in the old key', () => {
+    const before = 'see [@smith.2024]';
+    const changes = renameCitationKeyChanges(before, 'smith.2024', 'smith2024');
+    expect(applyChanges(before, changes)).toBe('see [@smith2024]');
+  });
+});
+
+describe('countCitationKeyReferences', () => {
+  it('counts every shape', () => {
+    const doc = '[@a] and [-@a] and [@a, p. 1] and [@b; @a; @c] and [@adifferent]';
+    expect(countCitationKeyReferences(doc, 'a')).toBe(4);
+  });
+
+  it('returns 0 for an absent key', () => {
+    expect(countCitationKeyReferences('[@b]', 'a')).toBe(0);
+  });
+
+  it('returns 0 for an empty key without matching', () => {
+    expect(countCitationKeyReferences('[@a]', '')).toBe(0);
   });
 });

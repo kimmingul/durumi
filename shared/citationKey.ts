@@ -170,6 +170,57 @@ function romanizeSyllable(code: number): string {
   );
 }
 
+/**
+ * Compute the change list to rename every `[@oldKey]` reference in a
+ * document to `[@newKey]`, while leaving `[@otherKey]` (and unrelated
+ * text) untouched. Designed to feed straight into a CodeMirror dispatch:
+ *   `view.dispatch({ changes: renameCitationKeyChanges(doc, old, new_) })`
+ *
+ * Handles every Pandoc citation shape:
+ *   `[@key]`              single
+ *   `[-@key]`             author-suppressing
+ *   `[@key, p. 33]`       with locator (locator preserved)
+ *   `[@a; @key; @b]`      grouped (only the matching key changes)
+ *
+ * Robust to keys that contain regex metachars (we escape) and to the
+ * fact that `[@oldKey]` is a substring of `[@oldKey-extra]` (we anchor
+ * with the cite-key terminator alphabet).
+ */
+export function renameCitationKeyChanges(
+  doc: string,
+  oldKey: string,
+  newKey: string,
+): Array<{ from: number; to: number; insert: string }> {
+  if (!oldKey || !newKey || oldKey === newKey) return [];
+  const escaped = escapeRegex(oldKey);
+  // Match `@oldKey` only when:
+  //   - preceded by either the citation-block opener `[` (optionally with
+  //     `-` for the author-suppressing form), OR a `;` separator inside a
+  //     grouped block (with optional whitespace), and
+  //   - followed by a cite-key terminator: `]`, `,`, `;`, or whitespace.
+  // The lookbehind / lookahead pattern avoids partial-key matches like
+  // `[@oldKey-deep]` matching `oldKey`.
+  const re = new RegExp(`(?<=[\\[;]\\s*-?)@${escaped}(?=[\\],;\\s])`, 'g');
+  const out: Array<{ from: number; to: number; insert: string }> = [];
+  for (const m of doc.matchAll(re)) {
+    const from = m.index ?? 0;
+    out.push({ from, to: from + m[0].length, insert: `@${newKey}` });
+  }
+  return out;
+}
+
+/** Count the references that would change without producing the change list. */
+export function countCitationKeyReferences(doc: string, key: string): number {
+  if (!key) return 0;
+  const escaped = escapeRegex(key);
+  const re = new RegExp(`(?<=[\\[;]\\s*-?)@${escaped}(?=[\\],;\\s])`, 'g');
+  return Array.from(doc.matchAll(re)).length;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function containsHangul(s: string): boolean {
   for (const ch of s) {
     const c = ch.codePointAt(0)!;

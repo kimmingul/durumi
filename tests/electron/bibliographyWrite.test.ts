@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { appendEntry, ensureBibFile, removeEntry, upsertEntry } from '../../electron/bibliographyWrite';
+import { appendEntry, ensureBibFile, removeEntry, renameEntryKey, upsertEntry } from '../../electron/bibliographyWrite';
 import { parseBibTeX } from '../../shared/bibtex';
 import type { BibEntry } from '../../shared/bibtex';
 
@@ -216,5 +216,58 @@ describe('removeEntry', () => {
     expect(r.ok).toBe(true);
     const content = await readFile(bib, 'utf8');
     expect(content).toBe('');
+  });
+});
+
+describe('renameEntryKey', () => {
+  it('renames the entry and preserves all fields', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(
+      bib,
+      '@article{old2020, title = {T}, year = {2020}, author = {Smith, J}}\n',
+    );
+    const r = await renameEntryKey(bib, 'old2020', 'smith2020t');
+    expect(r.ok).toBe(true);
+    const after = parseBibTeX(await readFile(bib, 'utf8'));
+    expect(after.entries).toHaveLength(1);
+    expect(after.entries[0]?.key).toBe('smith2020t');
+    expect(after.entries[0]?.fields.title).toBe('T');
+    expect(after.entries[0]?.fields.author).toBe('Smith, J');
+  });
+
+  it('rejects when newKey is already taken', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(bib, '@article{a}\n\n@article{b}\n');
+    const r = await renameEntryKey(bib, 'a', 'b');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('key-taken');
+  });
+
+  it('rejects when oldKey is missing', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(bib, '@article{a}\n');
+    const r = await renameEntryKey(bib, 'missing', 'new');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('not-found');
+  });
+
+  it('rejects when keys are equal', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(bib, '@article{a}\n');
+    const r = await renameEntryKey(bib, 'a', 'a');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('noop');
+  });
+
+  it('preserves entries other than the target', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(
+      bib,
+      '@article{first, title={A}}\n\n@article{target, title={B}}\n\n@article{last, title={C}}\n',
+    );
+    const r = await renameEntryKey(bib, 'target', 'renamed');
+    expect(r.ok).toBe(true);
+    const after = parseBibTeX(await readFile(bib, 'utf8'));
+    expect(after.entries.map((e) => e.key)).toEqual(['first', 'renamed', 'last']);
   });
 });

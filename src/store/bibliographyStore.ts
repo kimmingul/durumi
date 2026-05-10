@@ -73,6 +73,17 @@ interface BibliographyState {
    */
   deleteEntry: (key: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   /**
+   * v0.1.8.1 — rename an entry's citation key in references.bib. The
+   * caller is responsible for migrating `[@oldKey]` references in the
+   * active document; this action only persists the bib change and
+   * updates the in-memory cache. Surfaces the underlying error code so
+   * the dialog can show "key-taken" specifically.
+   */
+  renameEntryKey: (
+    oldKey: string,
+    newKey: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
    * v0.1.7.1 — merge parsed entries (from a .bib or .ris import) into
    * `references.bib`. Collision modes:
    *   - `skip`: keep existing entry, drop incoming
@@ -235,6 +246,30 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
     }));
     void get().scanFileStatuses();
     return { ok: true };
+  },
+
+  renameEntryKey: async (oldKey, newKey) => {
+    const { filePath, entries } = get();
+    if (!filePath) return { ok: false, error: 'no .bib bound' };
+    if (!oldKey || !newKey) return { ok: false, error: 'both keys required' };
+    if (oldKey === newKey) return { ok: false, error: 'noop' };
+    const r = await window.api.bibliographyRenameKey(filePath, oldKey, newKey);
+    if (!r.ok) return { ok: false, error: r.error };
+    set((s) => {
+      const fileStatus = { ...s.fileStatus };
+      if (fileStatus[oldKey]) {
+        fileStatus[newKey] = fileStatus[oldKey]!;
+        delete fileStatus[oldKey];
+      }
+      return {
+        entries: s.entries.map((e) => (e.key === oldKey ? { ...e, key: newKey } : e)),
+        fileStatus,
+      };
+    });
+    void get().scanFileStatuses();
+    return { ok: true };
+    // Suppress unused-warning when entries isn't read directly above.
+    void entries;
   },
 
   deleteEntry: async (key) => {

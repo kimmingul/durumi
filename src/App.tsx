@@ -566,6 +566,7 @@ export function App() {
           view={editorViewRef.current}
           onApplyOutlineMove={(newDoc) => setContent(newDoc)}
           onInsertCitation={(key) => insertCitationAtCaret(`[@${key}]`)}
+          onCitationRenamed={migrateCitationsInDoc}
           onOpenFile={async (p) => {
             if (!(await maybeDiscard())) return;
             const r = await window.api.fileOpenPath(p);
@@ -725,5 +726,27 @@ export function App() {
       selection: { anchor: from + citation.length },
     });
     view.focus();
+  }
+
+  /**
+   * After the bib `renameEntryKey` action commits, walk the active editor
+   * doc and replace `[@oldKey]` with `[@newKey]` in a single transaction
+   * so all references migrate atomically (undo as one unit).
+   */
+  function migrateCitationsInDoc(oldKey: string, newKey: string) {
+    const view = editorViewRef.current;
+    if (!view) return;
+    // Lazy import keeps the boot path lean.
+    void import('../shared/citationKey').then(({ renameCitationKeyChanges }) => {
+      const v = editorViewRef.current;
+      if (!v) return;
+      const changes = renameCitationKeyChanges(
+        v.state.doc.toString(),
+        oldKey,
+        newKey,
+      );
+      if (changes.length === 0) return;
+      v.dispatch({ changes });
+    });
   }
 }

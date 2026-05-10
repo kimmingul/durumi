@@ -3,12 +3,17 @@ import { useLanguage, t } from '../../i18n/t';
 import { useBibliographyStore, type OrphanFile } from '../../store/bibliographyStore';
 import { OrphanRegisterDialog } from '../OrphanRegisterDialog';
 import { EditEntryDialog } from '../EditEntryDialog';
+import { RenameKeyDialog } from '../RenameKeyDialog';
 import type { BibEntry } from '@shared/bibtex';
 import type { BibliographySearchHit } from '@shared/ipc-contract';
 
 interface ReferencesTabProps {
   /** Insert `[@key]` at the editor caret. */
   onInsertCitation: (key: string) => void;
+  /** Active document text — needed for the rename-key reference count. */
+  documentText?: string;
+  /** Migrate `[@oldKey]` → `[@newKey]` across the active document. */
+  onCitationRenamed?: (oldKey: string, newKey: string) => void;
 }
 
 type Source = 'crossref' | 'pubmed' | 'koreamed';
@@ -24,7 +29,11 @@ interface SearchState {
 const DEBOUNCE_MS = 300;
 const SEARCH_LIMIT = 25;
 
-export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
+export function ReferencesTab({
+  onInsertCitation,
+  documentText = '',
+  onCitationRenamed,
+}: ReferencesTabProps) {
   useLanguage();
   const filePath = useBibliographyStore((s) => s.filePath);
   const exists = useBibliographyStore((s) => s.exists);
@@ -40,6 +49,7 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
   const deleteEntry = useBibliographyStore((s) => s.deleteEntry);
 
   const [editingEntry, setEditingEntry] = useState<BibEntry | null>(null);
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
 
   const [manualEntryFor, setManualEntryFor] = useState<{
     orphan: OrphanFile;
@@ -322,6 +332,7 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
                 onDownload={() => { void handleDownload(entry.key); }}
                 onOpenFile={(rel) => { void handleOpenFile(rel); }}
                 onEdit={() => setEditingEntry(entry)}
+                onRename={() => setRenamingKey(entry.key)}
                 onDelete={() => { void handleDelete(entry); }}
               />
             ))}
@@ -341,6 +352,16 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
         entry={editingEntry}
         onClose={() => setEditingEntry(null)}
         onSave={handleEditSave}
+      />
+      <RenameKeyDialog
+        open={renamingKey !== null}
+        oldKey={renamingKey ?? ''}
+        documentText={documentText}
+        onClose={() => setRenamingKey(null)}
+        onComplete={(oldKey, newKey) => {
+          setRenamingKey(null);
+          onCitationRenamed?.(oldKey, newKey);
+        }}
       />
     </div>
   );
@@ -387,6 +408,7 @@ interface LocalRowProps {
   onDownload: () => void;
   onOpenFile: (relPath: string) => void;
   onEdit: () => void;
+  onRename: () => void;
   onDelete: () => void;
 }
 
@@ -398,6 +420,7 @@ function LocalRow({
   onDownload,
   onOpenFile,
   onEdit,
+  onRename,
   onDelete,
 }: LocalRowProps) {
   const f = entry.fields;
@@ -450,6 +473,13 @@ function LocalRow({
           data-testid="references-edit"
           title={t('editEntry.title')}
         >✎</button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRename(); }}
+          style={iconBtnStyle}
+          data-testid="references-rename"
+          title={t('renameKey.title')}
+        >🔑</button>
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}

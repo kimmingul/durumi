@@ -20,6 +20,8 @@ interface SidebarProps {
   onApplyOutlineMove?: (newDoc: string) => void;
   /** Insert `[@key]` at the editor caret (used by the References tab). */
   onInsertCitation?: (key: string) => void;
+  /** Migrate `[@oldKey]` → `[@newKey]` across the active document. */
+  onCitationRenamed?: (oldKey: string, newKey: string) => void;
 }
 
 export function Sidebar({
@@ -29,6 +31,7 @@ export function Sidebar({
   onOpenHit,
   onApplyOutlineMove,
   onInsertCitation,
+  onCitationRenamed,
 }: SidebarProps) {
   const visible = useSidebarStore((s) => s.visible);
   const activeTab = useSidebarStore((s) => s.activeTab);
@@ -145,7 +148,11 @@ export function Sidebar({
             <ChangesTab content={content} onJump={onJump} />
           )}
           {activeTab === 'references' && (
-            <ReferencesTab onInsertCitation={onInsertCitation ?? (() => undefined)} />
+            <ReferencesTab
+              onInsertCitation={onInsertCitation ?? (() => undefined)}
+              documentText={content}
+              onCitationRenamed={onCitationRenamed}
+            />
           )}
         </div>
       </aside>

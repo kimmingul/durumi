@@ -110,6 +110,42 @@ export async function appendEntry(
 }
 
 /**
+ * Rename an entry's citation key. Validates that:
+ *   - `oldKey` exists in the file
+ *   - `newKey` is non-empty and not already taken
+ * Writes the rewritten bib atomically. The associated file in `reference/`
+ * is intentionally NOT renamed — it may have a path that doesn't include
+ * the key (e.g. user-dropped "paper-from-email.pdf"). The caller updates
+ * the document `[@oldKey]` references separately.
+ */
+export async function renameEntryKey(
+  filePath: string,
+  oldKey: string,
+  newKey: string,
+): Promise<{ ok: true; path: string } | AppendError> {
+  if (!oldKey || !newKey) {
+    return { ok: false, error: 'rename requires both keys' };
+  }
+  if (oldKey === newKey) {
+    return { ok: false, error: 'noop' };
+  }
+  const existing = await readSafely(filePath);
+  const parsed = parseBibTeX(existing);
+  const found = parsed.entries.find((e) => e.key === oldKey);
+  if (!found) return { ok: false, error: 'not-found' };
+  if (parsed.entries.some((e) => e.key === newKey)) {
+    return { ok: false, error: 'key-taken' };
+  }
+  const blocks = parsed.entries.map((e) =>
+    formatEntry(e.key === oldKey ? { ...e, key: newKey } : e),
+  );
+  const rebuilt = blocks.length === 0 ? '' : blocks.join('\n\n') + '\n';
+  const writeResult = await atomicWrite(filePath, rebuilt);
+  if (!writeResult.ok) return { ok: false, error: writeResult.error };
+  return { ok: true, path: filePath };
+}
+
+/**
  * Remove an entry by key. The on-disk file in `reference/` (if any) is left
  * alone — the architecture invariant says we never auto-delete user files.
  * Returns `{ ok: false, error: 'not-found' }` when the key isn't present
