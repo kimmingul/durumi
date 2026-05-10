@@ -8,6 +8,7 @@ import { PandocInstallDialog } from './components/PandocInstallDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { InsertCitationDialog } from './components/InsertCitationDialog';
 import { CitePalette } from './components/CitePalette';
+import { BulkDoiDialog } from './components/BulkDoiDialog';
 import { useBibliographyStore } from './store/bibliographyStore';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
@@ -80,6 +81,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [citationDialogOpen, setCitationDialogOpen] = useState(false);
   const [citePaletteOpen, setCitePaletteOpen] = useState(false);
+  const [bulkDoiOpen, setBulkDoiOpen] = useState(false);
   // When Pandoc is missing, we surface a guided install dialog and remember
   // the operation that triggered it so the user can retry after installing.
   const [pandocInstallOp, setPandocInstallOp] = useState<
@@ -381,6 +383,7 @@ export function App() {
       if (cmd === 'quickOpen') { setQuickOpen(true); return; }
       if (cmd === 'openSettings') { setSettingsOpen(true); return; }
       if (cmd === 'insertCitationFromDoi') { setCitationDialogOpen(true); return; }
+      if (cmd === 'bulkInsertFromDoi') { setBulkDoiOpen(true); return; }
       if (cmd === 'openCitePalette') { setCitePaletteOpen(true); return; }
       if (cmd === 'toggleFocusMode' && view) {
         const cur = view.state.field(focusModeField, false);
@@ -571,6 +574,10 @@ export function App() {
         open={citePaletteOpen}
         onClose={() => setCitePaletteOpen(false)}
         onPick={(key) => insertCitationAtCaret(`[@${key}]`)}
+      />
+      <BulkDoiDialog
+        open={bulkDoiOpen}
+        onClose={() => setBulkDoiOpen(false)}
       />
     </div>
   );

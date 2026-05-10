@@ -102,6 +102,7 @@ export type MenuCommand =
   | 'showMemos' | 'showChanges' | 'showReferences'
   | 'nextMemo' | 'prevMemo'
   | 'insertCitationFromDoi'
+  | 'bulkInsertFromDoi'
   | 'openCitePalette'
   | 'toggleExportIncludeComments' | 'toggleExportPreserveAnnotations'
   | 'exportHtml'

@@ -250,6 +250,10 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           click: () => send('insertCitationFromDoi'),
         },
         {
+          label: tr('menu.review.bulkInsertFromDoi'),
+          click: () => send('bulkInsertFromDoi'),
+        },
+        {
           label: tr('menu.review.openCitePalette'),
           accelerator: 'CommandOrControl+Shift+I',
           click: () => send('openCitePalette'),
