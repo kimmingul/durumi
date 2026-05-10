@@ -99,6 +99,8 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:resolveOrcid', iD),
   bibliographyUpsertEntry: (filePath, entry) =>
     ipcRenderer.invoke('bibliography:upsertEntry', filePath, entry),
+  bibliographyRemoveEntry: (filePath, key) =>
+    ipcRenderer.invoke('bibliography:removeEntry', filePath, key),
   referenceDownload: (bibFilePath, entry) =>
     ipcRenderer.invoke('reference:download', bibFilePath, entry),
   referenceOpen: (bibFilePath, relPath) =>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage, t } from '../../i18n/t';
 import { useBibliographyStore, type OrphanFile } from '../../store/bibliographyStore';
 import { OrphanRegisterDialog } from '../OrphanRegisterDialog';
+import { EditEntryDialog } from '../EditEntryDialog';
 import type { BibEntry } from '@shared/bibtex';
 import type { BibliographySearchHit } from '@shared/ipc-contract';
 
@@ -35,6 +36,10 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
   const orphanFiles = useBibliographyStore((s) => s.orphanFiles);
   const registerOrphan = useBibliographyStore((s) => s.registerOrphan);
   const scanFileStatuses = useBibliographyStore((s) => s.scanFileStatuses);
+  const updateEntry = useBibliographyStore((s) => s.updateEntry);
+  const deleteEntry = useBibliographyStore((s) => s.deleteEntry);
+
+  const [editingEntry, setEditingEntry] = useState<BibEntry | null>(null);
 
   const [manualEntryFor, setManualEntryFor] = useState<{
     orphan: OrphanFile;
@@ -159,6 +164,26 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
     if (!r.ok) {
       // eslint-disable-next-line no-alert
       window.alert(`${t('orphan.register.failed')}\n\n${r.message}`);
+    }
+  }
+
+  async function handleEditSave(fields: Record<string, string>, typeOverride: string) {
+    if (!editingEntry) return;
+    const r = await updateEntry(editingEntry.key, fields, typeOverride);
+    setEditingEntry(null);
+    if (!r.ok) {
+      // eslint-disable-next-line no-alert
+      window.alert(`${t('editEntry.failed')}\n\n${r.error}`);
+    }
+  }
+
+  async function handleDelete(entry: BibEntry) {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(t('editEntry.delete.confirm', { key: entry.key }))) return;
+    const r = await deleteEntry(entry.key);
+    if (!r.ok) {
+      // eslint-disable-next-line no-alert
+      window.alert(`${t('editEntry.delete.failed')}\n\n${r.error}`);
     }
   }
 
@@ -296,6 +321,8 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
                 onInsert={() => onInsertCitation(entry.key)}
                 onDownload={() => { void handleDownload(entry.key); }}
                 onOpenFile={(rel) => { void handleOpenFile(rel); }}
+                onEdit={() => setEditingEntry(entry)}
+                onDelete={() => { void handleDelete(entry); }}
               />
             ))}
           </div>
@@ -308,6 +335,12 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
         initialDoi={manualEntryFor?.initialDoi ?? null}
         onClose={() => setManualEntryFor(null)}
         onConfirm={handleManualConfirm}
+      />
+      <EditEntryDialog
+        open={editingEntry !== null}
+        entry={editingEntry}
+        onClose={() => setEditingEntry(null)}
+        onSave={handleEditSave}
       />
     </div>
   );
@@ -353,6 +386,8 @@ interface LocalRowProps {
   onInsert: () => void;
   onDownload: () => void;
   onOpenFile: (relPath: string) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }
 
 function LocalRow({
@@ -362,6 +397,8 @@ function LocalRow({
   onInsert,
   onDownload,
   onOpenFile,
+  onEdit,
+  onDelete,
 }: LocalRowProps) {
   const f = entry.fields;
   const hasFile = fileStatus?.exists ?? false;
@@ -389,7 +426,7 @@ function LocalRow({
             title={fileStatus.relPath}
             data-testid="references-open-file"
           >
-            {fileStatus.type === 'pdf' ? '📄 PDF' : '📝 MD'}
+            {fileStatus.type === 'pdf' ? '📄' : '📝'}
           </button>
         ) : (
           <button
@@ -399,13 +436,27 @@ function LocalRow({
               onDownload();
             }}
             disabled={downloading}
-            style={downloadBtnStyle}
+            style={iconBtnStyle}
             data-testid="references-download"
             title={t('references.download.hint')}
           >
             {downloading ? '⌛' : '📥'}
           </button>
         )}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          style={iconBtnStyle}
+          data-testid="references-edit"
+          title={t('editEntry.title')}
+        >✎</button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          style={iconBtnStyle}
+          data-testid="references-delete"
+          title={t('editEntry.delete')}
+        >✕</button>
       </div>
     </div>
   );
@@ -646,14 +697,15 @@ function fileBadgeStyle(type: 'pdf' | 'md' | null): React.CSSProperties {
   };
 }
 
-const downloadBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  padding: '2px 8px',
+const iconBtnStyle: React.CSSProperties = {
+  fontSize: 12,
+  padding: '2px 6px',
   border: '1px solid var(--border, #c8c8c8)',
   borderRadius: 4,
   background: 'transparent',
   cursor: 'pointer',
   color: 'inherit',
+  minWidth: 22,
 };
 
 const orphanRowStyle: React.CSSProperties = {

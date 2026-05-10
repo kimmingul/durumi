@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { appendEntry, ensureBibFile } from '../../electron/bibliographyWrite';
+import { appendEntry, ensureBibFile, removeEntry, upsertEntry } from '../../electron/bibliographyWrite';
 import { parseBibTeX } from '../../shared/bibtex';
 import type { BibEntry } from '../../shared/bibtex';
 
@@ -137,5 +137,84 @@ describe('appendEntry', () => {
     const r = await appendEntry(bib, e);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.key).toBe('mychosen2024');
+  });
+});
+
+describe('upsertEntry', () => {
+  it('replaces an existing entry by key, preserving the rest', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(
+      bib,
+      '@article{a, title = {Old}, year = {2020}}\n\n@article{b, title = {Other}}\n',
+    );
+    const r = await upsertEntry(bib, {
+      key: 'a',
+      type: 'article',
+      fields: { title: 'New Title', year: '2024' },
+    });
+    expect(r.ok).toBe(true);
+    const after = parseBibTeX(await readFile(bib, 'utf8'));
+    expect(after.entries).toHaveLength(2);
+    const a = after.entries.find((e) => e.key === 'a')!;
+    expect(a.fields.title).toBe('New Title');
+    expect(a.fields.year).toBe('2024');
+    const b = after.entries.find((e) => e.key === 'b')!;
+    expect(b.fields.title).toBe('Other');
+  });
+
+  it('appends when the key is not present', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(bib, '@article{a, title={A}}\n');
+    const r = await upsertEntry(bib, {
+      key: 'b',
+      type: 'article',
+      fields: { title: 'B' },
+    });
+    expect(r.ok).toBe(true);
+    const after = parseBibTeX(await readFile(bib, 'utf8'));
+    expect(after.entries.map((e) => e.key)).toEqual(['a', 'b']);
+  });
+
+  it('rejects when key is empty', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(bib, '');
+    const r = await upsertEntry(bib, {
+      key: '',
+      type: 'article',
+      fields: { title: 'X' },
+    });
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe('removeEntry', () => {
+  it('removes an entry by key', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(
+      bib,
+      '@article{a, title={A}}\n\n@article{b, title={B}}\n',
+    );
+    const r = await removeEntry(bib, 'a');
+    expect(r.ok).toBe(true);
+    const after = parseBibTeX(await readFile(bib, 'utf8'));
+    expect(after.entries).toHaveLength(1);
+    expect(after.entries[0]?.key).toBe('b');
+  });
+
+  it('returns not-found when key is missing', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(bib, '@article{a}\n');
+    const r = await removeEntry(bib, 'missing');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('not-found');
+  });
+
+  it('produces an empty file when the last entry is removed', async () => {
+    const bib = join(dir, 'references.bib');
+    await writeFile(bib, '@article{only, title={X}}\n');
+    const r = await removeEntry(bib, 'only');
+    expect(r.ok).toBe(true);
+    const content = await readFile(bib, 'utf8');
+    expect(content).toBe('');
   });
 });

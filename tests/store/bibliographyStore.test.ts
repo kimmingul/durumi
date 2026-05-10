@@ -9,6 +9,8 @@ interface ApiMock {
   bibliographyResolveDoi: ReturnType<typeof vi.fn>;
   bibliographyAppendEntry: ReturnType<typeof vi.fn>;
   bibliographyReadEntries: ReturnType<typeof vi.fn>;
+  bibliographyUpsertEntry: ReturnType<typeof vi.fn>;
+  bibliographyRemoveEntry: ReturnType<typeof vi.fn>;
   referenceStatus: ReturnType<typeof vi.fn>;
   referenceScan: ReturnType<typeof vi.fn>;
   referenceExtractDoi: ReturnType<typeof vi.fn>;
@@ -22,6 +24,8 @@ function installApiMock(): ApiMock {
     bibliographyResolveDoi: vi.fn(),
     bibliographyAppendEntry: vi.fn(),
     bibliographyReadEntries: vi.fn().mockResolvedValue({ ok: true, entries: [], warnings: [] }),
+    bibliographyUpsertEntry: vi.fn().mockResolvedValue({ ok: true, key: 'k', path: '/p/x.bib' }),
+    bibliographyRemoveEntry: vi.fn().mockResolvedValue({ ok: true, path: '/p/x.bib' }),
     referenceStatus: vi
       .fn()
       .mockResolvedValue({ exists: false, absPath: null, relPath: null, type: null }),
@@ -252,6 +256,73 @@ describe('bibliographyStore', () => {
       .registerOrphan('/p/reference/o.pdf', 'reference/o.pdf');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('no-doi');
+  });
+
+  it('updateEntry replaces fields and persists via upsertEntry', async () => {
+    const api = installApiMock();
+    useBibliographyStore.setState({
+      filePath: '/p/references.bib',
+      exists: true,
+      entries: [{ key: 'k1', type: 'article', fields: { title: 'old', year: '2020' } }],
+      loading: false,
+    });
+    const r = await useBibliographyStore.getState().updateEntry('k1', {
+      title: 'new',
+      year: '2024',
+    });
+    expect(r.ok).toBe(true);
+    expect(api.bibliographyUpsertEntry).toHaveBeenCalled();
+    const after = useBibliographyStore.getState().entries[0]!;
+    expect(after.fields.title).toBe('new');
+    expect(after.fields.year).toBe('2024');
+  });
+
+  it('updateEntry drops empty-string fields so they do not pollute the bib', async () => {
+    installApiMock();
+    useBibliographyStore.setState({
+      filePath: '/p/references.bib',
+      exists: true,
+      entries: [{ key: 'k1', type: 'article', fields: { title: 'x', author: 'a' } }],
+      loading: false,
+    });
+    const r = await useBibliographyStore.getState().updateEntry('k1', {
+      title: 'x',
+      author: '   ',
+    });
+    expect(r.ok).toBe(true);
+    expect(useBibliographyStore.getState().entries[0]?.fields.author).toBeUndefined();
+  });
+
+  it('updateEntry returns not-found for an unknown key', async () => {
+    installApiMock();
+    useBibliographyStore.setState({
+      filePath: '/p/references.bib',
+      exists: true,
+      entries: [{ key: 'k1', type: 'article', fields: { title: 'x' } }],
+      loading: false,
+    });
+    const r = await useBibliographyStore.getState().updateEntry('missing', { title: 'y' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('not-found');
+  });
+
+  it('deleteEntry removes the entry from the store and calls removeEntry IPC', async () => {
+    const api = installApiMock();
+    useBibliographyStore.setState({
+      filePath: '/p/references.bib',
+      exists: true,
+      entries: [
+        { key: 'k1', type: 'article', fields: { title: 'a' } },
+        { key: 'k2', type: 'article', fields: { title: 'b' } },
+      ],
+      loading: false,
+      fileStatus: { k1: { exists: true, relPath: 'reference/k1.pdf', type: 'pdf' } },
+    });
+    const r = await useBibliographyStore.getState().deleteEntry('k1');
+    expect(r.ok).toBe(true);
+    expect(api.bibliographyRemoveEntry).toHaveBeenCalledWith('/p/references.bib', 'k1');
+    expect(useBibliographyStore.getState().entries.map((e) => e.key)).toEqual(['k2']);
+    expect(useBibliographyStore.getState().fileStatus.k1).toBeUndefined();
   });
 
   it('registerOrphan with manualEntry skips DOI extraction', async () => {

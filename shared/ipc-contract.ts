@@ -325,6 +325,15 @@ export interface IpcApi {
     entry: BibEntry,
   ) => Promise<{ ok: true; key: string; path: string } | { ok: false; error: string }>;
   /**
+   * Remove an entry by key. v0.1.7.1 — used by the sidebar delete affordance.
+   * The associated file in `reference/` (if any) is intentionally left in
+   * place per the "user files are never auto-deleted" invariant.
+   */
+  bibliographyRemoveEntry: (
+    filePath: string,
+    key: string,
+  ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /**
    * v0.1.7 Track B — download the open-access copy of a reference into
    * `<doc-folder>/reference/`. Probes Crossref `link[]`, PMC, Unpaywall
    * (in that order); falls back to a HTML→Markdown scrape, then to an

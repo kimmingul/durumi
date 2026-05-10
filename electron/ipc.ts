@@ -24,7 +24,7 @@ import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
 import { resolveDOI, resolveORCID, searchCrossref, searchKoreaMed, searchPubMed } from './bibliographyFetch';
-import { appendEntry as appendBibEntry, ensureBibFile, upsertEntry as upsertBibEntry } from './bibliographyWrite';
+import { appendEntry as appendBibEntry, ensureBibFile, removeEntry as removeBibEntry, upsertEntry as upsertBibEntry } from './bibliographyWrite';
 import { downloadReference } from './referenceDownload';
 import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
 import { extractDoiFromFile } from './referenceImport';
@@ -371,6 +371,15 @@ export function registerIpcHandlers(): void {
       const r = await upsertBibEntry(filePath, entry);
       if (!r.ok) return { ok: false as const, error: r.error };
       return { ok: true as const, key: r.key, path: r.path };
+    },
+  );
+
+  ipcMain.handle(
+    'bibliography:removeEntry',
+    async (_e, filePath: string, key: string) => {
+      const r = await removeBibEntry(filePath, key);
+      if (!r.ok) return { ok: false as const, error: r.error };
+      return { ok: true as const, path: r.path };
     },
   );
 

@@ -57,6 +57,22 @@ interface BibliographyState {
     | { ok: false; code: string; message: string }
   >;
   /**
+   * v0.1.7.1 — replace an existing entry's fields. Key changes are NOT
+   * supported here; rename them via a separate dedicated action so the
+   * editor's `[@oldKey]` references can be migrated atomically.
+   */
+  updateEntry: (
+    key: string,
+    fields: Record<string, string>,
+    typeOverride?: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * v0.1.7.1 — remove an entry from references.bib. The local file in
+   * `reference/` (if any) is left on disk; subsequent scans surface it
+   * in the Unregistered Files section.
+   */
+  deleteEntry: (key: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
    * Download the reference for `key` (probes Crossref link / PMC /
    * Unpaywall / HTML / abstract). On success, persists the resulting
    * relative path back into the bib entry's `file` field.
@@ -184,6 +200,51 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
       ? scan.files.filter((f) => !claimed.has(f.relPath))
       : [];
     set({ fileStatus: next, orphanFiles: orphans });
+  },
+
+  updateEntry: async (key, fields, typeOverride) => {
+    const { filePath, entries } = get();
+    if (!filePath) return { ok: false, error: 'no .bib bound' };
+    const existing = entries.find((e) => e.key === key);
+    if (!existing) return { ok: false, error: 'not-found' };
+    // Drop empty-string fields so they don't pollute the bib output.
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(fields)) {
+      if (v && v.trim().length > 0) cleaned[k] = v.trim();
+    }
+    const updated: BibEntry = {
+      key,
+      type: typeOverride && typeOverride.trim() ? typeOverride.trim() : existing.type,
+      fields: cleaned,
+    };
+    const r = await window.api.bibliographyUpsertEntry(filePath, updated);
+    if (!r.ok) return { ok: false, error: r.error };
+    set((s) => ({
+      entries: s.entries.map((e) => (e.key === key ? updated : e)),
+    }));
+    void get().scanFileStatuses();
+    return { ok: true };
+  },
+
+  deleteEntry: async (key) => {
+    const { filePath } = get();
+    if (!filePath) return { ok: false, error: 'no .bib bound' };
+    const r = await window.api.bibliographyRemoveEntry(filePath, key);
+    if (!r.ok) return { ok: false, error: r.error };
+    set((s) => {
+      const fileStatus = { ...s.fileStatus };
+      delete fileStatus[key];
+      const downloading = { ...s.downloading };
+      delete downloading[key];
+      return {
+        entries: s.entries.filter((e) => e.key !== key),
+        fileStatus,
+        downloading,
+      };
+    });
+    // Re-scan: the dropped entry's file (if any) becomes an orphan.
+    void get().scanFileStatuses();
+    return { ok: true };
   },
 
   registerOrphan: async (absPath, relPath, manualEntry) => {

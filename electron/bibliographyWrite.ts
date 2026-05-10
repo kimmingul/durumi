@@ -110,8 +110,35 @@ export async function appendEntry(
 }
 
 /**
- * Replace an entry by key, or append if not present. Used by future Track B
- * "edit entry" UI; included now so the IPC surface is stable.
+ * Remove an entry by key. The on-disk file in `reference/` (if any) is left
+ * alone — the architecture invariant says we never auto-delete user files.
+ * Returns `{ ok: false, error: 'not-found' }` when the key isn't present
+ * so the caller can surface a meaningful UI message (vs. silently ignoring).
+ */
+export async function removeEntry(
+  filePath: string,
+  key: string,
+): Promise<{ ok: true; path: string } | AppendError> {
+  if (!key) {
+    return { ok: false, error: 'remove requires a non-empty key' };
+  }
+  const existing = await readSafely(filePath);
+  const parsed = parseBibTeX(existing);
+  const filtered = parsed.entries.filter((e) => e.key !== key);
+  if (filtered.length === parsed.entries.length) {
+    return { ok: false, error: 'not-found' };
+  }
+  const rebuilt = filtered.length === 0
+    ? ''
+    : filtered.map(formatEntry).join('\n\n') + '\n';
+  const writeResult = await atomicWrite(filePath, rebuilt);
+  if (!writeResult.ok) return { ok: false, error: writeResult.error };
+  return { ok: true, path: filePath };
+}
+
+/**
+ * Replace an entry by key, or append if not present. Used by the v0.1.7.1
+ * "edit entry" UI and by the post-download persist (Track B).
  */
 export async function upsertEntry(
   filePath: string,
