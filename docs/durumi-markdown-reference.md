@@ -1164,6 +1164,39 @@ pandoc -f markdown+yaml_metadata_block+footnotes+definition_lists+pipe_tables+ra
 
 ### 11.1 두루미가 더한 것
 
+- **라이브 참고문헌 검색 (v0.1.6)**: 사이드바 6번째 **참고문헌 / References**
+  탭에서 Crossref / PubMed / KoreaMed를 키워드로 검색하고 한 번에 BibTeX에
+  추가. `Cmd/Ctrl + Shift + B`로 DOI 한 줄을 붙여 넣으면 Crossref가
+  엔트리를 만들어 `references.bib`에 추가하고 `[@key]`를 캐럿 위치에
+  바로 삽입. 모든 외부 HTTP는 메인 프로세스에서만 발생하며 사용자 명시
+  클릭 없이는 절대 호출되지 않습니다.
+- **로컬 참고문헌 라이브러리 (v0.1.7)**: 각 BibTeX 엔트리는 문서 폴더
+  하위의 `reference/<key>.{pdf,md}`로 로컬 사본을 가질 수 있고, 사이드바
+  카드의 📄/📝 배지로 시스템 기본 앱에서 바로 열림. 사용자가 직접 폴더에
+  드롭한 PDF/MD도 "📁 미등록 파일" 섹션에 자동으로 surface 되어 한 번의
+  클릭으로 bib 엔트리에 등록(DOI는 pdfjs-dist로 자동 추출). 다운로드는
+  Crossref `link[]` → PMC → Unpaywall → HTML 스크레이프(Turndown) →
+  초록 stub의 폴백 체인을 따릅니다.
+- **`[@`-자동완성 + hover 툴팁 (v0.1.7)**: `[@`을 입력하면 `references.bib`
+  키 목록이 fuzzy 드롭다운으로 나타나고 Enter로 `[@key]`가 닫는 대괄호
+  포함하여 들어갑니다. 마우스를 인용 위에 올리면 저자/연도/제목/DOI와
+  (있다면) "📄 파일 열기" 버튼이 떠 있는 카드가 표시.
+- **인용 키 안전 변경 (v0.1.7.1)**: 사이드바 🔑 버튼으로 인용 키를
+  변경하면 `references.bib`의 엔트리 키와 문서 안의 모든 `[@oldKey]`
+  참조가 단일 CodeMirror 트랜잭션으로 함께 갱신됩니다(undo도 하나).
+  부분 매칭으로 잘못 변환되지 않도록 lookbehind 정규식을 사용.
+- **AI 작성 도우미 (v0.1.8 이후)**: `Cmd/Ctrl + Shift + /` 선택영역
+  팔레트에서 7개 명령(영어 다듬기 / 간결하게 / 확장 / 쉬운 표현 / 학술
+  어조 / 한↔영 번역). 사이드바 "AI" 탭에서 같은 명령들을 호출하고 세션
+  사용량을 확인. `[@key]`는 시스템 프롬프트로 절대 발명하지 않도록 강제.
+  검토 메뉴의 "AI: 현재 단락에 인용 제안"은 단락 + 로컬 참고문헌(있으면
+  PDF 본문까지)을 모델에 전달하고 환각 키는 라이브 bib에 대조해 자동
+  차단. Anthropic + OpenAI-compatible(Ollama/LM Studio 포함)을 동시
+  지원하며 API 키는 Electron `safeStorage`로 OS keychain에 암호화 저장.
+- **인라인 ghost-text 보조 (v0.1.8.1)**: 설정에서 켜면 단락 끝에서 잠시
+  대기 시 1~2문장 이어쓰기 제안이 회색 이탤릭으로 나타납니다. Tab으로
+  적용, Esc/타이핑/선택 변경 시 해제. 기본 OFF, 세션당 호출 cap(기본
+  100회)으로 비용 제어. 모든 호출은 사용량 대시보드(설정)에 누적.
 - **`%% 메모 %%` 매뉴스크립트 메모(§ 3.9)**: MS Word 댓글에 해당하는
   본문 인라인/블록 메모. 태그 prefix(`@ai`/`@todo`/`@reviewer`/`@stats`)별
   색상, 사이드바 메모 탭 집계, 상태바 카운터, 기본 strip 내보내기.

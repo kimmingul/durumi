@@ -4,7 +4,7 @@
 
 A cross-platform markdown editor (macOS + Windows 11) that grows from a Typora-style live-preview editor into an end-to-end manuscript studio for medical researchers. The crane (학, 鶴) is also a homophone for *learning* (學) — the brand carries the dual meaning of scholarship and the origami crane folded for someone's healing.
 
-**Current version: v0.1.5.** Typora-parity foundation complete; medical-research v1 features (citations, templates, statistics macros, .docx import, manuscript memos) are in place. v0.1.3 added an MS Word-style memo chat panel; v0.1.4 shipped memo threading + author + timestamps + resolved state with sidecar metadata, plus full CriticMarkup track-changes. v0.1.5 added a native 검토 / Review menu and editor right-click context menu so memo + CriticMarkup operations are discoverable without learning shortcuts.
+**Current version: v0.1.8.3.** Typora-parity foundation complete; medical-research features now include live reference search (Crossref / PubMed / KoreaMed / ORCID), a local PDF / MD reference library that mirrors `references.bib`, AI-assisted writing (selection rewrites, citation suggestions, inline ghost-text completion), citation-key rename with atomic doc migration, BibTeX / RIS import, AI usage + cost dashboard, and a dedicated AI sidebar tab. CriticMarkup track-changes, memo threading with sidecar metadata, manuscript templates, and the rest of v0.1.2–v0.1.5 are intact and unchanged.
 
 ## Features
 
@@ -96,6 +96,50 @@ Five [Fletcher CriticMarkup](https://fletcher.github.io/MultiMarkdown-6/syntax/c
 - Missing keys surface as red `[?]` markers
 - DOCX/LaTeX exports route through Pandoc citeproc with `csl: …` front-matter key when more styles are needed
 
+**v0.1.7 editor integration:**
+
+- `[@`-autocomplete in the editor — typing `[@` surfaces a fuzzy drop-down of every key in `references.bib`; Enter inserts `[@key]` with the closing bracket
+- Hover tooltip over `[@key]` — shows title / author / venue / DOI; "📄 Open file" button when a local PDF/MD is saved
+- `Cmd/Ctrl + Shift + I` "Insert citation" palette — Quick-Open-style fuzzy filter over the live `.bib` keys
+
+**v0.1.7.1 editing affordances:**
+
+- Sidebar entry rows gain ✎ (edit) / 🔑 (rename key) / ✕ (delete) buttons
+- Rename: atomic — bib write + a single CodeMirror transaction that migrates every `[@oldKey]` in the active document (undo as one unit)
+- Bulk DOI add — paste a list (newline / comma / semicolon separated); sequential through Crossref with live per-row status
+- Import from `.bib` / `.ris` — Zotero / EndNote / RefWorks / Web of Science exports with collision modes (rename / skip / replace) and preview
+
+### Live reference search (v0.1.6)
+
+- **Crossref / PubMed / KoreaMed** keyword search in the 참고문헌 sidebar tab (300 ms debounce, source dropdown, "추가" button per result)
+- **DOI → BibTeX** via `Cmd/Ctrl + Shift + B` — paste a DOI, preview the resolved entry, confirm to append to `references.bib` and insert `[@key]` at the editor caret
+- **ORCID iD verification** in Settings — `pub.orcid.org/v3.0/{iD}/record` resolves the credit name + first employment + works count inline
+- **KoreaMed** uses HTML scraping of `SearchBasic.php` (the official OpenAPI is intermittent); per-field regex with synthetic-HTML tests so a parser regression is caught locally even when the live site is unreachable
+- All outbound HTTP runs in the main process; the renderer never makes a network call (CORS, User-Agent, polite-pool email, API keys all live in main)
+- Explicit opt-in: every call is initiated by an explicit user click — no background prefetch
+- Offline-aware: an "오프라인" badge disables remote search while keeping local entries fully usable
+
+### Local reference library (v0.1.7)
+
+Each entry can mirror to a local PDF (open access) or a Markdown abstract (otherwise), viewable inline from the editor.
+
+- Download flow: Crossref `link[]` → PMC → Unpaywall → HTML scrape (Turndown) → abstract-only stub. Always produces something (the user is never left empty-handed).
+- Files land in `<doc-folder>/reference/<key>.{pdf,md}`; the bib entry's `file` field gets a POSIX-relative path that round-trips across machines
+- **Bidirectional sync**: files the user drops into `reference/` (Finder copy, git pull, Zotero export) appear in the sidebar's "📁 미등록 파일" section with a one-click "Register" flow — DOI auto-extracted from the PDF (pdfjs-dist, lazy-loaded), or a manual-entry modal when no DOI is found
+- Open PDFs / MDs in the system default app from the sidebar 📄/📝 badge or the `[@key]` hover tooltip's "Open file" button
+
+### AI assist (v0.1.8 series)
+
+Two providers behind one shape — Anthropic Messages API and OpenAI-compatible chat completions (covers OpenAI, Ollama, LM Studio, any self-hosted compatible endpoint via custom base URL). API keys live encrypted at rest via Electron's `safeStorage`; the renderer never sees plaintext.
+
+**Selection rewrite palette** (`Cmd/Ctrl + Shift + /`): seven commands — Polish English / Tighten / Expand / Simplify / Academic tone / Translate to Korean / Translate to English. Before/after preview with token usage; Accept replaces the selection in place.
+
+**Citation suggestion**: 검토 → "AI: 현재 단락에 인용 제안" reads the paragraph at the caret + a compact slice of `references.bib` (capped at 60 entries; v0.1.8.2 enriches each entry with the first ~3 pages of its local PDF when available). Returns STRICT JSON; a hallucination guard drops any candidate whose key isn't in the live bibliography set.
+
+**Inline ghost-text completion** (off by default; opt in via Settings): 1–2 sentence continuations appear as gray italic text at the end of a paragraph when the user idles. Tab accepts; Esc / typing / selection change clears. Per-session cap (default 100) bounds runaway cost.
+
+**AI usage + cost dashboard**: every successful AI call records into a localStorage-backed log (last 200 calls + per-model + per-source lifetime totals). Settings → "AI 사용량" shows summary pills (calls / tokens / cost), by-model + by-source tables, and a Reset button.
+
 ### Manuscript templates
 
 `File → New from Template` → six reporting-guideline-aligned skeletons:
@@ -128,20 +172,26 @@ Eleven default macros for medical-stat boilerplate (editable via `Edit → Open 
 
 Token expansion: `${YYYY}-${MM}-${DD}`, `${date}`, `${time}`, `${selection}`, `${cursor}`.
 
-### Sidebar (5 tabs)
+### Sidebar (7 tabs)
 
 - **Files** — multi-folder workspace; per-root `fs.watch`; `.md` filter; lazy expansion; right-click context menu (new file / new folder / rename / duplicate / move to trash / reveal / copy path); git status indicators (modified / added / untracked / deleted / renamed; aggregated to parent folders)
 - **Outline** — heading tree of the current document with active-heading highlight that follows the editor viewport; **drag-to-reorder sections** (rewrites the markdown source)
 - **Search** — across-file workspace search with case / whole-word / regex filters; results grouped by file; click jumps to line. Excludes `.git`, `node_modules`, files > 1 MB, binaries
 - **메모 / Memos** — aggregated `%% %%` notes across the current document; click to focus the chat-panel card
 - **변경 / Changes** — aggregated CriticMarkup annotations grouped by kind (insertion / deletion / substitution / highlight / comment); click → jump
+- **참고문헌 / References** (v0.1.6+) — Crossref / PubMed / KoreaMed search; local `.bib` entries with file-status badges and ✎ / 🔑 / ✕ actions; "📁 미등록 파일" section for orphan PDFs / MDs the user dropped in
+- **AI** (v0.1.8.3) — provider status, quick selection commands, citation actions, session usage stats, recent activity log
 
 Drag-handle resize; persisted state (visibility, active tab, width, all open workspace folders).
 
 ### Quick Open & navigation
 
 - `Cmd/Ctrl + P` — fuzzy filename palette across all workspace folders (fzf-style scoring; up to 50 results ranked by score then by recency)
+- `Cmd/Ctrl + Shift + I` — Insert citation palette (fuzzy search over `references.bib` keys)
+- `Cmd/Ctrl + Shift + B` — Insert citation from DOI
+- `Cmd/Ctrl + Shift + /` — AI assist on selection (palette)
 - `Cmd/Ctrl + F` / `Cmd/Ctrl + Alt + F` — Find / Find and Replace via CodeMirror's themed search panel
+- `F1` — Keyboard shortcuts dialog (searchable list of every binding)
 - `F8` — Focus Mode (dim all blocks except the one containing the caret)
 - `F9` — Typewriter Mode (caret line stays at viewport mid-height)
 
@@ -170,7 +220,7 @@ Drag-handle resize; persisted state (visibility, active tab, width, all open wor
 
 - **Custom CSS** — edit `~/Library/Application Support/Durumi/custom.css` (or `%APPDATA%\Durumi\custom.css`); hot-reloads into the live editor and is included in HTML/PDF export. Open via **View → Open Custom CSS…**
 - **Macros / snippets** — JSON-configured key-bound text insertion at `~/.../Durumi/macros.json`. Open via **Edit → Open Macros Config…**
-- **Settings dialog** — theme, language, Pandoc binary path, Word style reference, LaTeX template, spell-check languages, custom dictionary, "Include memos in export", "Include track-changes annotations" (CriticMarkup preserve mode), "Author / 작성자" name
+- **Settings dialog** — theme, language, Pandoc binary path, Word style reference, LaTeX template, spell-check languages, custom dictionary, "Include memos in export", "Include track-changes annotations" (CriticMarkup preserve mode), "Author / 작성자" name, **AI provider + API key + model + ghost-text toggle**, **AI usage dashboard** with per-model / per-source breakdown, **참고문헌 (Crossref email, NCBI key, ORCID iD)**
 
 ### Image auto-upload
 
@@ -201,28 +251,35 @@ Drag-handle resize; persisted state (visibility, active tab, width, all open wor
 
 - **[docs/durumi-markdown-reference.md](docs/durumi-markdown-reference.md)** — comprehensive Korean markdown reference (Typora 1.13 baseline + Durumi extensions: citations, memos, manuscript metadata, KaTeX coverage, export pipeline, shortcut tables)
 - **[docs/typora-spec.md](docs/typora-spec.md)** — Typora 1.13 parity spec (Phases A/B/C, deliberate non-goals, references)
-- **[docs/PROGRESS.md](docs/PROGRESS.md)** — release tracker + post-v0.1.5 roadmap
+- **[docs/PROGRESS.md](docs/PROGRESS.md)** — release tracker for every version + roadmap
 - **[docs/RELEASE.md](docs/RELEASE.md)** — signing posture + auto-update runbook
 
 ## Recent additions
 
-- **v0.1.5** — Native **검토 / Review** menu (between View and Help) and editor right-click context menu surface every memo + CriticMarkup operation: 메모 추가, 메모 패널 표시/숨기기, 변경 추적 ▶ submenu (5 CM operators), sidebar tab nav, next/prev memo (`F3` / `Shift + F3`, wrap-around), and the two export-toggle checkboxes (메모 포함 / 변경 표시 포함). The right-click menu also keeps cut/copy/paste, link insert, and the existing spell-check items
-- **v0.1.4 Track B** — Five-operator CriticMarkup track-changes (`{++ ++}`, `{-- --}`, `{~~ ~> ~~}`, `{== ==}`, `{>> <<}`); 5th sidebar **Changes** tab; status-bar CM badges; export with accept-all-changes default and an opt-in preserve mode
-- **v0.1.4 Track A** — Memo threading + author + timestamps + resolved state + grouping; sidecar JSON metadata (`<doc>.md.comments.json`)
-- **v0.1.3** — MS Word-style memo chat panel: line-end `💬` markers, right-side cards, two-way debounced sync to source, panel toggle `Cmd/Ctrl + Shift + M`
+- **v0.1.8.3** — AI sidebar tab (7th tab) consolidates the AI entry points; F1 keyboard-shortcuts dialog; Korean i18n polish pass
+- **v0.1.8.2** — pdfjs-dist replaces the regex-on-raw-bytes PDF scanner; DOI extraction now finds DOIs in compressed content streams, and citation suggestion enriches each candidate with the first ~3 pages of its local PDF
+- **v0.1.8.1** — Atomic citation-key rename across bib + active doc; AI usage + cost dashboard (localStorage-backed); inline ghost-text completion (off by default, opt in via Settings)
+- **v0.1.8** — LLM client with safeStorage-encrypted keys; selection rewrite palette (`Cmd/Ctrl + Shift + /`); AI citation suggestion with hallucination guard against the live bibliography set
+- **v0.1.7.1** — Entry edit / delete in the references sidebar; bulk DOI add (paste a list, sequential through Crossref); `.bib` / `.ris` import with collision handling
+- **v0.1.7** — `[@`-autocomplete + hover tooltip + local PDF/MD download pipeline (Crossref link → PMC → Unpaywall → HTML scrape → abstract stub); bidirectional `reference/` folder sync; orphan-file registration with auto-DOI extraction
+- **v0.1.6** — Live reference search (Crossref / PubMed / KoreaMed / ORCID); DOI → BibTeX via `Cmd/Ctrl + Shift + B`; Settings 참고문헌 section
+- **v0.1.5** — Native **검토 / Review** menu and editor right-click context menu; next/prev memo (`F3` / `Shift + F3`)
+- **v0.1.4** — CriticMarkup track-changes (5 operators) + memo threading with sidecar JSON metadata
+- **v0.1.3** — MS Word-style memo chat panel
 
 ## Roadmap — vision toward a manuscript studio
 
-The features below build on the v0.1.5 foundation:
+The features below build on the v0.1.8.3 foundation. Items 1 + 2 are shipped:
 
-### 1 — Live reference search
-- API integrations: PubMed, KoreaMed, Crossref, Semantic Scholar, ORCID
+### ✓ 1 — Live reference search (shipped in v0.1.6)
+- API integrations: PubMed, KoreaMed, Crossref, ORCID
 - DOI → metadata resolution; one-click cite-and-insert into the local BibTeX
 
-### 2 — AI-assisted writing
-- Integrated LLM assist for drafting, summarizing, and rephrasing
-- **English-polish** mode that smooths non-native phrasing without producing AI-detection signals
-- Context-aware suggestions grounded in the document's references (RAG over the local reference library)
+### ✓ 2 — AI-assisted writing (shipped in v0.1.8 series)
+- Selection rewrite palette (7 commands: polish / tighten / expand / simplify / academic tone / Ko/En translation)
+- Citation suggestion grounded in the local `references.bib` + local PDF excerpts (v0.1.8.2 enriches with pdfjs-dist body text)
+- Inline ghost-text completion (off by default; per-session cap bounds cost)
+- Usage + cost dashboard with per-model + per-source breakdown
 
 ### 3 — AI manuscript review harness
 - Multi-perspective evaluation panels at each writing stage. Each perspective is an independent reviewer agent:
@@ -264,8 +321,8 @@ pnpm dev
 
 ```bash
 pnpm build              # bundle main + preload + renderer
-pnpm make:mac           # produce dist-build/Durumi-0.1.5-*.dmg (run on macOS)
-pnpm make:win           # produce dist-build/Durumi Setup 0.1.5.exe (run on Windows 11)
+pnpm make:mac           # produce dist-build/Durumi-0.1.8.3-*.dmg (run on macOS)
+pnpm make:win           # produce dist-build/Durumi Setup 0.1.8.3.exe (run on Windows 11)
 ```
 
 See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, signing posture, auto-update setup).
@@ -275,7 +332,7 @@ See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, sig
 ```bash
 pnpm typecheck          # 0 errors expected
 pnpm lint               # 0 errors / 0 warnings expected
-pnpm test               # 804 Vitest unit tests
+pnpm test               # 1129 Vitest unit tests
 pnpm test:e2e           # 16 Playwright Electron tests (run pnpm build first)
 ```
 
@@ -341,10 +398,20 @@ User-defined macros via `macros.json` extend / override these.
 | `Cmd/Ctrl + Shift + F` | Show Search tab |
 | `Cmd/Ctrl + Shift + M` | Toggle memo chat panel (검토 menu) |
 | `Cmd/Ctrl + P` | Quick Open (fuzzy filename palette) |
+| `F1` | Keyboard shortcuts dialog |
 | `F3` | 다음 메모로 이동 (Next memo, wrap-around) |
 | `Shift + F3` | 이전 메모로 이동 (Previous memo, wrap-around) |
 | `F8` | Focus Mode toggle |
 | `F9` | Typewriter Mode toggle |
+
+### Citations & AI assist (v0.1.6 – v0.1.8.3)
+| Shortcut | Action |
+|---|---|
+| `Cmd/Ctrl + Shift + B` | Insert citation from DOI (Crossref) |
+| `Cmd/Ctrl + Shift + I` | Insert citation palette (fuzzy over `references.bib`) |
+| `Cmd/Ctrl + Shift + /` | AI assist on selection (palette) |
+| `Tab` | Accept inline ghost-text suggestion (when present) |
+| `Esc` | Dismiss ghost text / close palettes |
 
 ### Find
 | Shortcut | Action |
@@ -444,11 +511,61 @@ build/
 ├── icon.svg                 Master logo (origami crane on 한지 paper)
 └── icon.png                 1024×1024 app icon (rendered from icon.svg)
 
-tests/                       Vitest unit tests (804)
+tests/                       Vitest unit tests (1129)
 e2e/                         Playwright Electron tests (16)
 docs/
-├── durumi-markdown-reference.md   Korean markdown reference (~1280 lines)
+├── durumi-markdown-reference.md   Korean markdown reference (~1311 lines)
 ├── typora-spec.md           Typora 1.13 parity spec
 ├── PROGRESS.md              Progress tracker + roadmap
 └── RELEASE.md               Signing + auto-update runbook
+```
+
+### Subsystems added since v0.1.5
+
+```
+electron/
+├── bibliographyFetch.ts     Crossref / PubMed / KoreaMed / ORCID HTTP adapter
+├── bibliographyWrite.ts     Atomic .bib writer (append / upsert / rename / remove)
+├── referenceFs.ts           reference/ folder layout + status probe + scan
+├── referenceDownload.ts     Download pipeline (Crossref link → PMC → Unpaywall → MD)
+├── referenceImport.ts       Orphan-file DOI extraction + manual entry build
+├── pdfText.ts               pdfjs-dist text extraction (lazy-loaded)
+├── aiClient.ts              Anthropic + OpenAI-compatible LLM client
+└── aiKeys.ts                safeStorage-backed key vault
+
+src/
+├── components/
+│   ├── AiCommandPalette.tsx       Cmd+Shift+/ selection rewrite palette
+│   ├── CitationSuggestPanel.tsx   AI citation suggestion with hallucination guard
+│   ├── CitePalette.tsx            Cmd+Shift+I fuzzy palette over local entries
+│   ├── InsertCitationDialog.tsx   Cmd+Shift+B DOI → BibTeX modal
+│   ├── BulkDoiDialog.tsx          Paste-many-DOIs flow
+│   ├── EditEntryDialog.tsx        Full-field bib entry editor
+│   ├── RenameKeyDialog.tsx        Atomic citation-key rename
+│   ├── OrphanRegisterDialog.tsx   Manual metadata entry for orphan files
+│   ├── ImportReferencesDialog.tsx .bib / .ris import preview + collision picker
+│   ├── KeyboardShortcutsDialog.tsx Searchable shortcut reference (F1)
+│   ├── AiUsageDashboard.tsx       Settings panel — usage + cost breakdown
+│   └── sidebar/
+│       ├── ReferencesTab.tsx      v0.1.6+ — search + local entries + orphans
+│       └── AiTab.tsx              v0.1.8.3 — provider, commands, usage
+├── editor/
+│   ├── autocomplete/
+│   │   └── citationAutocomplete.ts  [@-key autocompletion (v0.1.7)
+│   ├── decorations/
+│   │   └── citationHover.ts         Hover tooltip for [@key]
+│   ├── ai/
+│   │   └── ghostText.ts             Inline ghost-text extension
+│   └── paragraphContext.ts          currentParagraph helper
+└── store/
+    ├── bibliographyStore.ts         References cache + add/remove/rename/import
+    └── aiUsageStore.ts              localStorage-backed AI usage log
+
+shared/
+├── bibtex.ts + bibtexWriter.ts      Parser (v0.1.2) + writer (v0.1.6)
+├── citationKey.ts                   Cite-key gen (RR Hangul) + rename helper
+├── ris.ts                           RIS parser (Zotero/EndNote/RefWorks)
+├── aiPrompts.ts                     Selection commands + ghost-text prompt
+├── aiCitationSuggest.ts             Suggestion prompt builder + JSON parser
+└── aiCost.ts                        Hardcoded price table for 14 models
 ```
