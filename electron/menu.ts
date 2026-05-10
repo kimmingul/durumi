@@ -254,6 +254,10 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           click: () => send('bulkInsertFromDoi'),
         },
         {
+          label: tr('menu.review.importReferences'),
+          click: () => send('importReferences'),
+        },
+        {
           label: tr('menu.review.openCitePalette'),
           accelerator: 'CommandOrControl+Shift+I',
           click: () => send('openCitePalette'),

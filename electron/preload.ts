@@ -101,6 +101,8 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:upsertEntry', filePath, entry),
   bibliographyRemoveEntry: (filePath, key) =>
     ipcRenderer.invoke('bibliography:removeEntry', filePath, key),
+  bibliographyImportFile: (sourcePath) =>
+    ipcRenderer.invoke('bibliography:importFile', sourcePath),
   referenceDownload: (bibFilePath, entry) =>
     ipcRenderer.invoke('reference:download', bibFilePath, entry),
   referenceOpen: (bibFilePath, relPath) =>

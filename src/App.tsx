@@ -9,6 +9,8 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { InsertCitationDialog } from './components/InsertCitationDialog';
 import { CitePalette } from './components/CitePalette';
 import { BulkDoiDialog } from './components/BulkDoiDialog';
+import { ImportReferencesDialog } from './components/ImportReferencesDialog';
+import type { BibEntry } from '@shared/bibtex';
 import { useBibliographyStore } from './store/bibliographyStore';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
@@ -82,6 +84,13 @@ export function App() {
   const [citationDialogOpen, setCitationDialogOpen] = useState(false);
   const [citePaletteOpen, setCitePaletteOpen] = useState(false);
   const [bulkDoiOpen, setBulkDoiOpen] = useState(false);
+  const [importState, setImportState] = useState<{
+    open: boolean;
+    entries: BibEntry[];
+    warnings: string[];
+    format: 'bibtex' | 'ris' | null;
+    sourcePath: string | null;
+  }>({ open: false, entries: [], warnings: [], format: null, sourcePath: null });
   // When Pandoc is missing, we surface a guided install dialog and remember
   // the operation that triggered it so the user can retry after installing.
   const [pandocInstallOp, setPandocInstallOp] = useState<
@@ -384,6 +393,17 @@ export function App() {
       if (cmd === 'openSettings') { setSettingsOpen(true); return; }
       if (cmd === 'insertCitationFromDoi') { setCitationDialogOpen(true); return; }
       if (cmd === 'bulkInsertFromDoi') { setBulkDoiOpen(true); return; }
+      if (cmd === 'importReferences') {
+        const picked = await window.api.dialogPickFile({
+          title: 'Import references',
+          filters: [
+            { name: 'BibTeX / RIS', extensions: ['bib', 'bibtex', 'ris'] },
+            { name: 'All files', extensions: ['*'] },
+          ],
+        });
+        if (picked) await openImportDialog(picked);
+        return;
+      }
       if (cmd === 'openCitePalette') { setCitePaletteOpen(true); return; }
       if (cmd === 'toggleFocusMode' && view) {
         const cur = view.state.field(focusModeField, false);
@@ -579,8 +599,32 @@ export function App() {
         open={bulkDoiOpen}
         onClose={() => setBulkDoiOpen(false)}
       />
+      <ImportReferencesDialog
+        open={importState.open}
+        entries={importState.entries}
+        warnings={importState.warnings}
+        format={importState.format}
+        sourcePath={importState.sourcePath}
+        onClose={() => setImportState((s) => ({ ...s, open: false }))}
+      />
     </div>
   );
+
+  async function openImportDialog(sourcePath: string) {
+    const r = await window.api.bibliographyImportFile(sourcePath);
+    if (!r.ok) {
+      // eslint-disable-next-line no-alert
+      window.alert(`Could not read ${sourcePath}: ${r.error}`);
+      return;
+    }
+    setImportState({
+      open: true,
+      entries: r.entries,
+      warnings: r.warnings,
+      format: r.format,
+      sourcePath,
+    });
+  }
 
   function insertCitationAtCaret(citation: string) {
     const view = editorViewRef.current;

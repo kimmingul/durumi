@@ -73,6 +73,17 @@ interface BibliographyState {
    */
   deleteEntry: (key: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   /**
+   * v0.1.7.1 — merge parsed entries (from a .bib or .ris import) into
+   * `references.bib`. Collision modes:
+   *   - `skip`: keep existing entry, drop incoming
+   *   - `replace`: overwrite existing fields with incoming
+   *   - `rename`: append `-2`, `-3`, … to the incoming key
+   */
+  mergeImportedEntries: (
+    incoming: BibEntry[],
+    mode: 'skip' | 'replace' | 'rename',
+  ) => Promise<{ ok: true; added: number; replaced: number; skipped: number } | { ok: false; error: string }>;
+  /**
    * Download the reference for `key` (probes Crossref link / PMC /
    * Unpaywall / HTML / abstract). On success, persists the resulting
    * relative path back into the bib entry's `file` field.
@@ -245,6 +256,56 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
     // Re-scan: the dropped entry's file (if any) becomes an orphan.
     void get().scanFileStatuses();
     return { ok: true };
+  },
+
+  mergeImportedEntries: async (incoming, mode) => {
+    const { filePath, entries } = get();
+    if (!filePath) return { ok: false, error: 'no .bib bound' };
+    if (incoming.length === 0) return { ok: true, added: 0, replaced: 0, skipped: 0 };
+    const taken = new Set(entries.map((e) => e.key));
+    let added = 0;
+    let replaced = 0;
+    let skipped = 0;
+    // Collect the entries we'll actually write so we can do a single
+    // round-trip per incoming entry rather than batch the writes.
+    for (const raw of incoming) {
+      const candidate: BibEntry = {
+        ...raw,
+        key: raw.key && raw.key.length > 0 ? raw.key : `imported-${Date.now()}-${added}`,
+      };
+      if (taken.has(candidate.key)) {
+        if (mode === 'skip') {
+          skipped++;
+          continue;
+        }
+        if (mode === 'replace') {
+          const r = await window.api.bibliographyUpsertEntry(filePath, candidate);
+          if (!r.ok) return { ok: false, error: r.error };
+          replaced++;
+          // Update the in-memory cache.
+          set((s) => ({
+            entries: s.entries.map((e) => (e.key === candidate.key ? candidate : e)),
+          }));
+          continue;
+        }
+        // rename: append -2, -3, ...
+        let suffix = 2;
+        while (taken.has(`${candidate.key}-${suffix}`)) suffix++;
+        candidate.key = `${candidate.key}-${suffix}`;
+      }
+      const r = await window.api.bibliographyAppendEntry(filePath, candidate);
+      if (!r.ok) return { ok: false, error: r.error };
+      // The append call may have minted a new key (e.g. when raw.key was
+      // empty); use that as the canonical key.
+      const finalKey = r.key;
+      taken.add(finalKey);
+      added++;
+      set((s) => ({
+        entries: [...s.entries, { ...candidate, key: finalKey }],
+      }));
+    }
+    void get().scanFileStatuses();
+    return { ok: true, added, replaced, skipped };
   },
 
   registerOrphan: async (absPath, relPath, manualEntry) => {

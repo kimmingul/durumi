@@ -29,6 +29,8 @@ import { downloadReference } from './referenceDownload';
 import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
 import { extractDoiFromFile } from './referenceImport';
 import { parseBibTeX } from '@shared/bibtex';
+import { parseRis } from '@shared/ris';
+import { extname } from 'node:path';
 import type { BibEntry } from '@shared/bibtex';
 import {
   createFile,
@@ -49,6 +51,17 @@ const SHELL_OPEN_HOST_ALLOWLIST: ReadonlyArray<string> = [
   'www.pandoc.org',
   'github.com',
 ];
+
+/**
+ * Quick content sniff when the file extension is unknown. RIS files start
+ * with a `TY  - ` header within the first few non-empty lines; BibTeX
+ * always begins with an `@` somewhere near the top.
+ */
+function sniffFormat(raw: string): 'bibtex' | 'ris' {
+  const head = raw.slice(0, 2048);
+  if (/^\s*TY\s*-\s/m.test(head)) return 'ris';
+  return 'bibtex';
+}
 
 export function isExternalUrlAllowed(rawUrl: string): boolean {
   let parsed: URL;
@@ -382,6 +395,26 @@ export function registerIpcHandlers(): void {
       return { ok: true as const, path: r.path };
     },
   );
+
+  ipcMain.handle('bibliography:importFile', async (_e, sourcePath: string) => {
+    let raw: string;
+    try {
+      raw = await fs.readFile(sourcePath, 'utf8');
+    } catch (err) {
+      return { ok: false as const, error: (err as Error).message };
+    }
+    const ext = extname(sourcePath).toLowerCase();
+    let format: 'bibtex' | 'ris';
+    if (ext === '.ris') format = 'ris';
+    else if (ext === '.bib' || ext === '.bibtex') format = 'bibtex';
+    else format = sniffFormat(raw);
+    if (format === 'ris') {
+      const r = parseRis(raw);
+      return { ok: true as const, entries: r.entries, warnings: r.warnings, format };
+    }
+    const r = parseBibTeX(raw);
+    return { ok: true as const, entries: r.entries, warnings: r.warnings, format };
+  });
 
   ipcMain.handle(
     'reference:download',

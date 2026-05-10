@@ -11,6 +11,7 @@ interface ApiMock {
   bibliographyReadEntries: ReturnType<typeof vi.fn>;
   bibliographyUpsertEntry: ReturnType<typeof vi.fn>;
   bibliographyRemoveEntry: ReturnType<typeof vi.fn>;
+  bibliographyImportFile: ReturnType<typeof vi.fn>;
   referenceStatus: ReturnType<typeof vi.fn>;
   referenceScan: ReturnType<typeof vi.fn>;
   referenceExtractDoi: ReturnType<typeof vi.fn>;
@@ -26,6 +27,7 @@ function installApiMock(): ApiMock {
     bibliographyReadEntries: vi.fn().mockResolvedValue({ ok: true, entries: [], warnings: [] }),
     bibliographyUpsertEntry: vi.fn().mockResolvedValue({ ok: true, key: 'k', path: '/p/x.bib' }),
     bibliographyRemoveEntry: vi.fn().mockResolvedValue({ ok: true, path: '/p/x.bib' }),
+    bibliographyImportFile: vi.fn(),
     referenceStatus: vi
       .fn()
       .mockResolvedValue({ exists: false, absPath: null, relPath: null, type: null }),
@@ -323,6 +325,90 @@ describe('bibliographyStore', () => {
     expect(api.bibliographyRemoveEntry).toHaveBeenCalledWith('/p/references.bib', 'k1');
     expect(useBibliographyStore.getState().entries.map((e) => e.key)).toEqual(['k2']);
     expect(useBibliographyStore.getState().fileStatus.k1).toBeUndefined();
+  });
+
+  it('mergeImportedEntries appends fresh entries and reports the count', async () => {
+    const api = installApiMock();
+    api.bibliographyAppendEntry
+      .mockResolvedValueOnce({ ok: true, key: 'a', path: '/p/x.bib' })
+      .mockResolvedValueOnce({ ok: true, key: 'b', path: '/p/x.bib' });
+    useBibliographyStore.setState({
+      filePath: '/p/x.bib',
+      exists: true,
+      entries: [],
+      loading: false,
+    });
+    const r = await useBibliographyStore.getState().mergeImportedEntries(
+      [
+        { key: 'a', type: 'article', fields: { title: 'A' } },
+        { key: 'b', type: 'article', fields: { title: 'B' } },
+      ],
+      'rename',
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.added).toBe(2);
+    expect(useBibliographyStore.getState().entries.map((e) => e.key)).toEqual(['a', 'b']);
+  });
+
+  it('mergeImportedEntries with rename mode collides into key-2', async () => {
+    const api = installApiMock();
+    api.bibliographyAppendEntry.mockResolvedValueOnce({
+      ok: true,
+      key: 'existing-2',
+      path: '/p/x.bib',
+    });
+    useBibliographyStore.setState({
+      filePath: '/p/x.bib',
+      exists: true,
+      entries: [{ key: 'existing', type: 'article', fields: { title: 'Old' } }],
+      loading: false,
+    });
+    const r = await useBibliographyStore.getState().mergeImportedEntries(
+      [{ key: 'existing', type: 'article', fields: { title: 'New' } }],
+      'rename',
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.added).toBe(1);
+    const calledWith = api.bibliographyAppendEntry.mock.calls[0]![1] as {
+      key: string;
+    };
+    expect(calledWith.key).toBe('existing-2');
+  });
+
+  it('mergeImportedEntries with skip mode leaves existing alone', async () => {
+    const api = installApiMock();
+    useBibliographyStore.setState({
+      filePath: '/p/x.bib',
+      exists: true,
+      entries: [{ key: 'existing', type: 'article', fields: { title: 'Old' } }],
+      loading: false,
+    });
+    const r = await useBibliographyStore.getState().mergeImportedEntries(
+      [{ key: 'existing', type: 'article', fields: { title: 'New' } }],
+      'skip',
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.skipped).toBe(1);
+    expect(api.bibliographyAppendEntry).not.toHaveBeenCalled();
+    expect(useBibliographyStore.getState().entries[0]?.fields.title).toBe('Old');
+  });
+
+  it('mergeImportedEntries with replace mode upserts the colliding key', async () => {
+    const api = installApiMock();
+    useBibliographyStore.setState({
+      filePath: '/p/x.bib',
+      exists: true,
+      entries: [{ key: 'existing', type: 'article', fields: { title: 'Old' } }],
+      loading: false,
+    });
+    const r = await useBibliographyStore.getState().mergeImportedEntries(
+      [{ key: 'existing', type: 'article', fields: { title: 'New' } }],
+      'replace',
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.replaced).toBe(1);
+    expect(api.bibliographyUpsertEntry).toHaveBeenCalled();
+    expect(useBibliographyStore.getState().entries[0]?.fields.title).toBe('New');
   });
 
   it('registerOrphan with manualEntry skips DOI extraction', async () => {

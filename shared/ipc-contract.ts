@@ -103,6 +103,7 @@ export type MenuCommand =
   | 'nextMemo' | 'prevMemo'
   | 'insertCitationFromDoi'
   | 'bulkInsertFromDoi'
+  | 'importReferences'
   | 'openCitePalette'
   | 'toggleExportIncludeComments' | 'toggleExportPreserveAnnotations'
   | 'exportHtml'
@@ -334,6 +335,17 @@ export interface IpcApi {
     filePath: string,
     key: string,
   ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /**
+   * v0.1.7.1 — read a .bib or .ris file and return its parsed entries.
+   * Format is auto-detected by extension first, falling back to content
+   * sniffing when the extension is ambiguous.
+   */
+  bibliographyImportFile: (
+    sourcePath: string,
+  ) => Promise<
+    | { ok: true; entries: BibEntry[]; warnings: string[]; format: 'bibtex' | 'ris' }
+    | { ok: false; error: string }
+  >;
   /**
    * v0.1.7 Track B — download the open-access copy of a reference into
    * `<doc-folder>/reference/`. Probes Crossref `link[]`, PMC, Unpaywall
