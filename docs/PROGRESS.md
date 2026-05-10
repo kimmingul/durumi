@@ -1,6 +1,112 @@
 # Durumi — Progress
 
-## v0.1.7.1 (current) — Bibliography ergonomics: edit, bulk, import
+## v0.1.8 (current) — AI-assisted writing
+
+The first AI release. Roadmap item #2 lands as three coordinated
+tracks: a provider-abstracted LLM client (Track A), a selection-rewrite
+palette with seven prompt recipes (Track B), and a paragraph-aware
+citation-suggestion flow (Track C). Every LLM call is opt-in and
+explicit — with no API key configured the new menu items still appear
+but the modals tell the user "no provider configured" and refuse to
+spend tokens. v0.1.6's "all outbound HTTP runs in main" invariant
+extends to LLM calls.
+
+### Provider strategy
+Two providers behind one shape:
+- **Anthropic** — `api.anthropic.com/v1/messages` with `x-api-key` auth
+- **OpenAI-compatible** — `<baseUrl>/v1/chat/completions` with Bearer
+  auth (auth header omitted when key is empty so keyless self-hosted
+  endpoints like Ollama and LM Studio work)
+
+API keys are persisted as opaque encrypted blobs (`enc:` prefix) via
+Electron's `safeStorage` (macOS Keychain / Windows DPAPI / Linux kwallet
+or libsecret). On platforms without a keychain backend, keys are tagged
+`plain:` so future code can detect and refuse rather than silently fall
+through. The renderer never sees the plaintext.
+
+### Track A — LLM client + Settings (commit `aa53168`)
+- New `electron/aiClient.ts` with a unified `aiChat(messages, opts)`
+  surface; structured error codes (`auth` / `rate-limit` / `timeout` /
+  `network` / `invalid-response` / `http`).
+- New `electron/aiKeys.ts` — safeStorage wrapper with `encrypt` /
+  `decrypt` and a `fakeKeyVault()` test seam.
+- New IPC: `ai:setApiKey`, `ai:hasKey`, `ai:verify`, `ai:chat`.
+- Settings dialog gains a new "AI 작성 도우미" section with provider
+  radio, key-save flow, model picker (Anthropic: Opus 4.7 / Sonnet 4.6
+  / Haiku 4.5; OpenAI: free-form), base URL field, and a Verify probe
+  button.
+- Privacy notice in the section: "선택 텍스트와 주변 단락이 선택한
+  제공자로 전송됩니다."
+
+### Track B — Selection rewrite palette (commit `6c9b8d3`)
+- New **Cmd/Ctrl+Shift+/** palette runs the active provider against the
+  editor selection.
+- Seven commands ship: Polish English / Tighten / Expand / Simplify /
+  Academic tone / Translate to Korean / Translate to English.
+- Flow: select text → palette → pick command → before/after preview
+  with token usage → Accept replaces the selection in place. Esc / Back
+  cancels without touching the document.
+- Prompt library lives in `shared/aiPrompts.ts` so adding a new command
+  is a one-file change.
+- System prompts enforce medical-research guarantees: never invent
+  citations, preserve `[@key]` refs verbatim, keep markdown structure,
+  default to academic register.
+- Surrounding-paragraph context (from `currentParagraph`) is sent as a
+  non-rewritable preface — drives voice + tense consistency on
+  multi-sentence rewrites without making the model edit text the user
+  didn't select.
+
+### Track C — Citation suggestion (commit `c048e14`)
+- New "AI: 현재 단락에 인용 제안…" menu item opens a panel that reads
+  the paragraph at the caret, hands it to the LLM together with a
+  compact slice of `references.bib` (capped at 60 entries; abstracts
+  truncated to ~320 chars), and asks for a STRICT JSON list of keys
+  that fit.
+- **Hallucination guard**: `parseCitationSuggestion` drops any candidate
+  whose key isn't in the live bibliography set. The model can never
+  insert a fabricated cite key — even if it tries.
+- Per-candidate card shows rationale + anchor phrase + one-click
+  "단락 끝에 삽입" action. The user always sees what's about to change;
+  rejection is the silent default.
+- Strategy is retrieval-augmented (single round-trip with paragraph +
+  bibliography slice) rather than tool-use, so it works against any
+  chat-completion endpoint including OpenAI-compatible self-hosted
+  models that don't support function calling.
+
+### Quality gates
+- 1049 Vitest unit tests across ~126 files (v0.1.7.1 was 1021 → Track A
+  1033 → Track B 1039 → Track C 1049; +28 total)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean
+
+### Architecture invariants added in this line of work
+
+These join the list at the bottom of the file. Any future change must
+preserve all of them.
+
+- **API keys live encrypted in main, never in the renderer.** safeStorage
+  encrypts on write; the renderer asks `aiHasKey` for a yes/no but never
+  receives plaintext. UI gating uses that boolean.
+- **Every LLM call is explicitly user-initiated.** No auto-suggest on
+  caret idle, no background re-runs, no "while you write" inline ghost
+  text. Cmd+Shift+/ is the entry; Esc cancels at any point.
+- **Citation suggestions are validated against the live `.bib`.** The
+  model only sees keys we already have; the parser drops anything
+  outside that set. Fabricated keys never reach the document — by
+  construction, not by trust.
+- **System prompts forbid citation invention and `[@key]` mutation.**
+  Every prompt builder includes the rule. If a future command needs to
+  bend it, that's an explicit override at the recipe level, not a
+  default the system slips into.
+- **AI calls follow the v0.1.6 "outbound HTTP in main only" invariant.**
+  The renderer never imports `fetch`-based AI code; it goes through the
+  IPC `ai:chat` handler which owns timeout, User-Agent, and key handling.
+
+---
+
+## v0.1.7.1 — Bibliography ergonomics: edit, bulk, import
 
 A patch release that fills the everyday-use gaps v0.1.7 left exposed.
 No new architecture invariants — every track sits on top of the
