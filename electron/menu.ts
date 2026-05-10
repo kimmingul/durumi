@@ -276,6 +276,7 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
         { label: tr('menu.review.showMemos'), click: () => send('showMemos') },
         { label: tr('menu.review.showChanges'), click: () => send('showChanges') },
         { label: tr('menu.review.showReferences'), click: () => send('showReferences') },
+        { label: tr('menu.review.showAi'), click: () => send('showAi') },
         { type: 'separator' },
         { label: tr('menu.review.nextMemo'), accelerator: 'F3', click: () => send('nextMemo') },
         { label: tr('menu.review.prevMemo'), accelerator: 'Shift+F3', click: () => send('prevMemo') },

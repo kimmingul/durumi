@@ -389,6 +389,7 @@ export function App() {
       if (cmd === 'showMemos') { showWith('comments'); return; }
       if (cmd === 'showChanges') { showWith('changes'); return; }
       if (cmd === 'showReferences') { showWith('references'); return; }
+      if (cmd === 'showAi') { showWith('ai'); return; }
       if (cmd === 'addMemo' && view) { wrapComment(view); view.focus(); return; }
       if (cmd === 'cmInsert' && view) { wrapCmInsert(view); view.focus(); return; }
       if (cmd === 'cmDelete' && view) { wrapCmDelete(view); view.focus(); return; }
@@ -567,6 +568,44 @@ export function App() {
           onApplyOutlineMove={(newDoc) => setContent(newDoc)}
           onInsertCitation={(key) => insertCitationAtCaret(`[@${key}]`)}
           onCitationRenamed={migrateCitationsInDoc}
+          onOpenAiPalette={() => {
+            const v = editorViewRef.current;
+            if (!v) return;
+            const sel = v.state.selection.main;
+            const selection = v.state.sliceDoc(sel.from, sel.to);
+            const para = currentParagraph(v.state);
+            void Promise.all([
+              window.api.aiHasKey('anthropic'),
+              window.api.aiHasKey('openai-compatible'),
+            ]).then(([hasA, hasO]) => {
+              setAiPaletteState({
+                open: true,
+                selection,
+                paragraph: para?.text ?? selection,
+                from: sel.from,
+                to: sel.to,
+                hasKey: hasA || hasO,
+              });
+            });
+          }}
+          onSuggestCitations={() => {
+            const v = editorViewRef.current;
+            if (!v) return;
+            const para = currentParagraph(v.state);
+            void Promise.all([
+              window.api.aiHasKey('anthropic'),
+              window.api.aiHasKey('openai-compatible'),
+            ]).then(([hasA, hasO]) => {
+              setCiteSuggestState({
+                open: true,
+                paragraph: para?.text ?? '',
+                insertAt: para?.to ?? v.state.selection.main.head,
+                hasKey: hasA || hasO,
+              });
+            });
+          }}
+          onInsertCitationFromDoi={() => setCitationDialogOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
           onOpenFile={async (p) => {
             if (!(await maybeDiscard())) return;
             const r = await window.api.fileOpenPath(p);

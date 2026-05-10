@@ -24,7 +24,7 @@ export interface Preferences {
   recentFiles: string[];
   sidebar: {
     visible: boolean;
-    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes' | 'references';
+    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes' | 'references' | 'ai';
     width: number;
   };
   /**
@@ -129,7 +129,7 @@ export type MenuCommand =
   | 'toggleMemoPanel'
   | 'addMemo'
   | 'cmInsert' | 'cmDelete' | 'cmSubstitute' | 'cmHighlight' | 'cmComment'
-  | 'showMemos' | 'showChanges' | 'showReferences'
+  | 'showMemos' | 'showChanges' | 'showReferences' | 'showAi'
   | 'nextMemo' | 'prevMemo'
   | 'insertCitationFromDoi'
   | 'bulkInsertFromDoi'
