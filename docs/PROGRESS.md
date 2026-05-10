@@ -1,6 +1,87 @@
 # Durumi — Progress
 
-## v0.1.8 (current) — AI-assisted writing
+## v0.1.8.1 (current) — AI polish: rename, dashboard, ghost text
+
+A patch release that fills the v0.1.8 gaps that surfaced once people
+actually used the AI features: cite-key typos couldn't be fixed without
+a doc-wide migration, every API call was invisible cost-wise, and
+common mid-paragraph "what comes next" moments still required opening
+the palette manually.
+
+### Track A — Atomic citation-key rename (commit `f09882d`)
+- Sidebar entries gain a 🔑 button next to ✎ ✕.
+- RenameKeyDialog: shows current key + new-key input + live "이 문서에
+  N개 참조가 있습니다 — 모두 한 번에 변경됨" count + validation
+  (non-empty, allowed charset, not the same key, not already taken).
+- On confirm: `bibliographyRenameKey` IPC rewrites references.bib, then
+  a single CodeMirror transaction migrates every `[@oldKey]` in the
+  active doc — atomic undo as one unit.
+- New `renameCitationKeyChanges` helper in `shared/citationKey.ts`
+  handles every Pandoc shape (bare, author-suppressing, locator,
+  grouped) without false positives on partial matches.
+
+### Track B — AI usage + cost dashboard (commit `6d46284`)
+- Every successful `aiChat` call records into a localStorage-backed
+  store: last 200 calls, per-model + per-source lifetime totals.
+- Settings dialog grows an "AI 사용량" section with summary pills
+  (calls / tokens / estimated cost), by-model + by-source tables,
+  recent-calls log (collapsed), and a Reset button.
+- Cost estimation in `shared/aiCost.ts` with hardcoded prices for
+  Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5, GPT-4o family, GPT-4.1
+  family, and zero-cost catch-alls for local Ollama / Mistral / Qwen.
+  Unmatched models report 0 (under-report rather than guess).
+
+### Track C — Inline ghost-text completion (commit `0dcdce7`)
+- New CodeMirror extension renders 1-2 sentence continuations as gray
+  italic text after the caret when the user idles at the end of a
+  paragraph. Tab accepts; Esc / typing / selection change clears.
+- **Off by default** — opt in via Settings → AI assist → "Inline
+  ghost text". Every accepted Tab is a real LLM call.
+- Cost guards: 800ms idle debounce, ≥30 chars before triggering, end of
+  line AND end of paragraph required, single in-flight (auto-cancel on
+  doc / selection change), per-session cap (default 100 triggers).
+- New prompt builder `buildGhostTextPrompt` with an explicit
+  `NO_COMPLETION` escape hatch — the model returns that token when the
+  lead-in is too short / mid-heading / otherwise unsuitable, and the
+  extension treats it as a no-op.
+- Successful triggers record into the Track B usage dashboard under
+  `source: 'ghostText'` so the user can see how often the feature
+  actually fires.
+
+### Quality gates
+- 1104 Vitest unit tests across ~130 files (v0.1.8 was 1049 → Track A
+  1066 → Track B 1093 → Track C 1104; +55 total)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean
+
+### Architecture invariants added in this line of work
+
+These join the list at the bottom of the file. Any future change must
+preserve all of them.
+
+- **Cite-key rename is bib + doc atomic.** The bib write commits before
+  the doc transaction dispatches; both succeed or the user sees a
+  clear error with the bib intact and the doc untouched. No half-state
+  where references.bib has the new key but the doc still cites the old.
+- **AI usage logging is best-effort, persistence is opt-in by default.**
+  localStorage may be unavailable (read-only profile, quota), and the
+  store silently degrades — usage flows continue, the dashboard simply
+  shows what's currently in memory. Nothing in the AI codepaths
+  depends on logging succeeding.
+- **Ghost-text is gated behind an explicit opt-in toggle.** The default
+  is off because every accepted suggestion is a real LLM call. The
+  per-session cap is a guardrail against runaway typing sessions, not
+  a substitute for the toggle.
+- **Single-flight + auto-cancel for ghost-text.** Doc or selection
+  changes cancel any in-flight request and clear pending decorations;
+  late-arriving completions for stale carets never land. Prevents the
+  "I typed past the suggestion and it appeared after my new text" bug.
+
+---
+
+## v0.1.8 — AI-assisted writing
 
 The first AI release. Roadmap item #2 lands as three coordinated
 tracks: a provider-abstracted LLM client (Track A), a selection-rewrite
