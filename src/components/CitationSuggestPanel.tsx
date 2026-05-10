@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { t } from '../i18n/t';
 import { useBibliographyStore } from '../store/bibliographyStore';
+import { useAiUsageStore } from '../store/aiUsageStore';
 import {
   buildCitationSuggestPrompt,
   parseCitationSuggestion,
@@ -33,6 +34,7 @@ type Phase =
 export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
   const { open, paragraph, hasKey, onClose, onAccept } = props;
   const entries = useBibliographyStore((s) => s.entries);
+  const recordUsage = useAiUsageStore((s) => s.recordUsage);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
 
   useEffect(() => {
@@ -59,6 +61,17 @@ export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
       setPhase({ kind: 'error', message: r.message });
       return;
     }
+    const prefs = await window.api.prefsGet();
+    const model =
+      prefs.ai?.provider === 'anthropic'
+        ? prefs.ai.anthropicModel
+        : prefs.ai?.openaiModel ?? 'unknown';
+    recordUsage({
+      model,
+      inputTokens: r.inputTokens,
+      outputTokens: r.outputTokens,
+      source: 'citeSuggest',
+    });
     const validKeys = new Set(entries.map((e) => e.key));
     const suggestion = parseCitationSuggestion(r.text, validKeys);
     setPhase({

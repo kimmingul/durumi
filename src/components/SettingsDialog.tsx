@@ -3,6 +3,7 @@ import { useLanguage, t, resolveRendererLang } from '../i18n/t';
 import { usePreferences } from '../hooks/usePreferences';
 import { useAppStore } from '../store/appStore';
 import { useMemoSidecarStore } from '../store/memoSidecarStore';
+import { AiUsageDashboard } from './AiUsageDashboard';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -329,6 +330,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
           <Section heading={t('settings.ai')}>
             <AiSection prefs={prefs} update={update} />
+          </Section>
+
+          <Section heading={t('settings.aiUsage')}>
+            <AiUsageDashboard />
           </Section>
 
           <Section heading={t('settings.bibliography')}>

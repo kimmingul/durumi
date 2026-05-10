@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n/t';
 import { AI_COMMANDS, type AiCommandId, type AiCommandSpec } from '@shared/aiPrompts';
+import { useAiUsageStore } from '../store/aiUsageStore';
 
 // Cmd/Ctrl+Shift+/ palette: pick a command, run the LLM, preview the
 // before/after diff, accept (replace selection) or reject (close).
@@ -32,6 +33,7 @@ export function AiCommandPalette(props: AiCommandPaletteProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'pick' });
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLDivElement>(null);
+  const recordUsage = useAiUsageStore((s) => s.recordUsage);
 
   useEffect(() => {
     if (!open) return;
@@ -77,6 +79,14 @@ export function AiCommandPalette(props: AiCommandPaletteProps) {
     const messages = cmd.build({ selection, paragraph });
     const r = await window.api.aiChat(messages);
     if (r.ok) {
+      const prefs = await window.api.prefsGet();
+      const model = activeModelFromPrefs(prefs);
+      recordUsage({
+        model,
+        inputTokens: r.inputTokens,
+        outputTokens: r.outputTokens,
+        source: 'palette',
+      });
       setPhase({
         kind: 'preview',
         cmd,
@@ -86,6 +96,15 @@ export function AiCommandPalette(props: AiCommandPaletteProps) {
     } else {
       setPhase({ kind: 'error', cmd, message: r.message });
     }
+  }
+
+  function activeModelFromPrefs(
+    prefs: import('@shared/ipc-contract').Preferences,
+  ): string {
+    if (!prefs.ai) return 'unknown';
+    return prefs.ai.provider === 'anthropic'
+      ? prefs.ai.anthropicModel
+      : prefs.ai.openaiModel;
   }
 
   return (
