@@ -119,6 +119,8 @@ const api: IpcApi = {
     ipcRenderer.invoke('reference:scan', bibFilePath),
   referenceExtractDoi: (absPath) =>
     ipcRenderer.invoke('reference:extractDoi', absPath),
+  referenceExtractText: (bibFilePath, relPath, options) =>
+    ipcRenderer.invoke('reference:extractText', bibFilePath, relPath, options),
   onAppRequestClose: (decide) => {
     const handler = async (_: unknown, reqId: number) => {
       let allow = false;

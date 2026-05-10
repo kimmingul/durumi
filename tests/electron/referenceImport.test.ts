@@ -3,6 +3,26 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildManualEntry, extractDoiFromFile } from '../../electron/referenceImport';
+import type { PdfParser } from '../../electron/pdfText';
+
+// v0.1.8.2: PDF parsing now goes through pdfjs-dist. Tests inject a
+// fake parser that returns the page text we want; the regex / source
+// classification logic is what we're verifying, not pdfjs itself.
+function fakeParser(pages: string[]): PdfParser {
+  return {
+    parsePages: async (_buf, max) => pages.slice(0, max),
+  };
+}
+
+function emptyParser(): PdfParser {
+  return { parsePages: async () => [] };
+}
+
+function throwingParser(): PdfParser {
+  return {
+    parsePages: async () => { throw new Error('corrupt PDF'); },
+  };
+}
 
 let dir: string;
 
@@ -14,52 +34,63 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('extractDoiFromFile — PDF', () => {
-  it('finds the DOI inside a PDF Info dictionary', async () => {
-    const pdf = [
-      '%PDF-1.4',
-      '1 0 obj',
-      '<< /Type /Catalog /Pages 2 0 R >>',
-      'endobj',
-      '5 0 obj',
-      '<<',
-      '  /Title (Deep learning in radiology)',
-      '  /Subject (10.1038/s41586-024-XXXXX)',
-      '>>',
-      'endobj',
-      'trailer << /Info 5 0 R /Root 1 0 R >>',
-      'startxref',
-      '%%EOF',
-    ].join('\n');
+describe('extractDoiFromFile — PDF (pdfjs path)', () => {
+  it('finds the DOI in extracted page text', async () => {
     const path = join(dir, 'paper.pdf');
-    await writeFile(path, pdf, 'latin1');
-    const r = await extractDoiFromFile(path);
-    expect(r.source).toBe('pdf-info');
+    await writeFile(path, '%PDF-1.4\n%fake\n', 'latin1');
+    const r = await extractDoiFromFile(path, {
+      pdfParser: fakeParser([
+        'Title page header',
+        'Abstract: The DOI is 10.1038/s41586-024-XXXXX for this study.',
+      ]),
+    });
+    expect(r.source).toBe('pdf-content');
     expect(r.doi).toBe('10.1038/s41586-024-XXXXX');
   });
 
-  it('falls back to a content scan when Info dict has no DOI', async () => {
-    const body = '%PDF-1.4\nsome stream...\nThis paper, doi:10.1234/example, was published.\n%%EOF';
+  it('falls back to raw-header scan when pdfjs returns no text', async () => {
+    // Simulate pdfjs returning empty pages — we should still find the DOI
+    // sitting plaintext in the Info dictionary.
+    const pdfWithInfoDict = [
+      '%PDF-1.4',
+      '5 0 obj',
+      '<<',
+      '  /Title (Deep learning)',
+      '  /Subject (10.1234/info)',
+      '>>',
+      'endobj',
+      'trailer << /Info 5 0 R >>',
+      '%%EOF',
+    ].join('\n');
     const path = join(dir, 'paper.pdf');
-    await writeFile(path, body, 'latin1');
-    const r = await extractDoiFromFile(path);
-    expect(r.source).toBe('pdf-content');
-    expect(r.doi).toBe('10.1234/example');
+    await writeFile(path, pdfWithInfoDict, 'latin1');
+    const r = await extractDoiFromFile(path, { pdfParser: emptyParser() });
+    expect(r.source).toBe('pdf-info');
+    expect(r.doi).toBe('10.1234/info');
   });
 
-  it('returns null when no DOI appears in the head', async () => {
+  it('falls back to raw-header scan when pdfjs throws (corrupt PDF)', async () => {
+    const pdfWithInline = '%PDF-1.4\nbody mentions doi:10.1056/NEJMoa1234567 here\n%%EOF';
+    const path = join(dir, 'paper.pdf');
+    await writeFile(path, pdfWithInline, 'latin1');
+    const r = await extractDoiFromFile(path, { pdfParser: throwingParser() });
+    expect(r.doi).toBe('10.1056/NEJMoa1234567');
+  });
+
+  it('returns null when no DOI appears anywhere', async () => {
     const path = join(dir, 'paper.pdf');
     await writeFile(path, '%PDF-1.4\nno doi here\n%%EOF', 'latin1');
-    const r = await extractDoiFromFile(path);
+    const r = await extractDoiFromFile(path, { pdfParser: emptyParser() });
     expect(r.doi).toBeNull();
     expect(r.source).toBe('none');
   });
 
   it('strips trailing punctuation from the captured DOI', async () => {
-    const body = '%PDF-1.4\nsee 10.1056/NEJMoa1234567).\n%%EOF';
     const path = join(dir, 'paper.pdf');
-    await writeFile(path, body, 'latin1');
-    const r = await extractDoiFromFile(path);
+    await writeFile(path, '%PDF-1.4\n', 'latin1');
+    const r = await extractDoiFromFile(path, {
+      pdfParser: fakeParser(['Cite: 10.1056/NEJMoa1234567).']),
+    });
     expect(r.doi).toBe('10.1056/NEJMoa1234567');
   });
 

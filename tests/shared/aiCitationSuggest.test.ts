@@ -43,6 +43,38 @@ describe('buildCitationSuggestPrompt', () => {
     expect(userMsg).toContain('…');
   });
 
+  it('includes localText excerpts when entries are EnrichedEntry', () => {
+    const messages = buildCitationSuggestPrompt('p', [
+      { entry: e1, localText: 'Methods: We used cross-validation across 5 cohorts.' },
+    ]);
+    const userMsg = messages.find((m) => m.role === 'user')?.content ?? '';
+    expect(userMsg).toContain('cross-validation across 5 cohorts');
+    expect(userMsg).toContain('excerpt:');
+  });
+
+  it('truncates long localText excerpts', () => {
+    const longText = 'a'.repeat(5000);
+    const messages = buildCitationSuggestPrompt('p', [
+      { entry: e1, localText: longText },
+    ]);
+    const userMsg = messages.find((m) => m.role === 'user')?.content ?? '';
+    // The PDF excerpt cap is 600 chars per entry.
+    const excerptStart = userMsg.indexOf('excerpt:');
+    const excerptSlice = userMsg.slice(excerptStart, excerptStart + 800);
+    expect(excerptSlice).toContain('…');
+  });
+
+  it('accepts a mix of bare BibEntry and EnrichedEntry shapes', () => {
+    const messages = buildCitationSuggestPrompt('p', [
+      e1, // bare BibEntry
+      { entry: e2, localText: 'extra context' },
+    ]);
+    const userMsg = messages.find((m) => m.role === 'user')?.content ?? '';
+    expect(userMsg).toContain('[smith2024deep]');
+    expect(userMsg).toContain('[kim2023ai]');
+    expect(userMsg).toContain('extra context');
+  });
+
   it('system prompt enforces strict JSON output and no inventions', () => {
     const messages = buildCitationSuggestPrompt('p', [e1]);
     const sys = messages.find((m) => m.role === 'system')?.content ?? '';

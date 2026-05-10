@@ -28,6 +28,8 @@ import { appendEntry as appendBibEntry, ensureBibFile, removeEntry as removeBibE
 import { downloadReference } from './referenceDownload';
 import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
 import { extractDoiFromFile } from './referenceImport';
+import { extractPdfText } from './pdfText';
+import { extname } from 'node:path';
 import { aiChat as aiChatCall, aiVerify as aiVerifyCall, type AiMessage } from './aiClient';
 import { makeKeyVault } from './aiKeys';
 import { parseBibTeX } from '@shared/bibtex';
@@ -509,6 +511,42 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('reference:extractDoi', async (_e, absPath: string) =>
     extractDoiFromFile(absPath),
+  );
+
+  ipcMain.handle(
+    'reference:extractText',
+    async (
+      _e,
+      bibFilePath: string,
+      relPath: string,
+      options?: { maxPages?: number; maxChars?: number },
+    ) => {
+      const abs = resolveFileField(bibFilePath, relPath);
+      if (!abs) return { ok: false as const, error: 'empty path' };
+      const ext = extname(abs).toLowerCase();
+      if (ext === '.md' || ext === '.markdown') {
+        try {
+          const raw = await fs.readFile(abs, 'utf8');
+          const max = options?.maxChars ?? 8000;
+          return {
+            ok: true as const,
+            text: raw.slice(0, max),
+            pages: 1,
+          };
+        } catch (err) {
+          return { ok: false as const, error: (err as Error).message };
+        }
+      }
+      if (ext !== '.pdf') {
+        return { ok: false as const, error: `unsupported file type: ${ext}` };
+      }
+      const r = await extractPdfText(abs, {
+        maxPages: options?.maxPages ?? 5,
+        maxChars: options?.maxChars ?? 8000,
+      });
+      if (!r.ok) return { ok: false as const, error: r.error };
+      return { ok: true as const, text: r.text, pages: r.pages };
+    },
   );
 
   const vault = makeKeyVault();

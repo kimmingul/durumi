@@ -6,6 +6,7 @@ import {
   buildCitationSuggestPrompt,
   parseCitationSuggestion,
   type CitationSuggestion,
+  type EnrichedEntry,
 } from '@shared/aiCitationSuggest';
 
 // Citation suggestion modal: shows the current paragraph + AI-suggested
@@ -27,13 +28,16 @@ export interface CitationSuggestPanelProps {
 
 type Phase =
   | { kind: 'idle' }
+  | { kind: 'enriching' }
   | { kind: 'running' }
-  | { kind: 'result'; suggestion: CitationSuggestion; tokens: { input: number; output: number } }
+  | { kind: 'result'; suggestion: CitationSuggestion; tokens: { input: number; output: number }; enriched: number }
   | { kind: 'error'; message: string };
 
 export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
   const { open, paragraph, hasKey, onClose, onAccept } = props;
   const entries = useBibliographyStore((s) => s.entries);
+  const filePath = useBibliographyStore((s) => s.filePath);
+  const fileStatus = useBibliographyStore((s) => s.fileStatus);
   const recordUsage = useAiUsageStore((s) => s.recordUsage);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
 
@@ -54,8 +58,14 @@ export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
   if (!open) return null;
 
   async function run() {
+    setPhase({ kind: 'enriching' });
+    // v0.1.8.2: enrich entries with the first few pages of any local
+    // PDF or markdown file the user has saved. This is a best-effort
+    // step — if extraction fails or the entry has no local file, we
+    // fall back to the abstract-only path that v0.1.8 used.
+    const enrichedEntries = await enrichEntriesWithLocalText(entries, filePath, fileStatus);
     setPhase({ kind: 'running' });
-    const messages = buildCitationSuggestPrompt(paragraph, entries);
+    const messages = buildCitationSuggestPrompt(paragraph, enrichedEntries);
     const r = await window.api.aiChat(messages);
     if (!r.ok) {
       setPhase({ kind: 'error', message: r.message });
@@ -74,10 +84,12 @@ export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
     });
     const validKeys = new Set(entries.map((e) => e.key));
     const suggestion = parseCitationSuggestion(r.text, validKeys);
+    const enrichedCount = enrichedEntries.filter((e) => e.localText && e.localText.length > 0).length;
     setPhase({
       kind: 'result',
       suggestion,
       tokens: { input: r.inputTokens, output: r.outputTokens },
+      enriched: enrichedCount,
     });
   }
 
@@ -134,6 +146,11 @@ export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
                   {t('ai.citeSuggest.run', { count: String(entries.length) })}
                 </button>
               )}
+              {phase.kind === 'enriching' && (
+                <div style={emptyStyle} data-testid="cite-suggest-enriching">
+                  {t('ai.citeSuggest.enriching')}
+                </div>
+              )}
               {phase.kind === 'running' && (
                 <div style={emptyStyle}>{t('ai.citeSuggest.running')}</div>
               )}
@@ -144,6 +161,7 @@ export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
                 <ResultView
                   suggestion={phase.suggestion}
                   tokens={phase.tokens}
+                  enriched={phase.enriched}
                   onAccept={onAccept}
                 />
               )}
@@ -155,13 +173,59 @@ export function CitationSuggestPanel(props: CitationSuggestPanelProps) {
   );
 }
 
+/**
+ * Walk the entries list and request a text excerpt for any entry whose
+ * `file` field resolves to a local file Track B (download) or Track C
+ * (registration) wrote into `<bib-dir>/reference/`. Failures and
+ * missing files are silently skipped — the model just falls back to
+ * the abstract-only path for those entries.
+ *
+ * Hard cap: at most 30 entries get enriched per call to keep the
+ * extraction phase predictable. Anything beyond that goes in
+ * abstract-only.
+ */
+async function enrichEntriesWithLocalText(
+  entries: ReadonlyArray<import('@shared/bibtex').BibEntry>,
+  bibFilePath: string | null,
+  fileStatus: Record<string, { exists: boolean; relPath: string | null; type: 'pdf' | 'md' | null }>,
+): Promise<EnrichedEntry[]> {
+  if (!bibFilePath) return entries.map((entry) => ({ entry }));
+  const out: EnrichedEntry[] = [];
+  let enriched = 0;
+  const ENRICH_CAP = 30;
+  for (const entry of entries) {
+    const status = fileStatus[entry.key];
+    if (!status?.exists || !status.relPath || enriched >= ENRICH_CAP) {
+      out.push({ entry });
+      continue;
+    }
+    try {
+      const r = await window.api.referenceExtractText(bibFilePath, status.relPath, {
+        maxPages: 3,
+        maxChars: 1500,
+      });
+      if (r.ok && r.text.length > 0) {
+        out.push({ entry, localText: r.text });
+        enriched++;
+      } else {
+        out.push({ entry });
+      }
+    } catch {
+      out.push({ entry });
+    }
+  }
+  return out;
+}
+
 function ResultView({
   suggestion,
   tokens,
+  enriched,
   onAccept,
 }: {
   suggestion: CitationSuggestion;
   tokens: { input: number; output: number };
+  enriched: number;
   onAccept: (key: string) => void;
 }) {
   if (suggestion.candidates.length === 0) {
@@ -173,6 +237,7 @@ function ResultView({
         )}
         <div style={{ fontSize: 11, textAlign: 'right', color: 'var(--muted-fg, #6a6a6a)' }}>
           {tokens.input}+{tokens.output} tokens
+          {enriched > 0 && ` · ${t('ai.citeSuggest.enrichedCount', { n: String(enriched) })}`}
         </div>
       </div>
     );
@@ -181,6 +246,11 @@ function ResultView({
     <div data-testid="cite-suggest-result">
       <div style={labelStyle}>
         {t('ai.citeSuggest.candidates')} ({suggestion.candidates.length})
+        {enriched > 0 && (
+          <span style={{ fontWeight: 400, fontSize: 10, marginLeft: 8 }}>
+            · {t('ai.citeSuggest.enrichedCount', { n: String(enriched) })}
+          </span>
+        )}
       </div>
       <ul style={listStyle}>
         {suggestion.candidates.map((c) => (

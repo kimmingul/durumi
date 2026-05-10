@@ -1,6 +1,61 @@
 # Durumi — Progress
 
-## v0.1.8.1 (current) — AI polish: rename, dashboard, ghost text
+## v0.1.8.2 (current) — pdfjs-dist for real PDF text extraction
+
+Single-track polish that replaces the v0.1.7-era regex-on-raw-bytes PDF
+scanning with pdfjs-dist. Two outcomes:
+
+  • **DOI extraction now finds DOIs in compressed content streams.**
+    The v0.1.7 path only matched plaintext spans (Info dict + the rare
+    uncompressed page); modern journal PDFs have most of their body in
+    FlateDecode blocks where the regex never reached. The Track C
+    "Register orphan file" flow now rarely needs the manual-entry
+    fallback.
+  • **Citation suggestion gets per-entry body excerpts.** The v0.1.8
+    Track C suggestion prompt only carried the Crossref abstract for
+    each candidate. With pdfjs-dist, the renderer can pull the first
+    ~3 pages of any local PDF in `<bib-dir>/reference/` and feed that
+    excerpt to the model — methods / results / discussion now influence
+    matching, not just the abstract.
+
+### What changed
+- New `electron/pdfText.ts` wraps pdfjs-dist's legacy build with a
+  testable `PdfParser` interface. The 2MB pdfjs payload is **lazy-
+  loaded** the first time extraction runs, so app startup isn't
+  affected.
+- `electron/referenceImport.ts::extractDoiFromPdf` now goes pdfjs-dist
+  → page-text DOI scan, falling back to the v0.1.7 raw-header scan
+  only when pdfjs declines (corrupt / encrypted PDFs). The fallback
+  preserves the prior behaviour as a safety net.
+- New IPC `reference:extractText` reads PDF text or markdown body for
+  any file under `<bib-dir>/reference/`. Returns capped output
+  (default 5 pages, 8000 chars) so a 200-page review article doesn't
+  swamp the renderer.
+- `shared/aiCitationSuggest.ts::buildCitationSuggestPrompt` now accepts
+  either bare `BibEntry` or `{ entry, localText }` shapes. When
+  `localText` is present, it's truncated to 600 chars and inlined as
+  an `excerpt:` field per entry.
+- `CitationSuggestPanel` runs an enrichment pass before the LLM call:
+  for every entry with a local file, it requests `reference:extractText`
+  (capped at 30 entries, 1500 chars/entry) and passes the result
+  through. The result view shows "N entries enriched with local
+  content" so the user knows when the suggestion benefited from local
+  PDFs vs ran abstract-only.
+
+### Quality gates
+- 1114 Vitest unit tests across ~131 files (v0.1.8.1 was 1104 → +10)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean (renderer bundle +5KB; main bundle picks up the
+  pdfjs lazy-import on demand)
+
+### New dep
+- `pdfjs-dist` (~2MB, lazy-loaded)
+
+---
+
+## v0.1.8.1 — AI polish: rename, dashboard, ghost text
 
 A patch release that fills the v0.1.8 gaps that surfaced once people
 actually used the AI features: cite-key typos couldn't be fixed without

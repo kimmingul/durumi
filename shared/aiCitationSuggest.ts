@@ -32,6 +32,7 @@ export interface CitationSuggestion {
 
 const MAX_ENTRIES_IN_PROMPT = 60;
 const ABSTRACT_TRUNCATE = 320;
+const PDF_TEXT_TRUNCATE = 600;
 
 const SYSTEM_PROMPT = [
   'You are a medical-research citation assistant.',
@@ -47,12 +48,28 @@ const SYSTEM_PROMPT = [
 /**
  * Build the messages for the citation-suggestion call. Truncates entries
  * to keep the prompt within sensible token budgets for ~10K-token models.
+ *
+ * v0.1.8.2 — entries can carry an optional `localText` excerpt extracted
+ * from a local PDF / markdown file in `<bib-dir>/reference/`. When
+ * present, the model gets per-entry body content instead of relying on
+ * the Crossref abstract alone, which improves match quality for papers
+ * where the abstract doesn't surface the methodology / results that the
+ * paragraph would actually want to cite.
  */
+export interface EnrichedEntry {
+  entry: BibEntry;
+  /** PDF / markdown excerpt — typically the first ~3 pages of body text. */
+  localText?: string;
+}
+
 export function buildCitationSuggestPrompt(
   paragraph: string,
-  entries: ReadonlyArray<BibEntry>,
+  entries: ReadonlyArray<BibEntry | EnrichedEntry>,
 ): AiMessageDto[] {
-  const slim = entries.slice(0, MAX_ENTRIES_IN_PROMPT).map(slimEntry).join('\n');
+  const enriched: EnrichedEntry[] = entries.slice(0, MAX_ENTRIES_IN_PROMPT).map(
+    (e) => ('entry' in e ? e : { entry: e }),
+  );
+  const slim = enriched.map(slimEnriched).join('\n');
   const userMsg = [
     'PARAGRAPH:',
     '---',
@@ -72,7 +89,8 @@ export function buildCitationSuggestPrompt(
   ];
 }
 
-function slimEntry(e: BibEntry): string {
+function slimEnriched(en: EnrichedEntry): string {
+  const e = en.entry;
   const f = e.fields;
   const author = (f.author ?? '').split(/\s+and\s+/)[0]?.trim() ?? '';
   const year = f.year ?? '';
@@ -84,6 +102,11 @@ function slimEntry(e: BibEntry): string {
     const trimmed = f.abstract.replace(/\s+/g, ' ').trim();
     line += `\n  abstract: ${trimmed.slice(0, ABSTRACT_TRUNCATE)}`;
     if (trimmed.length > ABSTRACT_TRUNCATE) line += '…';
+  }
+  if (en.localText) {
+    const trimmed = en.localText.replace(/\s+/g, ' ').trim();
+    line += `\n  excerpt: ${trimmed.slice(0, PDF_TEXT_TRUNCATE)}`;
+    if (trimmed.length > PDF_TEXT_TRUNCATE) line += '…';
   }
   return line;
 }

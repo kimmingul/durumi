@@ -430,6 +430,21 @@ export interface IpcApi {
     source: 'pdf-info' | 'pdf-content' | 'md-frontmatter' | 'md-body' | 'none';
   }>;
   /**
+   * v0.1.8.2 — extract real text from a local PDF or markdown file in
+   * `<bib-dir>/reference/`. Used by the citation-suggestion enrichment
+   * to feed actual paper content to the model instead of relying on the
+   * Crossref abstract alone. PDF text comes from pdfjs-dist (lazy-loaded
+   * the first time this IPC fires).
+   */
+  referenceExtractText: (
+    bibFilePath: string,
+    relPath: string,
+    options?: { maxPages?: number; maxChars?: number },
+  ) => Promise<
+    | { ok: true; text: string; pages: number }
+    | { ok: false; error: string }
+  >;
+  /**
    * v0.1.8 — write a plaintext API key. Main encrypts via safeStorage and
    * persists the encrypted blob into preferences.json.
    */

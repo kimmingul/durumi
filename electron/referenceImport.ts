@@ -1,40 +1,71 @@
 import { promises as fs } from 'node:fs';
 import { extname } from 'node:path';
 import type { BibEntry } from '@shared/bibtex';
+import { extractPdfText, type PdfParser } from './pdfText';
 
 // Reverse-direction sync for v0.1.7 Track C: when a file appears in
 // <doc-folder>/reference/ that isn't tied to any bib entry, we try to
 // derive a BibEntry for it.
 //
-// Cheap path: scan for a DOI in the file head. Most journal PDFs embed
-// the DOI as plaintext in the document Info dictionary or on the title
-// page header; a regex over the first 256KB catches the common case
-// without pulling pdfjs-dist (~2MB) into the main bundle. v0.1.8 may
-// upgrade to a full PDF text extractor if accuracy demands it.
+// PDF path: v0.1.8.2 upgraded from regex-on-raw-bytes to pdfjs-dist —
+// the regex approach missed DOIs in compressed content streams (which
+// is most of a modern journal PDF) and only caught Info-dict matches
+// when the trailer happened to be uncompressed. The extractor walks
+// the first few pages with proper text extraction, then DOI regex
+// runs against actual readable text. The legacy-build is lazy-loaded
+// so app startup isn't slowed by the 2MB pdfjs payload.
 
 const DOI_RE = /\b10\.\d{4,9}\/[A-Za-z0-9._;()/:%~+-]+/;
-const PDF_SCAN_BYTES = 256 * 1024;
 const MD_SCAN_BYTES = 32 * 1024;
+const PDF_DOI_PAGES = 3; // first 3 pages cover header / title / abstract
 
 export interface ExtractDoiResult {
   doi: string | null;
   source: 'pdf-info' | 'pdf-content' | 'md-frontmatter' | 'md-body' | 'none';
 }
 
-export async function extractDoiFromFile(absPath: string): Promise<ExtractDoiResult> {
+export interface ExtractDoiOptions {
+  /** Test seam — inject a fake parser so unit tests don't need real PDFs. */
+  pdfParser?: PdfParser;
+}
+
+export async function extractDoiFromFile(
+  absPath: string,
+  opts: ExtractDoiOptions = {},
+): Promise<ExtractDoiResult> {
   const ext = extname(absPath).toLowerCase();
-  if (ext === '.pdf') return extractDoiFromPdf(absPath);
+  if (ext === '.pdf') return extractDoiFromPdf(absPath, opts);
   if (ext === '.md' || ext === '.markdown') return extractDoiFromMd(absPath);
   return { doi: null, source: 'none' };
 }
 
-async function extractDoiFromPdf(absPath: string): Promise<ExtractDoiResult> {
+async function extractDoiFromPdf(
+  absPath: string,
+  opts: ExtractDoiOptions,
+): Promise<ExtractDoiResult> {
+  // Try the proper text extraction first — covers compressed streams.
+  const text = await extractPdfText(absPath, {
+    maxPages: PDF_DOI_PAGES,
+    maxChars: 32_000,
+    parser: opts.pdfParser,
+  });
+  if (text.ok) {
+    const m = DOI_RE.exec(text.text);
+    if (m) return { doi: cleanDoi(m[0]), source: 'pdf-content' };
+  }
+  // Fallback: regex over the raw file head. Catches the rare case where
+  // pdfjs-dist refuses (corrupt / encrypted / unusual encoding) but the
+  // Info dict is plaintext. Limited scan window so we don't read 50MB.
+  return scanRawHeaderForDoi(absPath);
+}
+
+async function scanRawHeaderForDoi(absPath: string): Promise<ExtractDoiResult> {
   let buf: Buffer;
   try {
     const handle = await fs.open(absPath, 'r');
     try {
       const stat = await handle.stat();
-      const len = Math.min(stat.size, PDF_SCAN_BYTES);
+      const len = Math.min(stat.size, 256 * 1024);
       buf = Buffer.alloc(len);
       await handle.read(buf, 0, len, 0);
     } finally {
@@ -57,9 +88,8 @@ async function extractDoiFromPdf(absPath: string): Promise<ExtractDoiResult> {
 function extractInfoBlock(text: string): string | null {
   // PDF Info dict fields (Title / Subject / Keywords) often live inside an
   // object body that we recognise by a << ... >> block containing one of
-  // those PDF-name keys. We don't follow the trailer's `/Info N 0 R`
-  // reference; matching by content is robust to reordered / linearised
-  // PDFs and avoids parsing the cross-reference table.
+  // those PDF-name keys. Matching by content is robust to reordered /
+  // linearised PDFs and avoids parsing the cross-reference table.
   const re = /<<[\s\S]{0,4096}?(?:\/Subject|\/Title|\/Keywords)[\s\S]{0,4096}?>>/g;
   const m = re.exec(text);
   return m ? m[0] : null;
