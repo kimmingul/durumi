@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage, t } from '../../i18n/t';
-import { useBibliographyStore } from '../../store/bibliographyStore';
+import { useBibliographyStore, type OrphanFile } from '../../store/bibliographyStore';
+import { OrphanRegisterDialog } from '../OrphanRegisterDialog';
 import type { BibEntry } from '@shared/bibtex';
 import type { BibliographySearchHit } from '@shared/ipc-contract';
 
@@ -31,6 +32,20 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
   const fileStatus = useBibliographyStore((s) => s.fileStatus);
   const downloading = useBibliographyStore((s) => s.downloading);
   const downloadReference = useBibliographyStore((s) => s.downloadReference);
+  const orphanFiles = useBibliographyStore((s) => s.orphanFiles);
+  const registerOrphan = useBibliographyStore((s) => s.registerOrphan);
+  const scanFileStatuses = useBibliographyStore((s) => s.scanFileStatuses);
+
+  const [manualEntryFor, setManualEntryFor] = useState<{
+    orphan: OrphanFile;
+    initialDoi: string | null;
+  } | null>(null);
+
+  // Re-scan whenever the tab mounts so orphan files dropped via Finder /
+  // git pull / Zotero export show up without a manual refresh.
+  useEffect(() => {
+    void scanFileStatuses();
+  }, [scanFileStatuses]);
 
   const [search, setSearch] = useState<SearchState>({
     loading: false,
@@ -118,6 +133,35 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
     }
   }
 
+  async function handleRegisterOrphan(orphan: OrphanFile) {
+    // Try the auto path: extract DOI → fetch Crossref → register.
+    const r = await registerOrphan(orphan.absPath, orphan.relPath);
+    if (r.ok) return;
+    if (r.code === 'no-doi') {
+      // Fall through to the manual modal — pre-seed the DOI field if we
+      // got a hint from referenceExtractDoi (typically null in this branch).
+      const hint = await window.api.referenceExtractDoi(orphan.absPath);
+      setManualEntryFor({ orphan, initialDoi: hint.doi });
+    } else {
+      // eslint-disable-next-line no-alert
+      window.alert(`${t('orphan.register.failed')}\n\n${r.message}`);
+    }
+  }
+
+  async function handleManualConfirm(entry: BibEntry) {
+    if (!manualEntryFor) return;
+    const r = await registerOrphan(
+      manualEntryFor.orphan.absPath,
+      manualEntryFor.orphan.relPath,
+      entry,
+    );
+    setManualEntryFor(null);
+    if (!r.ok) {
+      // eslint-disable-next-line no-alert
+      window.alert(`${t('orphan.register.failed')}\n\n${r.message}`);
+    }
+  }
+
   return (
     <div className="cm-references" data-testid="references-tab">
       <div style={searchRowStyle}>
@@ -177,6 +221,42 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
         </section>
       )}
 
+      {orphanFiles.length > 0 && (
+        <section className="cm-references-section" data-testid="references-orphan-section">
+          <header style={sectionHeaderStyle}>
+            <span>📁 {t('references.orphan.title')}</span>
+            <span style={mutedStyle}>{orphanFiles.length}</span>
+          </header>
+          <p style={pathLineStyle}>{t('references.orphan.help')}</p>
+          <div role="list">
+            {orphanFiles.map((file) => (
+              <div
+                key={file.relPath}
+                style={orphanRowStyle}
+                role="listitem"
+                data-testid="references-orphan-row"
+              >
+                <div style={orphanInfoStyle}>
+                  <div style={orphanNameStyle}>
+                    {file.type === 'pdf' ? '📄 ' : file.type === 'md' ? '📝 ' : '📎 '}
+                    {file.fileName}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void handleRegisterOrphan(file); }}
+                  style={registerBtnStyle}
+                  data-testid="references-orphan-register"
+                  title={t('references.orphan.registerHint')}
+                >
+                  ➕ {t('references.orphan.register')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="cm-references-section">
         <header style={sectionHeaderStyle}>
           <span>{t('references.localEntries')}</span>
@@ -221,6 +301,14 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
           </div>
         )}
       </section>
+
+      <OrphanRegisterDialog
+        open={manualEntryFor !== null}
+        orphan={manualEntryFor?.orphan ?? null}
+        initialDoi={manualEntryFor?.initialDoi ?? null}
+        onClose={() => setManualEntryFor(null)}
+        onConfirm={handleManualConfirm}
+      />
     </div>
   );
 }
@@ -566,6 +654,37 @@ const downloadBtnStyle: React.CSSProperties = {
   background: 'transparent',
   cursor: 'pointer',
   color: 'inherit',
+};
+
+const orphanRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 10px',
+  borderBottom: '1px solid var(--border, #f0f0f0)',
+};
+
+const orphanInfoStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+};
+
+const orphanNameStyle: React.CSSProperties = {
+  fontSize: 12,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const registerBtnStyle: React.CSSProperties = {
+  fontSize: 11,
+  padding: '4px 8px',
+  border: '1px solid var(--accent, #4a90e2)',
+  background: 'var(--accent, #4a90e2)',
+  color: '#fff',
+  borderRadius: 4,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
 const localKeyStyle: React.CSSProperties = {

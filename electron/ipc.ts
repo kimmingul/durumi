@@ -27,6 +27,7 @@ import { resolveDOI, resolveORCID, searchCrossref, searchKoreaMed, searchPubMed 
 import { appendEntry as appendBibEntry, ensureBibFile, upsertEntry as upsertBibEntry } from './bibliographyWrite';
 import { downloadReference } from './referenceDownload';
 import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
+import { extractDoiFromFile } from './referenceImport';
 import { parseBibTeX } from '@shared/bibtex';
 import type { BibEntry } from '@shared/bibtex';
 import {
@@ -416,6 +417,10 @@ export function registerIpcHandlers(): void {
       return { ok: false as const, error: (err as Error).message };
     }
   });
+
+  ipcMain.handle('reference:extractDoi', async (_e, absPath: string) =>
+    extractDoiFromFile(absPath),
+  );
 
   ipcMain.handle('pandoc:detect', async () => {
     const prefs = await getPreferences();

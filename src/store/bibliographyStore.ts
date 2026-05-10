@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { BibEntry } from '@shared/bibtex';
-import type { ReferenceDownloadResult } from '@shared/ipc-contract';
+import type { ReferenceDownloadResult, ReferenceScannedFile } from '@shared/ipc-contract';
 
 /** Per-key local-file presence (cached read of `reference/<key>.{pdf,md}`). */
 export interface LocalFileStatus {
@@ -8,6 +8,9 @@ export interface LocalFileStatus {
   relPath: string | null;
   type: 'pdf' | 'md' | null;
 }
+
+/** v0.1.7 Track C — files in `reference/` that no bib entry claims. */
+export type OrphanFile = ReferenceScannedFile;
 
 /**
  * In-memory cache of the active document's bibliography. The `.bib` file is
@@ -32,12 +35,27 @@ interface BibliographyState {
   fileStatus: Record<string, LocalFileStatus>;
   /** key → true while a download is in flight. */
   downloading: Record<string, boolean>;
+  /** Files in reference/ that aren't claimed by any bib entry. */
+  orphanFiles: OrphanFile[];
   /** Bind to the active document. Idempotent for a given `docPath`. */
   bindToDocument: (docPath: string | null) => Promise<void>;
   /** Re-read the active `.bib` file from disk. */
   reload: () => Promise<void>;
-  /** Refresh the file-status cache for every entry. */
+  /** Refresh the file-status cache + orphan list. */
   scanFileStatuses: () => Promise<void>;
+  /**
+   * Register an orphan file as a bib entry. When a DOI can be extracted
+   * from the file, it's auto-fetched via Crossref. Otherwise the caller
+   * is expected to provide `manualEntry` from a metadata-entry modal.
+   */
+  registerOrphan: (
+    absPath: string,
+    relPath: string,
+    manualEntry?: BibEntry,
+  ) => Promise<
+    | { ok: true; key: string; source: 'doi' | 'manual' }
+    | { ok: false; code: string; message: string }
+  >;
   /**
    * Download the reference for `key` (probes Crossref link / PMC /
    * Unpaywall / HTML / abstract). On success, persists the resulting
@@ -71,6 +89,13 @@ interface BibliographyState {
   >;
 }
 
+function typeFromRelPath(relPath: string): 'pdf' | 'md' | null {
+  const lower = relPath.toLowerCase();
+  if (lower.endsWith('.pdf')) return 'pdf';
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'md';
+  return null;
+}
+
 export const useBibliographyStore = create<BibliographyState>((set, get) => ({
   filePath: null,
   exists: false,
@@ -78,6 +103,7 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
   loading: false,
   fileStatus: {},
   downloading: {},
+  orphanFiles: [],
 
   bindToDocument: async (docPath) => {
     set({ loading: true, fileStatus: {} });
@@ -130,8 +156,6 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
     const { filePath, entries } = get();
     if (!filePath) return;
     const next: Record<string, LocalFileStatus> = {};
-    // Parallel probe — each entry's status is an independent IPC, but they
-    // share a single fs walk on the main side via direct path access.
     await Promise.all(
       entries.map(async (e) => {
         const s = await window.api.referenceStatus(
@@ -146,7 +170,72 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
         };
       }),
     );
-    set({ fileStatus: next });
+
+    // Build the orphan list: every file in reference/ that no entry claims.
+    const claimed = new Set<string>();
+    for (const e of entries) {
+      const rel = e.fields.file?.trim();
+      if (rel) claimed.add(rel);
+      const status = next[e.key];
+      if (status?.relPath) claimed.add(status.relPath);
+    }
+    const scan = await window.api.referenceScan(filePath);
+    const orphans: OrphanFile[] = scan.ok
+      ? scan.files.filter((f) => !claimed.has(f.relPath))
+      : [];
+    set({ fileStatus: next, orphanFiles: orphans });
+  },
+
+  registerOrphan: async (absPath, relPath, manualEntry) => {
+    const { filePath } = get();
+    if (!filePath) return { ok: false, code: 'no-file', message: 'no .bib bound' };
+
+    // Try DOI extraction unless the caller already supplied a manual entry.
+    let entryToWrite: BibEntry | null = manualEntry ?? null;
+    const source: 'doi' | 'manual' = manualEntry ? 'manual' : 'doi';
+    if (!entryToWrite) {
+      const ext = await window.api.referenceExtractDoi(absPath);
+      if (ext.doi) {
+        const fetched = await window.api.bibliographyResolveDoi(ext.doi);
+        if (fetched.ok) {
+          entryToWrite = {
+            ...fetched.entry,
+            fields: { ...fetched.entry.fields, file: relPath },
+          };
+        } else {
+          return {
+            ok: false,
+            code: fetched.code,
+            message: `DOI ${ext.doi} extracted but resolve failed: ${fetched.message}`,
+          };
+        }
+      } else {
+        return {
+          ok: false,
+          code: 'no-doi',
+          message: 'No DOI in file — please enter metadata manually.',
+        };
+      }
+    } else {
+      // Manual entry path: ensure the file field is set.
+      entryToWrite = {
+        ...entryToWrite,
+        fields: { ...entryToWrite.fields, file: relPath },
+      };
+    }
+
+    const written = await window.api.bibliographyAppendEntry(filePath, entryToWrite);
+    if (!written.ok) return { ok: false, code: 'write-failed', message: written.error };
+
+    set((s) => ({
+      entries: [...s.entries, { ...entryToWrite!, key: written.key }],
+      fileStatus: {
+        ...s.fileStatus,
+        [written.key]: { exists: true, relPath, type: typeFromRelPath(relPath) },
+      },
+      orphanFiles: s.orphanFiles.filter((f) => f.relPath !== relPath),
+    }));
+    return { ok: true, key: written.key, source };
   },
 
   downloadReference: async (key) => {

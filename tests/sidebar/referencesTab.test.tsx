@@ -18,16 +18,30 @@ function setInputValue(el: HTMLInputElement | HTMLSelectElement, v: string, evt:
 interface ApiMock {
   bibliographySearchCrossref: ReturnType<typeof vi.fn>;
   bibliographySearchPubmed: ReturnType<typeof vi.fn>;
+  bibliographySearchKoreamed: ReturnType<typeof vi.fn>;
   bibliographyAppendEntry: ReturnType<typeof vi.fn>;
+  bibliographyResolveDoi: ReturnType<typeof vi.fn>;
+  referenceStatus: ReturnType<typeof vi.fn>;
+  referenceScan: ReturnType<typeof vi.fn>;
+  referenceExtractDoi: ReturnType<typeof vi.fn>;
+  referenceOpen: ReturnType<typeof vi.fn>;
 }
 
 function installApiMock(): ApiMock {
   const api: ApiMock = {
     bibliographySearchCrossref: vi.fn().mockResolvedValue({ ok: true, hits: [] }),
     bibliographySearchPubmed: vi.fn().mockResolvedValue({ ok: true, hits: [] }),
+    bibliographySearchKoreamed: vi.fn().mockResolvedValue({ ok: true, hits: [] }),
     bibliographyAppendEntry: vi
       .fn()
       .mockResolvedValue({ ok: true, key: 'mocked', path: '/p/references.bib' }),
+    bibliographyResolveDoi: vi.fn(),
+    referenceStatus: vi
+      .fn()
+      .mockResolvedValue({ exists: false, absPath: null, relPath: null, type: null }),
+    referenceScan: vi.fn().mockResolvedValue({ ok: true, files: [] }),
+    referenceExtractDoi: vi.fn().mockResolvedValue({ doi: null, source: 'none' }),
+    referenceOpen: vi.fn().mockResolvedValue({ ok: true }),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).api = api;

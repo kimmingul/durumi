@@ -353,6 +353,17 @@ export interface IpcApi {
   referenceScan: (
     bibFilePath: string,
   ) => Promise<{ ok: true; files: ReferenceScannedFile[] } | { ok: false; error: string }>;
+  /**
+   * v0.1.7 Track C — read the head of an orphan file and try to extract a
+   * DOI from it. PDF: scans the trailer Info dict + first 256KB. Markdown:
+   * scans YAML front-matter + first 32KB. Returns null when nothing matches.
+   */
+  referenceExtractDoi: (
+    absPath: string,
+  ) => Promise<{
+    doi: string | null;
+    source: 'pdf-info' | 'pdf-content' | 'md-frontmatter' | 'md-body' | 'none';
+  }>;
 }
 
 export interface ReferenceDownloadResult {
