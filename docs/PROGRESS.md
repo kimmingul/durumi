@@ -1,6 +1,103 @@
 # Durumi — Progress
 
-## v0.1.6 (current) — Live reference search
+## v0.1.7 (current) — Bibliography polish + local reference library
+
+The bibliography becomes a proper *library*, not just an index. v0.1.6
+turned `references.bib` into a live surface; v0.1.7 makes the surrounding
+`reference/` folder a first-class part of the manuscript: every entry can
+mirror to a local PDF (when open access) or a Markdown abstract (otherwise),
+viewable inline from the editor. The folder is **bidirectional** — files
+Durumi downloads land there, AND files the user drops there manually are
+recognised and offered for one-click registration.
+
+### Track A — `[@`-autocomplete + hover tooltip (commit `214d5e5`)
+
+- **`[@`-autocomplete in the editor**: typing `[@` surfaces a fuzzy-ranked
+  drop-down of every key in `references.bib`. Accept → `[@key]` lands
+  with the closing bracket already in place.
+- **Hover tooltip** for `[@key]`: shows title / author / venue / DOI in a
+  floating card. When `entry.fields.file` resolves to a real file, the
+  card grows an "📄 Open file" button.
+- New `currentParagraph(state)` helper extracts the paragraph surrounding
+  the caret. Standalone for now, but it's the input shape v0.1.8's
+  AI-assisted citation suggestion needs.
+- New dep: `@codemirror/autocomplete`.
+
+### Track B — Local reference download (commit `ca025ff`)
+
+- Each entry can mirror to `<doc-folder>/reference/<key>.{pdf,md}` and be
+  opened from the sidebar 📄/📝 badge or the `[@key]` hover tooltip.
+- Probe order (per entry, user-initiated, **no background prefetch**):
+  | # | Source | Result |
+  |:--|:--|:--|
+  | 1 | Crossref `link[]` (publisher-tagged PDF) | `.pdf` |
+  | 2 | PMC OA service (when a PMID has a PMC counterpart) | `.pdf` |
+  | 3 | Unpaywall API (definitive OA-status oracle) | `.pdf` |
+  | 4 | HTML scrape via Turndown | `.md` |
+  | 5 | Abstract-only stub (formatted from existing fields) | `.md` |
+- The downloaded path is persisted back to the bib entry's `file` field
+  (POSIX-relative — round-trips across machines).
+- Atomic writes (tmp+rename) for both PDF and MD outputs; PDFs validated
+  against a `%PDF` magic header before commit.
+- New deps: `turndown`, `@types/turndown`.
+
+### Track C — Bidirectional reference sync (commit `f8e46a9`)
+
+- The `reference/` folder is now bidirectional: files the user drops there
+  manually (Finder copy, git pull, Zotero export) are surfaced in a
+  **"📁 Unregistered files"** sidebar section.
+- One-click **Register** flow:
+  1. Scan file head for DOI (PDF: trailer Info dict + content; MD: YAML
+     front-matter or body)
+  2. DOI found → Crossref auto-fetch → bib entry written → toast
+  3. No DOI → metadata-entry modal (title required, author/year/journal/
+     DOI optional)
+- After registration, the file becomes a normal bib entry: `[@`-autocomplete
+  picks it up immediately, and the user can insert citations to it the
+  same way.
+- The `pdfjs-dist` library is intentionally NOT pulled in. A regex over
+  the trailer Info dict + first 256KB catches most journal PDFs without
+  the 2MB cost. v0.1.8 may upgrade if manual-entry frequency proves high.
+
+### Quality gates
+- 990 Vitest unit tests across ~120 files (v0.1.6 was 924 → Track A 948
+  → Track B 973 → Track C 990; +66 total)
+- 16 Playwright Electron E2E tests
+- `pnpm lint` clean (0 errors / 0 warnings)
+- `pnpm typecheck` clean (0 errors)
+- `pnpm build` clean
+
+### Architecture invariants added in this line of work
+
+These join the list at the bottom of the file. Any future change must
+preserve all of them.
+
+- **`reference/` is the user's filesystem too.** Files the user drops
+  there are never auto-renamed and never auto-deleted. The bib `file`
+  field gets updated to point at user-chosen filenames; only Durumi-
+  downloaded files use the canonical `<key>.<ext>` shape.
+- **All reference-folder writes are user-initiated.** No fs.watch-driven
+  auto-fetch, no scheduled re-scan. The renderer rescans on tab focus
+  and after every register / download action — the user always asked for
+  the network call before it happens.
+- **`file` field is always `references.bib`-relative, POSIX-separated.**
+  Absolute paths are tolerated on read (for old Zotero exports) but never
+  produced. Forward slashes only — round-trips across macOS / Linux /
+  Windows.
+- **DOI extraction is best-effort heuristics, not a guarantee.** When
+  PDF DOI extraction fails, the renderer ALWAYS falls back to the manual
+  metadata modal. There's no silent failure mode where a registered file
+  ends up with bogus metadata.
+- **Bidirectional sync is reconciliation, not real-time.** The store
+  computes orphans as `(files in reference/) − (files claimed by any bib
+  entry's file field)`. Two entries pointing at the same file is a no-op
+  (both claim it, neither is orphan). Renaming the file outside Durumi
+  produces an orphan + a stale entry — the renderer's status badge
+  shows "missing file" so the user sees the breakage.
+
+---
+
+## v0.1.6 — Live reference search
 
 The bibliography becomes a live surface. v0.1.6 turns `references.bib` from
 a passively-discovered file into a write target the editor manages directly:
