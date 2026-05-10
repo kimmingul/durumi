@@ -143,3 +143,41 @@ export const AI_COMMANDS: ReadonlyArray<AiCommandSpec> = [
 export function findAiCommand(id: AiCommandId): AiCommandSpec | undefined {
   return AI_COMMANDS.find((c) => c.id === id);
 }
+
+// Inline ghost-text completion (v0.1.8.1 Track C). Different shape from
+// the selection commands: the user has a *cursor*, not a selection, and
+// expects a 1-2 sentence continuation that reads as if they wrote it.
+//
+// Strict rules in the system prompt:
+//   - never invent citations
+//   - never repeat the lead-in (the model gets a `<continue from here>`
+//     marker so it knows what's already on the page)
+//   - 1-2 sentences max, no bullet/heading/markdown structure
+//   - if the lead-in is too short or trails an obvious section break,
+//     reply with the literal token NO_COMPLETION (we treat that as "skip")
+export function buildGhostTextPrompt(paragraph: string): Array<{
+  role: 'system' | 'user';
+  content: string;
+}> {
+  return [
+    {
+      role: 'system',
+      content: [
+        'You are an inline writing assistant for a medical-research manuscript.',
+        'Continue the user\'s paragraph from the marked cursor position with 1-2 sentences.',
+        'STRICT RULES:',
+        '- Output ONLY the continuation text — no preamble, no explanation, no quotes, no markdown structure.',
+        '- DO NOT repeat any of the lead-in text.',
+        '- Never invent citations or `[@key]` references. If the user has cited keys earlier, you may continue without adding new citations.',
+        '- Match the existing register (academic / clinical) and tense.',
+        '- If you have nothing useful to add, or the lead-in is too short / mid-heading / mid-list, reply with the literal token NO_COMPLETION.',
+      ].join(' '),
+    },
+    {
+      role: 'user',
+      content: `${paragraph}<continue from here>`,
+    },
+  ];
+}
+
+export const GHOST_TEXT_NO_COMPLETION = 'NO_COMPLETION';

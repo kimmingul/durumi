@@ -102,6 +102,16 @@ export interface Preferences {
     openaiBaseUrl: string;
     /** OpenAI / compat model id. */
     openaiModel: string;
+    /**
+     * v0.1.8.1 Track C — inline ghost-text completion. Off by default
+     * because every accepted Tab is a real LLM call. When on, the editor
+     * triggers after `ghostTextIdleMs` of typing inactivity at the end
+     * of a paragraph and caps total triggers at `ghostTextSessionCap`
+     * to bound cost.
+     */
+    ghostTextEnabled: boolean;
+    ghostTextIdleMs: number;
+    ghostTextSessionCap: number;
   };
 }
 

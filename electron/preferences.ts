@@ -56,6 +56,9 @@ const DEFAULTS: Preferences = {
     openaiKey: '',
     openaiBaseUrl: 'https://api.openai.com',
     openaiModel: 'gpt-4o-mini',
+    ghostTextEnabled: false,
+    ghostTextIdleMs: 800,
+    ghostTextSessionCap: 100,
   },
 };
 

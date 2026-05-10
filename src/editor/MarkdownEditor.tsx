@@ -26,6 +26,7 @@ import { makeTheme } from './theme';
 import { handlePaste, handleDrop } from './imagePaste';
 import { citationAutocomplete } from './autocomplete/citationAutocomplete';
 import { citationHoverTooltip } from './decorations/citationHover';
+import { defaultGhostTextRefs, ghostTextExtension } from './ai/ghostText';
 import type { Macro } from '@shared/ipc-contract';
 
 export interface MarkdownEditorProps {
@@ -73,6 +74,7 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
         ...liveDecorations,
         citationAutocomplete(),
         citationHoverTooltip(),
+        ghostTextExtension({ refs: defaultGhostTextRefs }),
         spellcheckExclusion(),
         viewModes(),
         markdownKeymap(),

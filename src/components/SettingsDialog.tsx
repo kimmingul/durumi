@@ -595,6 +595,9 @@ function AiSection({ prefs, update }: AiSectionProps) {
     openaiKey: '',
     openaiBaseUrl: 'https://api.openai.com',
     openaiModel: 'gpt-4o-mini',
+    ghostTextEnabled: false,
+    ghostTextIdleMs: 800,
+    ghostTextSessionCap: 100,
   };
   const [anthropicInput, setAnthropicInput] = useState('');
   const [openaiInput, setOpenaiInput] = useState('');
@@ -765,6 +768,21 @@ function AiSection({ prefs, update }: AiSectionProps) {
           </Field>
         </>
       )}
+      <Field label={t('settings.ai.ghostText')}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="checkbox"
+            data-testid="settings-ai-ghost-text"
+            checked={ai.ghostTextEnabled}
+            onChange={(e) => {
+              void update({ ai: { ...ai, ghostTextEnabled: e.target.checked } });
+            }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
+            {t('settings.ai.ghostText.help')}
+          </span>
+        </label>
+      </Field>
       <Field label={t('settings.ai.verify.label')}>
         <div style={pathRowStyle}>
           <button
