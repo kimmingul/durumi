@@ -12,6 +12,7 @@ import { BulkDoiDialog } from './components/BulkDoiDialog';
 import { ImportReferencesDialog } from './components/ImportReferencesDialog';
 import { AiCommandPalette } from './components/AiCommandPalette';
 import { CitationSuggestPanel } from './components/CitationSuggestPanel';
+import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { currentParagraph } from './editor/paragraphContext';
 import type { BibEntry } from '@shared/bibtex';
 import { useBibliographyStore } from './store/bibliographyStore';
@@ -87,6 +88,7 @@ export function App() {
   const [citationDialogOpen, setCitationDialogOpen] = useState(false);
   const [citePaletteOpen, setCitePaletteOpen] = useState(false);
   const [bulkDoiOpen, setBulkDoiOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aiPaletteState, setAiPaletteState] = useState<{
     open: boolean;
     selection: string;
@@ -390,6 +392,7 @@ export function App() {
       if (cmd === 'showChanges') { showWith('changes'); return; }
       if (cmd === 'showReferences') { showWith('references'); return; }
       if (cmd === 'showAi') { showWith('ai'); return; }
+      if (cmd === 'openKeyboardShortcuts') { setShortcutsOpen(true); return; }
       if (cmd === 'addMemo' && view) { wrapComment(view); view.focus(); return; }
       if (cmd === 'cmInsert' && view) { wrapCmInsert(view); view.focus(); return; }
       if (cmd === 'cmDelete' && view) { wrapCmDelete(view); view.focus(); return; }
@@ -692,6 +695,10 @@ export function App() {
       <BulkDoiDialog
         open={bulkDoiOpen}
         onClose={() => setBulkDoiOpen(false)}
+      />
+      <KeyboardShortcutsDialog
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
       />
       <ImportReferencesDialog
         open={importState.open}

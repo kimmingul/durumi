@@ -147,6 +147,7 @@ export type MenuCommand =
   | 'openMacrosConfig'
   | 'openSettings'
   | 'languageChanged'
+  | 'openKeyboardShortcuts'
   | { type: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { type: 'openRecent'; path: string }
   | { type: 'closeFolder'; path: string };

@@ -314,6 +314,12 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
         },
         { type: 'separator' },
         {
+          label: tr('menu.help.shortcuts'),
+          accelerator: 'F1',
+          click: () => send('openKeyboardShortcuts'),
+        },
+        { type: 'separator' },
+        {
           label: tr('menu.help.checkForUpdates'),
           click: () => {
             const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
