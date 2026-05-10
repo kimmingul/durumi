@@ -254,6 +254,309 @@ function clampLimit(n: number | undefined, def: number): number {
 }
 
 /**
+ * KoreaMed search via HTML scraping — the official OpenAPI is intermittent
+ * and `koreamed.org/SearchBasic.php` is the de-facto stable surface. We fetch
+ * the HTML page and extract entries via a small purpose-built parser. The
+ * design's product decision is "develop direct web search if the API
+ * proves unstable" — this is that path.
+ *
+ * Result rows on koreamed.org follow a consistent shape:
+ *   <li class="searchListItem">
+ *     <a class="title" ...>article title</a>
+ *     <div class="authors">authors</div>
+ *     <div class="journalInfo">Journal. 2024;5(2):101-110.</div>
+ *     <a class="doiLink" href="https://doi.org/10.x/y">…</a>
+ *   </li>
+ *
+ * If the markup changes upstream, the per-field regexes in `parseKoreaMedHtml`
+ * are the single point of repair. Tests pin a synthetic page so we'll catch
+ * a parser regression locally even when the live site is unreachable.
+ */
+export async function searchKoreaMed(
+  query: string,
+  opts: FetchOptions & { limit?: number } = {},
+): Promise<FetchResult<SearchHit[]>> {
+  const trimmed = query.trim();
+  if (!trimmed) return { ok: true, data: [] };
+  const limit = clampLimit(opts.limit, 25);
+  const url = `https://www.koreamed.org/SearchBasic.php?DT=&Q=${encodeURIComponent(trimmed)}`;
+  const result = await httpText(url, opts);
+  if (!result.ok) return result;
+  try {
+    const items = parseKoreaMedHtml(result.data, limit);
+    const hits: SearchHit[] = items.map((entry) => ({
+      entry,
+      externalId: entry.fields.doi ?? entry.fields.title ?? '',
+      source: 'koreamed' as const,
+    }));
+    return { ok: true, data: hits };
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'parse',
+      message: err instanceof Error ? err.message : 'parse failed',
+    };
+  }
+}
+
+/**
+ * Lightweight HTML → BibEntry[] for KoreaMed search results. Uses pattern
+ * matching rather than a full DOM parser to avoid dragging cheerio/jsdom
+ * into the main bundle. Each list item is parsed independently so a
+ * malformed entry doesn't poison the whole result set.
+ */
+export function parseKoreaMedHtml(html: string, limit: number): BibEntry[] {
+  const entries: BibEntry[] = [];
+  const itemRe = /<li[^>]*class="[^"]*searchListItem[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+  for (const m of html.matchAll(itemRe)) {
+    if (entries.length >= limit) break;
+    const item = m[1] ?? '';
+    const entry = parseKoreaMedItem(item);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+function parseKoreaMedItem(html: string): BibEntry | null {
+  const title = stripTags(matchOne(html, /class="[^"]*title[^"]*"[^>]*>([\s\S]*?)<\/a>/i)).trim();
+  if (!title) return null;
+  const authorsRaw = stripTags(matchOne(html, /class="[^"]*authors?[^"]*"[^>]*>([\s\S]*?)<\/(?:div|p|span)>/i)).trim();
+  const journalInfo = stripTags(matchOne(html, /class="[^"]*journalInfo[^"]*"[^>]*>([\s\S]*?)<\/(?:div|p|span)>/i)).trim();
+  const doi = matchOne(html, /href="https?:\/\/(?:dx\.)?doi\.org\/([^"\s]+)"/i)
+    || matchOne(html, /doi[:\s]*([0-9]{2}\.[0-9]+\/[^\s<"]+)/i);
+  const fields: Record<string, string> = { title };
+  if (authorsRaw) fields.author = normalizeKoreaMedAuthors(authorsRaw);
+  const parsed = parseJournalInfo(journalInfo);
+  if (parsed.journal) fields.journal = parsed.journal;
+  if (parsed.year) fields.year = parsed.year;
+  if (parsed.volume) fields.volume = parsed.volume;
+  if (parsed.number) fields.number = parsed.number;
+  if (parsed.pages) fields.pages = parsed.pages;
+  if (doi) fields.doi = doi.trim();
+  return { key: '', type: 'article', fields };
+}
+
+function matchOne(s: string, re: RegExp): string {
+  const m = s.match(re);
+  return m ? (m[1] ?? '') : '';
+}
+
+/**
+ * "Doe J, Kim MG, Lee S." → "Doe, J and Kim, MG and Lee, S".
+ * Korean-language pages sometimes give Hangul names directly — those pass
+ * through unchanged (the cite-key generator handles RR romanization later).
+ *
+ * Assumes the KoreaMed shape: comma-separated author entries, each entry
+ * being "Last Initials" (no internal comma). Does NOT round-trip already-
+ * BibTeX-formatted "Last, First" lists; the parent caller never passes those.
+ */
+export function normalizeKoreaMedAuthors(raw: string): string {
+  const trimmed = raw.replace(/\.\s*$/, '').trim();
+  if (!trimmed) return '';
+  const tokens = trimmed.split(/[,;]\s*|\s+and\s+/i).map((t) => t.trim()).filter(Boolean);
+  return tokens
+    .map((t) => {
+      // Already in BibTeX "Last, First" shape.
+      if (t.includes(',')) return t;
+      const parts = t.split(/\s+/);
+      if (parts.length === 1) return parts[0]!;
+      const last = parts[0]!;
+      const initials = parts.slice(1).join(' ');
+      return `${last}, ${initials}`;
+    })
+    .join(' and ');
+}
+
+/**
+ * "Korean J Med. 2024 Mar;99(2):101-110." → year/volume/number/pages split.
+ * Tolerates missing pieces (some KoreaMed records are partial).
+ */
+export function parseJournalInfo(s: string): {
+  journal?: string;
+  year?: string;
+  volume?: string;
+  number?: string;
+  pages?: string;
+} {
+  if (!s) return {};
+  const out: ReturnType<typeof parseJournalInfo> = {};
+  // Journal name = everything before the first 4-digit year.
+  const yearMatch = s.match(/(.*?)\b(\d{4})\b/);
+  if (yearMatch) {
+    out.journal = yearMatch[1]!.replace(/[.;,\s]+$/, '').trim();
+    out.year = yearMatch[2]!;
+  }
+  // volume(issue):pages — tolerant of optional pieces.
+  const vol = s.match(/;(\d+)(?:\((\d+)\))?(?::([\dA-Z]+(?:[-–][\dA-Z]+)?))?/);
+  if (vol) {
+    if (vol[1]) out.volume = vol[1];
+    if (vol[2]) out.number = vol[2];
+    if (vol[3]) out.pages = vol[3].replace(/[–]/g, '-');
+  }
+  return out;
+}
+
+/** Variant of `httpJson` that returns the raw body — used by the scraper. */
+export async function httpText(
+  url: string,
+  opts: FetchOptions,
+): Promise<FetchResult<string>> {
+  const fetcher = opts.fetchImpl ?? globalThis.fetch;
+  if (typeof fetcher !== 'function') {
+    return { ok: false, code: 'network', message: 'fetch is unavailable' };
+  }
+  const ua = `Durumi/${DURUMI_VERSION} (https://github.com/kimmingul/durumi)${
+    opts.email ? ` mailto:${opts.email}` : ''
+  }`;
+  const controller = new AbortController();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetcher(url, {
+      method: 'GET',
+      headers: { 'User-Agent': ua, 'Accept': 'text/html,*/*' },
+      signal: controller.signal,
+    });
+    if (r.status === 404) return { ok: false, code: 'not-found', message: '404 not found' };
+    if (r.status === 429) return { ok: false, code: 'rate-limit', message: 'rate limited' };
+    if (!r.ok) {
+      return { ok: false, code: 'http', message: `HTTP ${r.status}`.trim() };
+    }
+    return { ok: true, data: await r.text() };
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') {
+      return { ok: false, code: 'timeout', message: `timeout after ${timeoutMs}ms` };
+    }
+    return {
+      ok: false,
+      code: 'network',
+      message: err instanceof Error ? err.message : 'network error',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * ORCID iD → public profile via `pub.orcid.org`. The `/v3.0/{iD}/record`
+ * endpoint is JSON when given the right Accept header, no auth required for
+ * public data. We extract the credit name + first employment org for the
+ * UI's "verify" affordance.
+ */
+export interface ResolvedOrcid {
+  iD: string;
+  name: string;
+  affiliation: string | null;
+  worksCount: number;
+}
+
+export async function resolveORCID(
+  iDRaw: string,
+  opts: FetchOptions = {},
+): Promise<FetchResult<ResolvedOrcid>> {
+  const iD = normalizeOrcidId(iDRaw);
+  if (!iD) {
+    return { ok: false, code: 'parse', message: 'invalid ORCID iD format' };
+  }
+  const fetcher = opts.fetchImpl ?? globalThis.fetch;
+  if (typeof fetcher !== 'function') {
+    return { ok: false, code: 'network', message: 'fetch is unavailable' };
+  }
+  const url = `https://pub.orcid.org/v3.0/${iD}/record`;
+  const controller = new AbortController();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetcher(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': `Durumi/${DURUMI_VERSION}`,
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
+    if (r.status === 404) {
+      return { ok: false, code: 'not-found', message: 'ORCID iD not found' };
+    }
+    if (!r.ok) {
+      return { ok: false, code: 'http', message: `HTTP ${r.status}` };
+    }
+    const json = (await r.json()) as OrcidRecord;
+    return { ok: true, data: extractOrcidProfile(iD, json) };
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') {
+      return { ok: false, code: 'timeout', message: `timeout after ${timeoutMs}ms` };
+    }
+    return {
+      ok: false,
+      code: 'network',
+      message: err instanceof Error ? err.message : 'network error',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** `0000-0002-1825-0097` shape — accepts that, the URL form, and "X" check digits. */
+export function normalizeOrcidId(raw: string): string | null {
+  if (!raw) return null;
+  const stripped = raw.trim().replace(/^https?:\/\/(sandbox\.)?orcid\.org\//i, '');
+  if (!/^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(stripped)) return null;
+  return stripped;
+}
+
+interface OrcidRecord {
+  person?: {
+    name?: {
+      'given-names'?: { value?: string };
+      'family-name'?: { value?: string };
+      'credit-name'?: { value?: string };
+    };
+  };
+  'activities-summary'?: {
+    employments?: {
+      'affiliation-group'?: Array<{
+        summaries?: Array<{
+          'employment-summary'?: {
+            organization?: { name?: string };
+          };
+        }>;
+      }>;
+    };
+    works?: {
+      group?: unknown[];
+    };
+  };
+}
+
+export function extractOrcidProfile(iD: string, json: OrcidRecord): ResolvedOrcid {
+  const name = json.person?.name;
+  const credit = name?.['credit-name']?.value;
+  const fam = name?.['family-name']?.value ?? '';
+  const giv = name?.['given-names']?.value ?? '';
+  const display = credit ?? `${giv} ${fam}`.trim();
+  let affiliation: string | null = null;
+  const groups = json['activities-summary']?.employments?.['affiliation-group'] ?? [];
+  for (const g of groups) {
+    for (const s of g.summaries ?? []) {
+      const org = s['employment-summary']?.organization?.name;
+      if (org) {
+        affiliation = org;
+        break;
+      }
+    }
+    if (affiliation) break;
+  }
+  const worksCount = (json['activities-summary']?.works?.group ?? []).length;
+  return {
+    iD,
+    name: display,
+    affiliation,
+    worksCount,
+  };
+}
+
+/**
  * `10.1056/NEJMoa1234567` ← any of the spellings users paste:
  *  - `https://doi.org/10.1056/NEJMoa1234567`
  *  - `https://dx.doi.org/10.1056/NEJMoa1234567`

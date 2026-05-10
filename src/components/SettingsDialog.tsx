@@ -371,12 +371,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </p>
             </Field>
             <Field label={t('settings.bibliography.orcid')}>
-              <input
-                type="text"
-                data-testid="settings-bib-orcid"
+              <OrcidField
                 value={prefs.bibliography?.orcidId ?? ''}
-                onChange={(e) => {
-                  const v = e.target.value;
+                onChange={(v) => {
                   void update({
                     bibliography: {
                       ...prefs.bibliography,
@@ -384,8 +381,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     },
                   });
                 }}
-                placeholder="0000-0002-1825-0097"
-                style={inputStyle}
               />
               <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
                 {t('settings.bibliography.orcid.help')}
@@ -561,6 +556,92 @@ function FilePathRow({ value, onPick, onClear, onChange, placeholder, testId }: 
         </button>
       )}
     </div>
+  );
+}
+
+interface OrcidStatus {
+  state: 'idle' | 'verifying' | 'ok' | 'error';
+  name?: string;
+  affiliation?: string | null;
+  worksCount?: number;
+  message?: string;
+}
+
+function OrcidField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [status, setStatus] = useState<OrcidStatus>({ state: 'idle' });
+
+  async function verify() {
+    if (!value.trim()) return;
+    setStatus({ state: 'verifying' });
+    const r = await window.api.bibliographyResolveOrcid(value.trim());
+    if (r.ok) {
+      setStatus({
+        state: 'ok',
+        name: r.profile.name,
+        affiliation: r.profile.affiliation,
+        worksCount: r.profile.worksCount,
+      });
+    } else {
+      setStatus({
+        state: 'error',
+        message:
+          r.code === 'not-found'
+            ? t('settings.bibliography.orcid.error.notFound')
+            : r.code === 'parse'
+              ? t('settings.bibliography.orcid.error.parse')
+              : r.message,
+      });
+    }
+  }
+
+  return (
+    <>
+      <div style={pathRowStyle}>
+        <input
+          type="text"
+          data-testid="settings-bib-orcid"
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            // Clear stale verification when the user edits the field.
+            if (status.state !== 'idle') setStatus({ state: 'idle' });
+          }}
+          placeholder="0000-0002-1825-0097"
+          style={inputStyle}
+        />
+        <button
+          type="button"
+          onClick={() => { void verify(); }}
+          disabled={!value.trim() || status.state === 'verifying'}
+          data-testid="settings-bib-orcid-verify"
+          style={baseButton}
+        >
+          {status.state === 'verifying'
+            ? t('settings.bibliography.orcid.verifying')
+            : t('settings.bibliography.orcid.verify')}
+        </button>
+      </div>
+      {status.state === 'ok' && (
+        <p
+          style={{ ...statusLineStyle, color: 'var(--cm-success-fg, #1d6f3a)' }}
+          data-testid="settings-bib-orcid-ok"
+        >
+          ✓ {status.name ?? '—'}
+          {status.affiliation ? ` · ${status.affiliation}` : ''}
+          {typeof status.worksCount === 'number' && status.worksCount > 0
+            ? ` · ${status.worksCount} ${t('settings.bibliography.orcid.works')}`
+            : ''}
+        </p>
+      )}
+      {status.state === 'error' && (
+        <p
+          style={{ ...statusLineStyle, color: 'var(--cm-error-fg, #8a1f17)' }}
+          data-testid="settings-bib-orcid-error"
+        >
+          ✗ {status.message}
+        </p>
+      )}
+    </>
   );
 }
 

@@ -23,7 +23,7 @@ import {
 import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
-import { resolveDOI, searchCrossref, searchPubMed } from './bibliographyFetch';
+import { resolveDOI, resolveORCID, searchCrossref, searchKoreaMed, searchPubMed } from './bibliographyFetch';
 import { appendEntry as appendBibEntry, ensureBibFile } from './bibliographyWrite';
 import { parseBibTeX } from '@shared/bibtex';
 import type { BibEntry } from '@shared/bibtex';
@@ -342,6 +342,25 @@ export function registerIpcHandlers(): void {
       return { ok: false as const, code: r.code, message: r.message };
     },
   );
+
+  ipcMain.handle(
+    'bibliography:searchKoreamed',
+    async (_e, query: string, limit?: number) => {
+      const prefs = await getPreferences();
+      const r = await searchKoreaMed(query, {
+        email: prefs.bibliography?.email ?? null,
+        limit,
+      });
+      if (r.ok) return { ok: true as const, hits: r.data };
+      return { ok: false as const, code: r.code, message: r.message };
+    },
+  );
+
+  ipcMain.handle('bibliography:resolveOrcid', async (_e, iD: string) => {
+    const r = await resolveORCID(iD);
+    if (r.ok) return { ok: true as const, profile: r.data };
+    return { ok: false as const, code: r.code, message: r.message };
+  });
 
   ipcMain.handle('pandoc:detect', async () => {
     const prefs = await getPreferences();

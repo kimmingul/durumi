@@ -293,6 +293,28 @@ export interface IpcApi {
     | { ok: true; hits: BibliographySearchHit[] }
     | { ok: false; code: string; message: string }
   >;
+  /**
+   * KoreaMed search via HTML scraping. v0.1.6 Track C. Falls back gracefully
+   * when the upstream HTML structure changes — the per-field regexes in
+   * `parseKoreaMedHtml` are the single point of repair.
+   */
+  bibliographySearchKoreamed: (
+    query: string,
+    limit?: number,
+  ) => Promise<
+    | { ok: true; hits: BibliographySearchHit[] }
+    | { ok: false; code: string; message: string }
+  >;
+  /**
+   * ORCID iD → public profile (name + affiliation + works count). Used by
+   * the Settings "verify" affordance for `bibliography.orcidId`.
+   */
+  bibliographyResolveOrcid: (
+    iD: string,
+  ) => Promise<
+    | { ok: true; profile: { iD: string; name: string; affiliation: string | null; worksCount: number } }
+    | { ok: false; code: string; message: string }
+  >;
 }
 
 /** Result row shared by every search backend (Crossref / PubMed / KoreaMed). */

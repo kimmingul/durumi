@@ -93,6 +93,10 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:searchCrossref', query, limit),
   bibliographySearchPubmed: (query, limit) =>
     ipcRenderer.invoke('bibliography:searchPubmed', query, limit),
+  bibliographySearchKoreamed: (query, limit) =>
+    ipcRenderer.invoke('bibliography:searchKoreamed', query, limit),
+  bibliographyResolveOrcid: (iD) =>
+    ipcRenderer.invoke('bibliography:resolveOrcid', iD),
   onAppRequestClose: (decide) => {
     const handler = async (_: unknown, reqId: number) => {
       let allow = false;

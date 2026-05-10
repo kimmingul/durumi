@@ -9,7 +9,7 @@ interface ReferencesTabProps {
   onInsertCitation: (key: string) => void;
 }
 
-type Source = 'crossref' | 'pubmed';
+type Source = 'crossref' | 'pubmed' | 'koreamed';
 
 interface SearchState {
   loading: boolean;
@@ -110,6 +110,7 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
         >
           <option value="crossref">Crossref</option>
           <option value="pubmed">PubMed</option>
+          <option value="koreamed">KoreaMed</option>
         </select>
         <input
           type="search"
@@ -274,10 +275,15 @@ async function runSearch(
   | { ok: true; hits: BibliographySearchHit[] }
   | { ok: false; code: string; message: string }
 > {
-  if (source === 'crossref') {
-    return window.api.bibliographySearchCrossref(query, SEARCH_LIMIT);
+  switch (source) {
+    case 'pubmed':
+      return window.api.bibliographySearchPubmed(query, SEARCH_LIMIT);
+    case 'koreamed':
+      return window.api.bibliographySearchKoreamed(query, SEARCH_LIMIT);
+    case 'crossref':
+    default:
+      return window.api.bibliographySearchCrossref(query, SEARCH_LIMIT);
   }
-  return window.api.bibliographySearchPubmed(query, SEARCH_LIMIT);
 }
 
 function errorLabel(code: string, fallback: string): string {
