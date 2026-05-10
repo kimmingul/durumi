@@ -125,6 +125,7 @@ export type MenuCommand =
   | 'bulkInsertFromDoi'
   | 'importReferences'
   | 'openAiPalette'
+  | 'aiCitationSuggest'
   | 'openCitePalette'
   | 'toggleExportIncludeComments' | 'toggleExportPreserveAnnotations'
   | 'exportHtml'

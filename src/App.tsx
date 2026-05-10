@@ -11,6 +11,7 @@ import { CitePalette } from './components/CitePalette';
 import { BulkDoiDialog } from './components/BulkDoiDialog';
 import { ImportReferencesDialog } from './components/ImportReferencesDialog';
 import { AiCommandPalette } from './components/AiCommandPalette';
+import { CitationSuggestPanel } from './components/CitationSuggestPanel';
 import { currentParagraph } from './editor/paragraphContext';
 import type { BibEntry } from '@shared/bibtex';
 import { useBibliographyStore } from './store/bibliographyStore';
@@ -95,6 +96,12 @@ export function App() {
     to: number;
     hasKey: boolean;
   }>({ open: false, selection: '', paragraph: '', from: 0, to: 0, hasKey: false });
+  const [citeSuggestState, setCiteSuggestState] = useState<{
+    open: boolean;
+    paragraph: string;
+    insertAt: number;
+    hasKey: boolean;
+  }>({ open: false, paragraph: '', insertAt: 0, hasKey: false });
   const [importState, setImportState] = useState<{
     open: boolean;
     entries: BibEntry[];
@@ -415,6 +422,22 @@ export function App() {
         if (picked) await openImportDialog(picked);
         return;
       }
+      if (cmd === 'aiCitationSuggest') {
+        const v = view;
+        if (!v) return;
+        const para = currentParagraph(v.state);
+        const [hasA, hasO] = await Promise.all([
+          window.api.aiHasKey('anthropic'),
+          window.api.aiHasKey('openai-compatible'),
+        ]);
+        setCiteSuggestState({
+          open: true,
+          paragraph: para?.text ?? '',
+          insertAt: para?.to ?? v.state.selection.main.head,
+          hasKey: hasA || hasO,
+        });
+        return;
+      }
       if (cmd === 'openCitePalette') { setCitePaletteOpen(true); return; }
       if (cmd === 'openAiPalette') {
         const v = view;
@@ -652,6 +675,26 @@ export function App() {
             selection: { anchor: aiPaletteState.from + rewritten.length },
           });
           v.focus();
+        }}
+      />
+      <CitationSuggestPanel
+        open={citeSuggestState.open}
+        paragraph={citeSuggestState.paragraph}
+        hasKey={citeSuggestState.hasKey}
+        onClose={() => setCiteSuggestState((s) => ({ ...s, open: false }))}
+        onAccept={(key) => {
+          const v = editorViewRef.current;
+          if (!v) return;
+          // Insert `[@key]` right after the paragraph (at insertAt).
+          // Putting it at paragraph end avoids guessing intra-sentence
+          // placement; the user can drag-cut it elsewhere if needed.
+          const insertion = ` [@${key}]`;
+          v.dispatch({
+            changes: { from: citeSuggestState.insertAt, insert: insertion },
+            selection: { anchor: citeSuggestState.insertAt + insertion.length },
+          });
+          v.focus();
+          setCiteSuggestState((s) => ({ ...s, open: false }));
         }}
       />
     </div>
