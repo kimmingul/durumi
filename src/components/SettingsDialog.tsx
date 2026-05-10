@@ -327,6 +327,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </Field>
           </Section>
 
+          <Section heading={t('settings.ai')}>
+            <AiSection prefs={prefs} update={update} />
+          </Section>
+
           <Section heading={t('settings.bibliography')}>
             <Field label={t('settings.bibliography.email')}>
               <input
@@ -556,6 +560,230 @@ function FilePathRow({ value, onPick, onClear, onChange, placeholder, testId }: 
         </button>
       )}
     </div>
+  );
+}
+
+interface AiSectionProps {
+  prefs: import('@shared/ipc-contract').Preferences;
+  update: (patch: Partial<import('@shared/ipc-contract').Preferences>) => Promise<void>;
+}
+
+interface AiVerifyState {
+  state: 'idle' | 'verifying' | 'ok' | 'error';
+  model?: string;
+  message?: string;
+}
+
+const ANTHROPIC_MODELS = [
+  'claude-opus-4-7',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5-20251001',
+] as const;
+
+function AiSection({ prefs, update }: AiSectionProps) {
+  // Defensive default for tests / partial-prefs scenarios — production
+  // prefs always carry `ai` thanks to mergeDefaults in preferences.ts.
+  const ai = prefs.ai ?? {
+    provider: 'anthropic' as const,
+    anthropicKey: '',
+    anthropicModel: 'claude-sonnet-4-6',
+    openaiKey: '',
+    openaiBaseUrl: 'https://api.openai.com',
+    openaiModel: 'gpt-4o-mini',
+  };
+  const [anthropicInput, setAnthropicInput] = useState('');
+  const [openaiInput, setOpenaiInput] = useState('');
+  const [hasAnthropicKey, setHasAnthropicKey] = useState(false);
+  const [hasOpenaiKey, setHasOpenaiKey] = useState(false);
+  const [status, setStatus] = useState<AiVerifyState>({ state: 'idle' });
+
+  // Refresh "is a key actually saved" indicator. The plaintext is never
+  // sent to the renderer; we just ask whether decrypt() returns non-empty.
+  useEffect(() => {
+    if (typeof window.api?.aiHasKey === 'function') {
+      void window.api.aiHasKey('anthropic').then(setHasAnthropicKey);
+      void window.api.aiHasKey('openai-compatible').then(setHasOpenaiKey);
+    }
+  }, [ai.anthropicKey, ai.openaiKey]);
+
+  async function saveAnthropicKey() {
+    if (!anthropicInput) return;
+    const r = await window.api.aiSetApiKey('anthropic', anthropicInput);
+    if (r.ok) {
+      setAnthropicInput('');
+      setHasAnthropicKey(true);
+      setStatus({ state: 'idle' });
+    }
+  }
+  async function clearAnthropicKey() {
+    await window.api.aiSetApiKey('anthropic', '');
+    setHasAnthropicKey(false);
+    setStatus({ state: 'idle' });
+  }
+  async function saveOpenaiKey() {
+    if (!openaiInput) return;
+    const r = await window.api.aiSetApiKey('openai-compatible', openaiInput);
+    if (r.ok) {
+      setOpenaiInput('');
+      setHasOpenaiKey(true);
+      setStatus({ state: 'idle' });
+    }
+  }
+  async function clearOpenaiKey() {
+    await window.api.aiSetApiKey('openai-compatible', '');
+    setHasOpenaiKey(false);
+    setStatus({ state: 'idle' });
+  }
+
+  async function verify() {
+    setStatus({ state: 'verifying' });
+    const r = await window.api.aiVerify();
+    if (r.ok) {
+      setStatus({ state: 'ok', model: r.model });
+    } else {
+      setStatus({ state: 'error', message: r.message });
+    }
+  }
+
+  return (
+    <>
+      <Field label={t('settings.ai.provider')}>
+        <RadioGroup
+          name="ai-provider"
+          value={ai.provider}
+          options={[
+            { value: 'anthropic', label: 'Anthropic (Claude)' },
+            { value: 'openai-compatible', label: 'OpenAI / Compatible' },
+          ]}
+          onChange={(v) => {
+            void update({
+              ai: { ...ai, provider: v as 'anthropic' | 'openai-compatible' },
+            });
+            setStatus({ state: 'idle' });
+          }}
+          testId="ai-provider"
+        />
+      </Field>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--cm-warn-fg, #8a5a17)' }}>
+        ⚠️ {t('settings.ai.privacy')}
+      </p>
+
+      {ai.provider === 'anthropic' ? (
+        <>
+          <Field label={t('settings.ai.anthropic.key')}>
+            <div style={pathRowStyle}>
+              <input
+                type="password"
+                value={anthropicInput}
+                onChange={(e) => setAnthropicInput(e.target.value)}
+                placeholder={hasAnthropicKey ? t('settings.ai.key.saved') : 'sk-ant-...'}
+                style={inputStyle}
+                data-testid="ai-anthropic-key"
+              />
+              <button
+                type="button"
+                onClick={() => { void saveAnthropicKey(); }}
+                disabled={!anthropicInput}
+                style={baseButton}
+                data-testid="ai-anthropic-save"
+              >{t('settings.ai.key.save')}</button>
+              {hasAnthropicKey && (
+                <button
+                  type="button"
+                  onClick={() => { void clearAnthropicKey(); }}
+                  style={baseButton}
+                  data-testid="ai-anthropic-clear"
+                >{t('settings.clear')}</button>
+              )}
+            </div>
+          </Field>
+          <Field label={t('settings.ai.model')}>
+            <select
+              value={ai.anthropicModel}
+              onChange={(e) => { void update({ ai: { ...ai, anthropicModel: e.target.value } }); }}
+              style={inputStyle}
+              data-testid="ai-anthropic-model"
+            >
+              {ANTHROPIC_MODELS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label={t('settings.ai.openai.baseUrl')}>
+            <input
+              type="text"
+              value={ai.openaiBaseUrl}
+              onChange={(e) => { void update({ ai: { ...ai, openaiBaseUrl: e.target.value } }); }}
+              placeholder="https://api.openai.com or http://localhost:11434"
+              style={inputStyle}
+              data-testid="ai-openai-baseurl"
+            />
+          </Field>
+          <Field label={t('settings.ai.openai.key')}>
+            <div style={pathRowStyle}>
+              <input
+                type="password"
+                value={openaiInput}
+                onChange={(e) => setOpenaiInput(e.target.value)}
+                placeholder={hasOpenaiKey ? t('settings.ai.key.saved') : t('settings.ai.openai.key.placeholder')}
+                style={inputStyle}
+                data-testid="ai-openai-key"
+              />
+              <button
+                type="button"
+                onClick={() => { void saveOpenaiKey(); }}
+                disabled={!openaiInput}
+                style={baseButton}
+                data-testid="ai-openai-save"
+              >{t('settings.ai.key.save')}</button>
+              {hasOpenaiKey && (
+                <button
+                  type="button"
+                  onClick={() => { void clearOpenaiKey(); }}
+                  style={baseButton}
+                >{t('settings.clear')}</button>
+              )}
+            </div>
+          </Field>
+          <Field label={t('settings.ai.model')}>
+            <input
+              type="text"
+              value={ai.openaiModel}
+              onChange={(e) => { void update({ ai: { ...ai, openaiModel: e.target.value } }); }}
+              placeholder="gpt-4o-mini, llama3, ..."
+              style={inputStyle}
+              data-testid="ai-openai-model"
+            />
+          </Field>
+        </>
+      )}
+      <Field label={t('settings.ai.verify.label')}>
+        <div style={pathRowStyle}>
+          <button
+            type="button"
+            onClick={() => { void verify(); }}
+            disabled={status.state === 'verifying'}
+            style={baseButton}
+            data-testid="ai-verify"
+          >
+            {status.state === 'verifying' ? t('settings.ai.verify.running') : t('settings.ai.verify.run')}
+          </button>
+          {status.state === 'ok' && (
+            <span style={{ fontSize: 12, color: 'var(--cm-success-fg, #1d6f3a)' }} data-testid="ai-verify-ok">
+              ✓ {status.model}
+            </span>
+          )}
+          {status.state === 'error' && (
+            <span style={{ fontSize: 12, color: 'var(--cm-error-fg, #8a1f17)' }} data-testid="ai-verify-error">
+              ✗ {status.message}
+            </span>
+          )}
+        </div>
+      </Field>
+    </>
   );
 }
 

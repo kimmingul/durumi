@@ -28,6 +28,8 @@ import { appendEntry as appendBibEntry, ensureBibFile, removeEntry as removeBibE
 import { downloadReference } from './referenceDownload';
 import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
 import { extractDoiFromFile } from './referenceImport';
+import { aiChat as aiChatCall, aiVerify as aiVerifyCall, type AiMessage } from './aiClient';
+import { makeKeyVault } from './aiKeys';
 import { parseBibTeX } from '@shared/bibtex';
 import { parseRis } from '@shared/ris';
 import { extname } from 'node:path';
@@ -51,6 +53,42 @@ const SHELL_OPEN_HOST_ALLOWLIST: ReadonlyArray<string> = [
   'www.pandoc.org',
   'github.com',
 ];
+
+/**
+ * Materialise an `AiCallOptions` from the prefs blob. Returns null when the
+ * active provider has no API key (Anthropic without a key has no fallback;
+ * OpenAI-compat without a key works for keyless self-hosted endpoints, so
+ * we still return options in that case).
+ */
+function aiOptionsFor(
+  provider: 'anthropic' | 'openai-compatible',
+  prefs: Preferences,
+  vault: ReturnType<typeof makeKeyVault>,
+): {
+  provider: 'anthropic' | 'openai-compatible';
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+} | null {
+  if (provider === 'anthropic') {
+    const stored = prefs.ai?.anthropicKey ?? '';
+    const apiKey = stored ? vault.decrypt(stored) : '';
+    if (!apiKey) return null;
+    return {
+      provider,
+      apiKey,
+      model: prefs.ai?.anthropicModel || 'claude-sonnet-4-6',
+    };
+  }
+  const stored = prefs.ai?.openaiKey ?? '';
+  const apiKey = stored ? vault.decrypt(stored) : '';
+  return {
+    provider,
+    apiKey,
+    model: prefs.ai?.openaiModel || 'gpt-4o-mini',
+    baseUrl: prefs.ai?.openaiBaseUrl || 'https://api.openai.com',
+  };
+}
 
 /**
  * Quick content sniff when the file extension is unknown. RIS files start
@@ -462,6 +500,78 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('reference:extractDoi', async (_e, absPath: string) =>
     extractDoiFromFile(absPath),
+  );
+
+  const vault = makeKeyVault();
+
+  ipcMain.handle(
+    'ai:setApiKey',
+    async (_e, provider: 'anthropic' | 'openai-compatible', plainKey: string) => {
+      try {
+        const encrypted = vault.encrypt(plainKey);
+        const prefs = await getPreferences();
+        if (provider === 'anthropic') {
+          await setPreferences({ ai: { ...prefs.ai, anthropicKey: encrypted } });
+        } else {
+          await setPreferences({ ai: { ...prefs.ai, openaiKey: encrypted } });
+        }
+        return { ok: true as const };
+      } catch (err) {
+        return { ok: false as const, error: (err as Error).message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'ai:hasKey',
+    async (_e, provider: 'anthropic' | 'openai-compatible') => {
+      const prefs = await getPreferences();
+      const stored =
+        provider === 'anthropic' ? prefs.ai?.anthropicKey : prefs.ai?.openaiKey;
+      if (!stored) return false;
+      const decrypted = vault.decrypt(stored);
+      return decrypted.length > 0;
+    },
+  );
+
+  ipcMain.handle('ai:verify', async () => {
+    const prefs = await getPreferences();
+    const provider = prefs.ai?.provider ?? 'anthropic';
+    const opts = aiOptionsFor(provider, prefs, vault);
+    if (!opts) {
+      return { ok: false as const, code: 'auth', message: 'no API key configured' };
+    }
+    const r = await aiVerifyCall(opts);
+    if (!r.ok) return { ok: false as const, code: r.code, message: r.message };
+    return { ok: true as const, provider, model: opts.model };
+  });
+
+  ipcMain.handle(
+    'ai:chat',
+    async (
+      _e,
+      messages: AiMessage[],
+      options?: { maxTokens?: number; temperature?: number },
+    ) => {
+      const prefs = await getPreferences();
+      const provider = prefs.ai?.provider ?? 'anthropic';
+      const opts = aiOptionsFor(provider, prefs, vault);
+      if (!opts) {
+        return { ok: false as const, code: 'auth', message: 'no API key configured' };
+      }
+      const r = await aiChatCall(messages, {
+        ...opts,
+        maxTokens: options?.maxTokens,
+        temperature: options?.temperature,
+      });
+      if (!r.ok) return { ok: false as const, code: r.code, message: r.message };
+      return {
+        ok: true as const,
+        text: r.data.text,
+        inputTokens: r.data.inputTokens,
+        outputTokens: r.data.outputTokens,
+      };
+    },
   );
 
   ipcMain.handle('pandoc:detect', async () => {

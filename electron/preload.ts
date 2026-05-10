@@ -103,6 +103,10 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:removeEntry', filePath, key),
   bibliographyImportFile: (sourcePath) =>
     ipcRenderer.invoke('bibliography:importFile', sourcePath),
+  aiSetApiKey: (provider, plainKey) => ipcRenderer.invoke('ai:setApiKey', provider, plainKey),
+  aiHasKey: (provider) => ipcRenderer.invoke('ai:hasKey', provider),
+  aiVerify: () => ipcRenderer.invoke('ai:verify'),
+  aiChat: (messages, options) => ipcRenderer.invoke('ai:chat', messages, options),
   referenceDownload: (bibFilePath, entry) =>
     ipcRenderer.invoke('reference:download', bibFilePath, entry),
   referenceOpen: (bibFilePath, relPath) =>

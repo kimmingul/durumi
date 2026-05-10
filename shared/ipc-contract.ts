@@ -83,6 +83,26 @@ export interface Preferences {
     /** Personal ORCID iD (e.g. `0000-0002-1825-0097`). Used by Track C. */
     orcidId: string | null;
   };
+  /**
+   * AI-assisted writing (v0.1.8). API keys are stored as opaque encrypted
+   * blobs (`enc:` prefix) via Electron's safeStorage; the renderer never
+   * sees the plaintext. With both providers' keys empty, the AI palette
+   * stays disabled and no LLM call is ever made.
+   */
+  ai: {
+    /** Active provider for AI commands. */
+    provider: 'anthropic' | 'openai-compatible';
+    /** Encrypted Anthropic API key (or empty). */
+    anthropicKey: string;
+    /** Default Anthropic model id. */
+    anthropicModel: string;
+    /** Encrypted OpenAI / compat key (or empty). */
+    openaiKey: string;
+    /** Compat base URL — e.g. `http://localhost:11434` for Ollama. */
+    openaiBaseUrl: string;
+    /** OpenAI / compat model id. */
+    openaiModel: string;
+  };
 }
 
 export type MenuCommand =
@@ -386,7 +406,41 @@ export interface IpcApi {
     doi: string | null;
     source: 'pdf-info' | 'pdf-content' | 'md-frontmatter' | 'md-body' | 'none';
   }>;
+  /**
+   * v0.1.8 — write a plaintext API key. Main encrypts via safeStorage and
+   * persists the encrypted blob into preferences.json.
+   */
+  aiSetApiKey: (
+    provider: 'anthropic' | 'openai-compatible',
+    plainKey: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Tell the renderer whether the active provider has any key configured. */
+  aiHasKey: (provider: 'anthropic' | 'openai-compatible') => Promise<boolean>;
+  /** Probe the active provider with a tiny request to verify auth + reach. */
+  aiVerify: () => Promise<AiVerifyResult>;
+  /**
+   * Run an AI completion. Returns the assistant text + token usage. The
+   * caller passes the full `messages` array so it can compose system
+   * prompts and few-shot examples for each command type.
+   */
+  aiChat: (
+    messages: AiMessageDto[],
+    options?: { maxTokens?: number; temperature?: number },
+  ) => Promise<AiChatResponse>;
 }
+
+export interface AiMessageDto {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export type AiVerifyResult =
+  | { ok: true; provider: 'anthropic' | 'openai-compatible'; model: string }
+  | { ok: false; code: string; message: string };
+
+export type AiChatResponse =
+  | { ok: true; text: string; inputTokens: number; outputTokens: number }
+  | { ok: false; code: string; message: string };
 
 export interface ReferenceDownloadResult {
   ok: true;

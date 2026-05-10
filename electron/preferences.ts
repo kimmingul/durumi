@@ -49,6 +49,14 @@ const DEFAULTS: Preferences = {
     ncbiApiKey: null,
     orcidId: null,
   },
+  ai: {
+    provider: 'anthropic',
+    anthropicKey: '',
+    anthropicModel: 'claude-sonnet-4-6',
+    openaiKey: '',
+    openaiBaseUrl: 'https://api.openai.com',
+    openaiModel: 'gpt-4o-mini',
+  },
 };
 
 let cache: Preferences | null = null;
@@ -98,6 +106,10 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
     bibliography: {
       ...DEFAULTS.bibliography,
       ...(migrated.bibliography ?? {}),
+    },
+    ai: {
+      ...DEFAULTS.ai,
+      ...(migrated.ai ?? {}),
     },
     lastWindow: {
       ...DEFAULTS.lastWindow,
