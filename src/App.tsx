@@ -7,6 +7,7 @@ import { QuickOpen } from './components/QuickOpen';
 import { PandocInstallDialog } from './components/PandocInstallDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { InsertCitationDialog } from './components/InsertCitationDialog';
+import { CitePalette } from './components/CitePalette';
 import { useBibliographyStore } from './store/bibliographyStore';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
@@ -78,6 +79,7 @@ export function App() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [citationDialogOpen, setCitationDialogOpen] = useState(false);
+  const [citePaletteOpen, setCitePaletteOpen] = useState(false);
   // When Pandoc is missing, we surface a guided install dialog and remember
   // the operation that triggered it so the user can retry after installing.
   const [pandocInstallOp, setPandocInstallOp] = useState<
@@ -347,6 +349,7 @@ export function App() {
       if (cmd === 'showSearch') { showWith('search'); return; }
       if (cmd === 'showMemos') { showWith('comments'); return; }
       if (cmd === 'showChanges') { showWith('changes'); return; }
+      if (cmd === 'showReferences') { showWith('references'); return; }
       if (cmd === 'addMemo' && view) { wrapComment(view); view.focus(); return; }
       if (cmd === 'cmInsert' && view) { wrapCmInsert(view); view.focus(); return; }
       if (cmd === 'cmDelete' && view) { wrapCmDelete(view); view.focus(); return; }
@@ -368,6 +371,7 @@ export function App() {
       if (cmd === 'quickOpen') { setQuickOpen(true); return; }
       if (cmd === 'openSettings') { setSettingsOpen(true); return; }
       if (cmd === 'insertCitationFromDoi') { setCitationDialogOpen(true); return; }
+      if (cmd === 'openCitePalette') { setCitePaletteOpen(true); return; }
       if (cmd === 'toggleFocusMode' && view) {
         const cur = view.state.field(focusModeField, false);
         view.dispatch({ effects: setFocusMode.of(!cur) });
@@ -474,6 +478,7 @@ export function App() {
           content={content}
           view={editorViewRef.current}
           onApplyOutlineMove={(newDoc) => setContent(newDoc)}
+          onInsertCitation={(key) => insertCitationAtCaret(`[@${key}]`)}
           onOpenFile={async (p) => {
             if (!(await maybeDiscard())) return;
             const r = await window.api.fileOpenPath(p);
@@ -550,17 +555,24 @@ export function App() {
       <InsertCitationDialog
         open={citationDialogOpen}
         onClose={() => setCitationDialogOpen(false)}
-        onInsert={(citation) => {
-          const view = editorViewRef.current;
-          if (!view) return;
-          const { from, to } = view.state.selection.main;
-          view.dispatch({
-            changes: { from, to, insert: citation },
-            selection: { anchor: from + citation.length },
-          });
-          view.focus();
-        }}
+        onInsert={insertCitationAtCaret}
+      />
+      <CitePalette
+        open={citePaletteOpen}
+        onClose={() => setCitePaletteOpen(false)}
+        onPick={(key) => insertCitationAtCaret(`[@${key}]`)}
       />
     </div>
   );
+
+  function insertCitationAtCaret(citation: string) {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, to, insert: citation },
+      selection: { anchor: from + citation.length },
+    });
+    view.focus();
+  }
 }

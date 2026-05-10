@@ -34,6 +34,16 @@ interface BibliographyState {
     | { ok: true; key: string }
     | { ok: false; code: string; message: string }
   >;
+  /**
+   * Append a pre-resolved `BibEntry` (from a Crossref/PubMed search hit).
+   * Same write-then-cache flow as `addFromDoi` but without the network call.
+   */
+  addEntry: (
+    entry: BibEntry,
+  ) => Promise<
+    | { ok: true; key: string }
+    | { ok: false; code: string; message: string }
+  >;
 }
 
 export const useBibliographyStore = create<BibliographyState>((set, get) => ({
@@ -102,6 +112,21 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
     // result, but skipping the round-trip keeps the UI responsive.
     set((s) => ({
       entries: [...s.entries, { ...fetched.entry, key: appended.key }],
+    }));
+    return { ok: true, key: appended.key };
+  },
+
+  addEntry: async (entry) => {
+    const { filePath } = get();
+    if (!filePath) {
+      return { ok: false, code: 'no-file', message: 'no .bib file bound' };
+    }
+    const appended = await window.api.bibliographyAppendEntry(filePath, entry);
+    if (!appended.ok) {
+      return { ok: false, code: 'write-failed', message: appended.error };
+    }
+    set((s) => ({
+      entries: [...s.entries, { ...entry, key: appended.key }],
     }));
     return { ok: true, key: appended.key };
   },

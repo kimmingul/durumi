@@ -65,6 +65,194 @@ export async function resolveDOI(
   }
 }
 
+export interface SearchHit {
+  /** Pre-mapped `BibEntry`. The `key` field is empty — minted on append. */
+  entry: BibEntry;
+  /** Source-provided ID for de-dup (DOI for Crossref, PMID for PubMed). */
+  externalId: string;
+  /** `'crossref'`, `'pubmed'`, or `'koreamed'` (Track C). */
+  source: 'crossref' | 'pubmed' | 'koreamed';
+}
+
+/**
+ * Crossref keyword search. The `query` is sent verbatim — Crossref's matcher
+ * handles author/title/journal mixing internally. Cap at 25 hits to keep
+ * the network round-trip under a second on a typical connection.
+ */
+export async function searchCrossref(
+  query: string,
+  opts: FetchOptions & { limit?: number } = {},
+): Promise<FetchResult<SearchHit[]>> {
+  const trimmed = query.trim();
+  if (!trimmed) return { ok: true, data: [] };
+  const limit = clampLimit(opts.limit, 25);
+  const params = new URLSearchParams({
+    query: trimmed,
+    rows: String(limit),
+    select:
+      'DOI,title,author,container-title,volume,issue,page,issued,published-print,published-online,type,publisher,URL,ISSN,abstract',
+  });
+  const url = `https://api.crossref.org/works?${params.toString()}`;
+  const result = await httpJson<{ message: { items: CrossrefMessage[] } }>(url, opts);
+  if (!result.ok) return result;
+  try {
+    const items = result.data.message.items ?? [];
+    const hits: SearchHit[] = items.map((m) => ({
+      entry: crossrefMessageToEntry(m),
+      externalId: m.DOI ?? '',
+      source: 'crossref' as const,
+    }));
+    return { ok: true, data: hits };
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'parse',
+      message: err instanceof Error ? err.message : 'parse failed',
+    };
+  }
+}
+
+/**
+ * PubMed search via NCBI E-utilities. Two-step: ESearch → list of PMIDs,
+ * then ESummary → metadata for each. We deliberately use the JSON shape of
+ * ESummary (`retmode=json`) rather than ESearch's XML so the renderer-side
+ * parsing stays trivial. NCBI's polite policy: no more than 3 requests/sec
+ * without an API key, 10/sec with one.
+ */
+export async function searchPubMed(
+  query: string,
+  opts: FetchOptions & { limit?: number } = {},
+): Promise<FetchResult<SearchHit[]>> {
+  const trimmed = query.trim();
+  if (!trimmed) return { ok: true, data: [] };
+  const limit = clampLimit(opts.limit, 25);
+  const apiKey = (opts.ncbiApiKey ?? '').trim();
+  const baseParams = new URLSearchParams({
+    db: 'pubmed',
+    retmode: 'json',
+    retmax: String(limit),
+    sort: 'relevance',
+    term: trimmed,
+  });
+  if (apiKey) baseParams.set('api_key', apiKey);
+
+  const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?${baseParams.toString()}`;
+  const idsResult = await httpJson<EsearchResponse>(searchUrl, opts);
+  if (!idsResult.ok) return idsResult;
+  const ids = idsResult.data.esearchresult?.idlist ?? [];
+  if (ids.length === 0) return { ok: true, data: [] };
+
+  const summaryParams = new URLSearchParams({
+    db: 'pubmed',
+    retmode: 'json',
+    id: ids.join(','),
+  });
+  if (apiKey) summaryParams.set('api_key', apiKey);
+  const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?${summaryParams.toString()}`;
+  const summaryResult = await httpJson<EsummaryResponse>(summaryUrl, opts);
+  if (!summaryResult.ok) return summaryResult;
+
+  const result = summaryResult.data.result ?? {};
+  const uids = (result.uids as string[] | undefined) ?? ids;
+  const hits: SearchHit[] = [];
+  for (const uid of uids) {
+    const item = result[uid];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const entry = pubmedSummaryToEntry(item as PubmedSummaryItem, uid);
+    hits.push({ entry, externalId: uid, source: 'pubmed' });
+  }
+  return { ok: true, data: hits };
+}
+
+interface EsearchResponse {
+  esearchresult?: {
+    idlist?: string[];
+  };
+}
+
+interface EsummaryResponse {
+  result?: Record<string, unknown> & { uids?: string[] };
+}
+
+interface PubmedSummaryItem {
+  title?: string;
+  authors?: Array<{ name?: string; authtype?: string }>;
+  fulljournalname?: string;
+  source?: string;
+  pubdate?: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
+  articleids?: Array<{ idtype?: string; value?: string }>;
+  pubtype?: string[];
+}
+
+/**
+ * Map an ESummary item to a `BibEntry`. Captures DOI when present (PubMed
+ * carries it in `articleids[].idtype === 'doi'`), preserves the PMID, and
+ * renders `pubdate` as a 4-digit year.
+ */
+export function pubmedSummaryToEntry(item: PubmedSummaryItem, pmid: string): BibEntry {
+  const fields: Record<string, string> = {};
+  if (item.title) fields.title = stripTrailingPeriod(stripTags(item.title));
+  if (item.authors && item.authors.length > 0) {
+    fields.author = item.authors
+      .filter((a) => a.name && (!a.authtype || a.authtype === 'Author'))
+      .map((a) => normalizePubmedAuthor(a.name!))
+      .join(' and ');
+  }
+  const journal = item.fulljournalname ?? item.source;
+  if (journal) fields.journal = journal;
+  if (item.volume) fields.volume = item.volume;
+  if (item.issue) fields.number = item.issue;
+  if (item.pages) fields.pages = item.pages;
+  const year = extractPubmedYear(item.pubdate);
+  if (year) fields.year = year;
+
+  for (const aid of item.articleids ?? []) {
+    if (aid.idtype === 'doi' && aid.value) fields.doi = aid.value;
+  }
+  fields.pmid = pmid;
+
+  const type = mapPubmedType(item.pubtype);
+  return { key: '', type, fields };
+}
+
+function normalizePubmedAuthor(name: string): string {
+  // PubMed gives "Last FM" — convert to BibTeX's "Last, FM" so the parser
+  // and Pandoc reliably recognise the family / given split.
+  const tokens = name.trim().split(/\s+/);
+  if (tokens.length < 2) return name.trim();
+  const last = tokens.slice(0, -1).join(' ');
+  const initials = tokens[tokens.length - 1]!;
+  return `${last}, ${initials}`;
+}
+
+function extractPubmedYear(pubdate: string | undefined): string {
+  if (!pubdate) return '';
+  const m = pubdate.match(/\d{4}/);
+  return m ? m[0] : '';
+}
+
+function mapPubmedType(types: string[] | undefined): string {
+  if (!types || types.length === 0) return 'article';
+  for (const t of types) {
+    if (/journal article|review|case reports|clinical trial/i.test(t)) return 'article';
+    if (/book chapter/i.test(t)) return 'incollection';
+    if (/book/i.test(t)) return 'book';
+  }
+  return 'article';
+}
+
+function stripTrailingPeriod(s: string): string {
+  return s.replace(/\.\s*$/, '');
+}
+
+function clampLimit(n: number | undefined, def: number): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return def;
+  return Math.max(1, Math.min(50, Math.floor(n)));
+}
+
 /**
  * `10.1056/NEJMoa1234567` ← any of the spellings users paste:
  *  - `https://doi.org/10.1056/NEJMoa1234567`

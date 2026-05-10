@@ -102,6 +102,7 @@ export type MenuCommand =
   | 'showMemos' | 'showChanges' | 'showReferences'
   | 'nextMemo' | 'prevMemo'
   | 'insertCitationFromDoi'
+  | 'openCitePalette'
   | 'toggleExportIncludeComments' | 'toggleExportPreserveAnnotations'
   | 'exportHtml'
   | 'exportPdf'
@@ -270,6 +271,35 @@ export interface IpcApi {
   bibliographyReadEntries: (
     filePath: string,
   ) => Promise<{ ok: true; entries: BibEntry[]; warnings: string[] } | { ok: false; error: string }>;
+  /**
+   * Crossref keyword search. v0.1.6 Track B. Returns up to `limit` hits
+   * (default 25, capped at 50) as pre-mapped BibEntries.
+   */
+  bibliographySearchCrossref: (
+    query: string,
+    limit?: number,
+  ) => Promise<
+    | { ok: true; hits: BibliographySearchHit[] }
+    | { ok: false; code: string; message: string }
+  >;
+  /**
+   * PubMed search via NCBI E-utilities (ESearch + ESummary). The NCBI API
+   * key from Settings raises the rate-limit from 3 to 10 req/s.
+   */
+  bibliographySearchPubmed: (
+    query: string,
+    limit?: number,
+  ) => Promise<
+    | { ok: true; hits: BibliographySearchHit[] }
+    | { ok: false; code: string; message: string }
+  >;
+}
+
+/** Result row shared by every search backend (Crossref / PubMed / KoreaMed). */
+export interface BibliographySearchHit {
+  entry: BibEntry;
+  externalId: string;
+  source: 'crossref' | 'pubmed' | 'koreamed';
 }
 
 declare global {

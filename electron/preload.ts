@@ -89,6 +89,10 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:appendEntry', filePath, entry),
   bibliographyReadEntries: (filePath) =>
     ipcRenderer.invoke('bibliography:readEntries', filePath),
+  bibliographySearchCrossref: (query, limit) =>
+    ipcRenderer.invoke('bibliography:searchCrossref', query, limit),
+  bibliographySearchPubmed: (query, limit) =>
+    ipcRenderer.invoke('bibliography:searchPubmed', query, limit),
   onAppRequestClose: (decide) => {
     const handler = async (_: unknown, reqId: number) => {
       let allow = false;

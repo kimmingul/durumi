@@ -23,7 +23,7 @@ import {
 import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
-import { resolveDOI } from './bibliographyFetch';
+import { resolveDOI, searchCrossref, searchPubMed } from './bibliographyFetch';
 import { appendEntry as appendBibEntry, ensureBibFile } from './bibliographyWrite';
 import { parseBibTeX } from '@shared/bibtex';
 import type { BibEntry } from '@shared/bibtex';
@@ -313,6 +313,33 @@ export function registerIpcHandlers(): void {
         }
         return { ok: false as const, error: (err as Error).message };
       }
+    },
+  );
+
+  ipcMain.handle(
+    'bibliography:searchCrossref',
+    async (_e, query: string, limit?: number) => {
+      const prefs = await getPreferences();
+      const r = await searchCrossref(query, {
+        email: prefs.bibliography?.email ?? null,
+        limit,
+      });
+      if (r.ok) return { ok: true as const, hits: r.data };
+      return { ok: false as const, code: r.code, message: r.message };
+    },
+  );
+
+  ipcMain.handle(
+    'bibliography:searchPubmed',
+    async (_e, query: string, limit?: number) => {
+      const prefs = await getPreferences();
+      const r = await searchPubMed(query, {
+        email: prefs.bibliography?.email ?? null,
+        ncbiApiKey: prefs.bibliography?.ncbiApiKey ?? null,
+        limit,
+      });
+      if (r.ok) return { ok: true as const, hits: r.data };
+      return { ok: false as const, code: r.code, message: r.message };
     },
   );
 

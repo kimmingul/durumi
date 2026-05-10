@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type SidebarTab = 'files' | 'outline' | 'search' | 'comments' | 'changes';
+export type SidebarTab = 'files' | 'outline' | 'search' | 'comments' | 'changes' | 'references';
 
 interface SidebarState {
   visible: boolean;

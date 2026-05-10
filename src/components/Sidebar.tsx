@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSidebarStore } from '../store/sidebarStore';
 import { CommentsTab } from './sidebar/CommentsTab';
 import { ChangesTab } from './sidebar/ChangesTab';
+import { ReferencesTab } from './sidebar/ReferencesTab';
 import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { FileTree } from './sidebar/FileTree';
 import { Outline } from './sidebar/Outline';
@@ -17,9 +18,18 @@ interface SidebarProps {
   onOpenFile: (path: string) => void;
   onOpenHit?: (absPath: string, line: number, column: number) => void;
   onApplyOutlineMove?: (newDoc: string) => void;
+  /** Insert `[@key]` at the editor caret (used by the References tab). */
+  onInsertCitation?: (key: string) => void;
 }
 
-export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMove }: SidebarProps) {
+export function Sidebar({
+  content,
+  view,
+  onOpenFile,
+  onOpenHit,
+  onApplyOutlineMove,
+  onInsertCitation,
+}: SidebarProps) {
   const visible = useSidebarStore((s) => s.visible);
   const activeTab = useSidebarStore((s) => s.activeTab);
   const width = useSidebarStore((s) => s.width);
@@ -112,6 +122,13 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMo
               </span>
             )}
           </button>
+          <button
+            className={'cm-sidebar-tab' + (activeTab === 'references' ? ' cm-sidebar-tab-active' : '')}
+            onClick={() => setActiveTab('references')}
+            data-testid="sidebar-tab-references"
+          >
+            {t('sidebar.references')}
+          </button>
         </div>
         <div className="cm-sidebar-body">
           {activeTab === 'files' && <FileTree onOpenFile={onOpenFile} />}
@@ -126,6 +143,9 @@ export function Sidebar({ content, view, onOpenFile, onOpenHit, onApplyOutlineMo
           )}
           {activeTab === 'changes' && (
             <ChangesTab content={content} onJump={onJump} />
+          )}
+          {activeTab === 'references' && (
+            <ReferencesTab onInsertCitation={onInsertCitation ?? (() => undefined)} />
           )}
         </div>
       </aside>
