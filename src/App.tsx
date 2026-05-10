@@ -10,6 +10,8 @@ import { InsertCitationDialog } from './components/InsertCitationDialog';
 import { CitePalette } from './components/CitePalette';
 import { BulkDoiDialog } from './components/BulkDoiDialog';
 import { ImportReferencesDialog } from './components/ImportReferencesDialog';
+import { AiCommandPalette } from './components/AiCommandPalette';
+import { currentParagraph } from './editor/paragraphContext';
 import type { BibEntry } from '@shared/bibtex';
 import { useBibliographyStore } from './store/bibliographyStore';
 import { useAppStore } from './store/appStore';
@@ -84,6 +86,15 @@ export function App() {
   const [citationDialogOpen, setCitationDialogOpen] = useState(false);
   const [citePaletteOpen, setCitePaletteOpen] = useState(false);
   const [bulkDoiOpen, setBulkDoiOpen] = useState(false);
+  const [aiPaletteState, setAiPaletteState] = useState<{
+    open: boolean;
+    selection: string;
+    paragraph: string;
+    /** Editor offsets so accept can replace the right range. */
+    from: number;
+    to: number;
+    hasKey: boolean;
+  }>({ open: false, selection: '', paragraph: '', from: 0, to: 0, hasKey: false });
   const [importState, setImportState] = useState<{
     open: boolean;
     entries: BibEntry[];
@@ -405,6 +416,26 @@ export function App() {
         return;
       }
       if (cmd === 'openCitePalette') { setCitePaletteOpen(true); return; }
+      if (cmd === 'openAiPalette') {
+        const v = view;
+        if (!v) return;
+        const sel = v.state.selection.main;
+        const selection = v.state.sliceDoc(sel.from, sel.to);
+        const para = currentParagraph(v.state);
+        const [hasA, hasO] = await Promise.all([
+          window.api.aiHasKey('anthropic'),
+          window.api.aiHasKey('openai-compatible'),
+        ]);
+        setAiPaletteState({
+          open: true,
+          selection,
+          paragraph: para?.text ?? selection,
+          from: sel.from,
+          to: sel.to,
+          hasKey: hasA || hasO,
+        });
+        return;
+      }
       if (cmd === 'toggleFocusMode' && view) {
         const cur = view.state.field(focusModeField, false);
         view.dispatch({ effects: setFocusMode.of(!cur) });
@@ -606,6 +637,22 @@ export function App() {
         format={importState.format}
         sourcePath={importState.sourcePath}
         onClose={() => setImportState((s) => ({ ...s, open: false }))}
+      />
+      <AiCommandPalette
+        open={aiPaletteState.open}
+        selection={aiPaletteState.selection}
+        paragraph={aiPaletteState.paragraph}
+        hasKey={aiPaletteState.hasKey}
+        onClose={() => setAiPaletteState((s) => ({ ...s, open: false }))}
+        onAccept={(rewritten) => {
+          const v = editorViewRef.current;
+          if (!v) return;
+          v.dispatch({
+            changes: { from: aiPaletteState.from, to: aiPaletteState.to, insert: rewritten },
+            selection: { anchor: aiPaletteState.from + rewritten.length },
+          });
+          v.focus();
+        }}
       />
     </div>
   );

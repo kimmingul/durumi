@@ -263,6 +263,12 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           click: () => send('openCitePalette'),
         },
         { type: 'separator' },
+        {
+          label: tr('menu.review.openAiPalette'),
+          accelerator: 'CommandOrControl+Shift+/',
+          click: () => send('openAiPalette'),
+        },
+        { type: 'separator' },
         { label: tr('menu.review.showMemos'), click: () => send('showMemos') },
         { label: tr('menu.review.showChanges'), click: () => send('showChanges') },
         { label: tr('menu.review.showReferences'), click: () => send('showReferences') },
