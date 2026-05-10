@@ -1,5 +1,13 @@
 import { create } from 'zustand';
 import type { BibEntry } from '@shared/bibtex';
+import type { ReferenceDownloadResult } from '@shared/ipc-contract';
+
+/** Per-key local-file presence (cached read of `reference/<key>.{pdf,md}`). */
+export interface LocalFileStatus {
+  exists: boolean;
+  relPath: string | null;
+  type: 'pdf' | 'md' | null;
+}
 
 /**
  * In-memory cache of the active document's bibliography. The `.bib` file is
@@ -20,10 +28,27 @@ interface BibliographyState {
   exists: boolean;
   entries: BibEntry[];
   loading: boolean;
+  /** key → local file status (reference/<key>.pdf or .md). */
+  fileStatus: Record<string, LocalFileStatus>;
+  /** key → true while a download is in flight. */
+  downloading: Record<string, boolean>;
   /** Bind to the active document. Idempotent for a given `docPath`. */
   bindToDocument: (docPath: string | null) => Promise<void>;
   /** Re-read the active `.bib` file from disk. */
   reload: () => Promise<void>;
+  /** Refresh the file-status cache for every entry. */
+  scanFileStatuses: () => Promise<void>;
+  /**
+   * Download the reference for `key` (probes Crossref link / PMC /
+   * Unpaywall / HTML / abstract). On success, persists the resulting
+   * relative path back into the bib entry's `file` field.
+   */
+  downloadReference: (
+    key: string,
+  ) => Promise<
+    | (ReferenceDownloadResult & { ok: true })
+    | { ok: false; code: string; message: string }
+  >;
   /**
    * Resolve a DOI and append the result. Returns the citation key on success
    * so the caller can immediately insert `[@key]` at the editor caret.
@@ -51,9 +76,11 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
   exists: false,
   entries: [],
   loading: false,
+  fileStatus: {},
+  downloading: {},
 
   bindToDocument: async (docPath) => {
-    set({ loading: true });
+    set({ loading: true, fileStatus: {} });
     if (!docPath) {
       set({ filePath: null, exists: false, entries: [], loading: false });
       return;
@@ -71,6 +98,7 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
         entries: r.ok ? r.entries : [],
         loading: false,
       });
+      void get().scanFileStatuses();
       return;
     }
     // No file yet — record the would-be path so the UI can show it.
@@ -92,7 +120,71 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
     const { filePath } = get();
     if (!filePath) return;
     const r = await window.api.bibliographyReadEntries(filePath);
-    if (r.ok) set({ entries: r.entries });
+    if (r.ok) {
+      set({ entries: r.entries });
+      void get().scanFileStatuses();
+    }
+  },
+
+  scanFileStatuses: async () => {
+    const { filePath, entries } = get();
+    if (!filePath) return;
+    const next: Record<string, LocalFileStatus> = {};
+    // Parallel probe — each entry's status is an independent IPC, but they
+    // share a single fs walk on the main side via direct path access.
+    await Promise.all(
+      entries.map(async (e) => {
+        const s = await window.api.referenceStatus(
+          filePath,
+          e.key,
+          e.fields.file ?? null,
+        );
+        next[e.key] = {
+          exists: s.exists,
+          relPath: s.relPath,
+          type: s.type,
+        };
+      }),
+    );
+    set({ fileStatus: next });
+  },
+
+  downloadReference: async (key) => {
+    const { filePath, entries } = get();
+    if (!filePath) return { ok: false, code: 'no-file', message: 'no .bib bound' };
+    const entry = entries.find((e) => e.key === key);
+    if (!entry) return { ok: false, code: 'not-found', message: 'key missing' };
+
+    set((s) => ({ downloading: { ...s.downloading, [key]: true } }));
+    try {
+      const r = await window.api.referenceDownload(filePath, entry);
+      if (!r.ok) return r;
+      // Persist the file field back to the bib so the link survives across
+      // sessions. We mutate the entry in place in the store cache to skip
+      // a round-trip read.
+      const updated: BibEntry = {
+        ...entry,
+        fields: { ...entry.fields, file: r.relPath },
+      };
+      const persisted = await window.api.bibliographyUpsertEntry(filePath, updated);
+      if (!persisted.ok) {
+        return { ok: false, code: 'write-failed', message: persisted.error };
+      }
+      set((s) => ({
+        entries: s.entries.map((e) => (e.key === key ? updated : e)),
+        fileStatus: {
+          ...s.fileStatus,
+          [key]: { exists: true, relPath: r.relPath, type: r.type },
+        },
+      }));
+      return r;
+    } finally {
+      set((s) => {
+        const next = { ...s.downloading };
+        delete next[key];
+        return { downloading: next };
+      });
+    }
   },
 
   addFromDoi: async (doi) => {

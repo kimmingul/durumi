@@ -97,6 +97,16 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:searchKoreamed', query, limit),
   bibliographyResolveOrcid: (iD) =>
     ipcRenderer.invoke('bibliography:resolveOrcid', iD),
+  bibliographyUpsertEntry: (filePath, entry) =>
+    ipcRenderer.invoke('bibliography:upsertEntry', filePath, entry),
+  referenceDownload: (bibFilePath, entry) =>
+    ipcRenderer.invoke('reference:download', bibFilePath, entry),
+  referenceOpen: (bibFilePath, relPath) =>
+    ipcRenderer.invoke('reference:open', bibFilePath, relPath),
+  referenceStatus: (bibFilePath, key, fileField) =>
+    ipcRenderer.invoke('reference:status', bibFilePath, key, fileField),
+  referenceScan: (bibFilePath) =>
+    ipcRenderer.invoke('reference:scan', bibFilePath),
   onAppRequestClose: (decide) => {
     const handler = async (_: unknown, reqId: number) => {
       let allow = false;

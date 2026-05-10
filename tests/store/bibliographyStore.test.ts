@@ -9,6 +9,7 @@ interface ApiMock {
   bibliographyResolveDoi: ReturnType<typeof vi.fn>;
   bibliographyAppendEntry: ReturnType<typeof vi.fn>;
   bibliographyReadEntries: ReturnType<typeof vi.fn>;
+  referenceStatus: ReturnType<typeof vi.fn>;
 }
 
 function installApiMock(): ApiMock {
@@ -19,6 +20,9 @@ function installApiMock(): ApiMock {
     bibliographyResolveDoi: vi.fn(),
     bibliographyAppendEntry: vi.fn(),
     bibliographyReadEntries: vi.fn().mockResolvedValue({ ok: true, entries: [], warnings: [] }),
+    referenceStatus: vi
+      .fn()
+      .mockResolvedValue({ exists: false, absPath: null, relPath: null, type: null }),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).api = api;

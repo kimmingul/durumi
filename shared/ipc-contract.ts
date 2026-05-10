@@ -315,6 +315,70 @@ export interface IpcApi {
     | { ok: true; profile: { iD: string; name: string; affiliation: string | null; worksCount: number } }
     | { ok: false; code: string; message: string }
   >;
+  /**
+   * Replace (or append) an entry by key. v0.1.7 — used after a download to
+   * persist `entry.fields.file` back into `references.bib` so the local
+   * file is reachable on the next session.
+   */
+  bibliographyUpsertEntry: (
+    filePath: string,
+    entry: BibEntry,
+  ) => Promise<{ ok: true; key: string; path: string } | { ok: false; error: string }>;
+  /**
+   * v0.1.7 Track B — download the open-access copy of a reference into
+   * `<doc-folder>/reference/`. Probes Crossref `link[]`, PMC, Unpaywall
+   * (in that order); falls back to a HTML→Markdown scrape, then to an
+   * abstract-only stub. Always succeeds with SOMETHING (even when only
+   * metadata is available).
+   */
+  referenceDownload: (
+    bibFilePath: string,
+    entry: BibEntry,
+  ) => Promise<ReferenceDownloadResult>;
+  /** Open a saved reference file with the OS default app. */
+  referenceOpen: (
+    bibFilePath: string,
+    relPath: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Status check for a single citation key — does a file exist on disk
+   * for it? Used by the sidebar to decide between "📄" and "📥 Download".
+   */
+  referenceStatus: (
+    bibFilePath: string,
+    key: string,
+    fileField?: string | null,
+  ) => Promise<ReferenceFileStatusResult>;
+  /** List every file in `<bib-dir>/reference/` for the orphan-files view. */
+  referenceScan: (
+    bibFilePath: string,
+  ) => Promise<{ ok: true; files: ReferenceScannedFile[] } | { ok: false; error: string }>;
+}
+
+export interface ReferenceDownloadResult {
+  ok: true;
+  path: string;
+  relPath: string;
+  type: 'pdf' | 'md';
+  source: 'crossref-link' | 'pmc' | 'unpaywall' | 'html-scrape' | 'abstract';
+  fetchedFrom?: string;
+}
+export type ReferenceDownloadResponse =
+  | ReferenceDownloadResult
+  | { ok: false; code: string; message: string };
+
+export interface ReferenceFileStatusResult {
+  exists: boolean;
+  absPath: string | null;
+  relPath: string | null;
+  type: 'pdf' | 'md' | null;
+}
+
+export interface ReferenceScannedFile {
+  absPath: string;
+  relPath: string;
+  fileName: string;
+  type: 'pdf' | 'md' | null;
 }
 
 /** Result row shared by every search backend (Crossref / PubMed / KoreaMed). */

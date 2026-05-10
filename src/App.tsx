@@ -175,14 +175,13 @@ export function App() {
     function onMemoPanelToggle() {
       toggleMemoPanel();
     }
-    // v0.1.7 — citation hover tooltip can fire `durumi:reference-open` to
-    // request opening the local file from `<doc-folder>/reference/`. Track B
-    // fills in the actual `reference:open` IPC; until then we silently
-    // log so the listener is in place and ready to wire up.
+    // v0.1.7 — citation hover tooltip / sidebar fire `durumi:reference-open`
+    // to request opening a local file from `<doc-folder>/reference/`.
     function onReferenceOpen(e: Event) {
       const ev = e as CustomEvent<{ relPath: string; citationKey: string }>;
-      // eslint-disable-next-line no-console
-      console.debug('[durumi] reference-open requested:', ev.detail);
+      const bibPath = useBibliographyStore.getState().filePath;
+      if (!bibPath || !ev.detail?.relPath) return;
+      void window.api.referenceOpen(bibPath, ev.detail.relPath);
     }
     window.addEventListener('durumi:memo-focus', onMemoFocus as EventListener);
     window.addEventListener('durumi:memo-panel-toggle', onMemoPanelToggle as EventListener);

@@ -93,7 +93,10 @@ describe('ReferencesTab', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     const rows = host.querySelectorAll('[data-testid="references-local-row"]');
     expect(rows.length).toBe(1);
-    act(() => { (rows[0] as HTMLButtonElement).click(); });
+    // The row wrapper now hosts an inner button for the citation insert and
+    // a sibling action button. Click the cm-references-local-row button.
+    const insertBtn = rows[0]!.querySelector('button.cm-references-local-row') as HTMLButtonElement;
+    act(() => { insertBtn.click(); });
     expect(onInsert).toHaveBeenCalledWith('smith2024x');
     cleanup();
   });

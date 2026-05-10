@@ -28,6 +28,9 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
   const exists = useBibliographyStore((s) => s.exists);
   const entries = useBibliographyStore((s) => s.entries);
   const addEntry = useBibliographyStore((s) => s.addEntry);
+  const fileStatus = useBibliographyStore((s) => s.fileStatus);
+  const downloading = useBibliographyStore((s) => s.downloading);
+  const downloadReference = useBibliographyStore((s) => s.downloadReference);
 
   const [search, setSearch] = useState<SearchState>({
     loading: false,
@@ -95,6 +98,23 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
     const r = await addEntry(hit.entry);
     if (r.ok) {
       onInsertCitation(r.key);
+    }
+  }
+
+  async function handleDownload(key: string) {
+    const r = await downloadReference(key);
+    if (!r.ok) {
+      // eslint-disable-next-line no-alert
+      window.alert(`${t('references.download.failed')}\n\n${r.message}`);
+    }
+  }
+
+  async function handleOpenFile(relPath: string) {
+    if (!filePath) return;
+    const r = await window.api.referenceOpen(filePath, relPath);
+    if (!r.ok) {
+      // eslint-disable-next-line no-alert
+      window.alert(`${t('references.open.failed')}\n\n${r.error}`);
     }
   }
 
@@ -191,7 +211,11 @@ export function ReferencesTab({ onInsertCitation }: ReferencesTabProps) {
               <LocalRow
                 key={entry.key}
                 entry={entry}
+                fileStatus={fileStatus[entry.key]}
+                downloading={!!downloading[entry.key]}
                 onInsert={() => onInsertCitation(entry.key)}
+                onDownload={() => { void handleDownload(entry.key); }}
+                onOpenFile={(rel) => { void handleOpenFile(rel); }}
               />
             ))}
           </div>
@@ -234,21 +258,68 @@ function ResultCard({ hit, onAdd }: { hit: BibliographySearchHit; onAdd: () => v
   );
 }
 
-function LocalRow({ entry, onInsert }: { entry: BibEntry; onInsert: () => void }) {
+interface LocalRowProps {
+  entry: BibEntry;
+  fileStatus: { exists: boolean; relPath: string | null; type: 'pdf' | 'md' | null } | undefined;
+  downloading: boolean;
+  onInsert: () => void;
+  onDownload: () => void;
+  onOpenFile: (relPath: string) => void;
+}
+
+function LocalRow({
+  entry,
+  fileStatus,
+  downloading,
+  onInsert,
+  onDownload,
+  onOpenFile,
+}: LocalRowProps) {
   const f = entry.fields;
+  const hasFile = fileStatus?.exists ?? false;
   return (
-    <button
-      type="button"
-      className="cm-references-local-row"
-      onClick={onInsert}
-      style={localRowStyle}
-      role="listitem"
-      data-testid="references-local-row"
-      title={t('references.insertHint')}
-    >
-      <span style={localKeyStyle}>{entry.key}</span>
-      <span style={localTitleStyle}>{summary(f)}</span>
-    </button>
+    <div style={localRowWrapperStyle} role="listitem" data-testid="references-local-row">
+      <button
+        type="button"
+        className="cm-references-local-row"
+        onClick={onInsert}
+        style={localRowStyle}
+        title={t('references.insertHint')}
+      >
+        <span style={localKeyStyle}>{entry.key}</span>
+        <span style={localTitleStyle}>{summary(f)}</span>
+      </button>
+      <div style={localActionsStyle}>
+        {hasFile && fileStatus?.relPath ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenFile(fileStatus.relPath!);
+            }}
+            style={fileBadgeStyle(fileStatus.type)}
+            title={fileStatus.relPath}
+            data-testid="references-open-file"
+          >
+            {fileStatus.type === 'pdf' ? '📄 PDF' : '📝 MD'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload();
+            }}
+            disabled={downloading}
+            style={downloadBtnStyle}
+            data-testid="references-download"
+            title={t('references.download.hint')}
+          >
+            {downloading ? '⌛' : '📥'}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -445,8 +516,14 @@ const localFilterStyle: React.CSSProperties = {
   width: 'calc(100% - 16px)',
 };
 
+const localRowWrapperStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  borderBottom: '1px solid var(--border, #f0f0f0)',
+};
+
 const localRowStyle: React.CSSProperties = {
-  width: '100%',
+  flex: 1,
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'flex-start',
@@ -454,9 +531,40 @@ const localRowStyle: React.CSSProperties = {
   padding: '6px 10px',
   background: 'transparent',
   border: 'none',
-  borderBottom: '1px solid var(--border, #f0f0f0)',
   cursor: 'pointer',
   textAlign: 'left',
+  color: 'inherit',
+  minWidth: 0,
+};
+
+const localActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '0 8px',
+  flexShrink: 0,
+};
+
+function fileBadgeStyle(type: 'pdf' | 'md' | null): React.CSSProperties {
+  return {
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 6px',
+    borderRadius: 4,
+    background: type === 'pdf' ? 'var(--accent, #4a90e2)' : 'var(--code-bg, #ddd)',
+    color: type === 'pdf' ? '#fff' : 'inherit',
+    border: 'none',
+    cursor: 'pointer',
+  };
+}
+
+const downloadBtnStyle: React.CSSProperties = {
+  fontSize: 13,
+  padding: '2px 8px',
+  border: '1px solid var(--border, #c8c8c8)',
+  borderRadius: 4,
+  background: 'transparent',
+  cursor: 'pointer',
   color: 'inherit',
 };
 

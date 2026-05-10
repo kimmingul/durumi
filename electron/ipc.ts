@@ -24,7 +24,9 @@ import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
 import { resolveDOI, resolveORCID, searchCrossref, searchKoreaMed, searchPubMed } from './bibliographyFetch';
-import { appendEntry as appendBibEntry, ensureBibFile } from './bibliographyWrite';
+import { appendEntry as appendBibEntry, ensureBibFile, upsertEntry as upsertBibEntry } from './bibliographyWrite';
+import { downloadReference } from './referenceDownload';
+import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
 import { parseBibTeX } from '@shared/bibtex';
 import type { BibEntry } from '@shared/bibtex';
 import {
@@ -360,6 +362,59 @@ export function registerIpcHandlers(): void {
     const r = await resolveORCID(iD);
     if (r.ok) return { ok: true as const, profile: r.data };
     return { ok: false as const, code: r.code, message: r.message };
+  });
+
+  ipcMain.handle(
+    'bibliography:upsertEntry',
+    async (_e, filePath: string, entry: BibEntry) => {
+      const r = await upsertBibEntry(filePath, entry);
+      if (!r.ok) return { ok: false as const, error: r.error };
+      return { ok: true as const, key: r.key, path: r.path };
+    },
+  );
+
+  ipcMain.handle(
+    'reference:download',
+    async (_e, bibFilePath: string, entry: BibEntry) => {
+      const prefs = await getPreferences();
+      const r = await downloadReference(bibFilePath, entry, {
+        email: prefs.bibliography?.email ?? null,
+      });
+      if (r.ok) {
+        return {
+          ok: true as const,
+          path: r.path,
+          relPath: r.relPath,
+          type: r.type,
+          source: r.source,
+          fetchedFrom: r.fetchedFrom,
+        };
+      }
+      return { ok: false as const, code: r.code, message: r.message };
+    },
+  );
+
+  ipcMain.handle('reference:open', async (_e, bibFilePath: string, relPath: string) => {
+    const abs = resolveFileField(bibFilePath, relPath);
+    if (!abs) return { ok: false as const, error: 'empty path' };
+    const errMsg = await shell.openPath(abs);
+    if (errMsg) return { ok: false as const, error: errMsg };
+    return { ok: true as const };
+  });
+
+  ipcMain.handle(
+    'reference:status',
+    async (_e, bibFilePath: string, key: string, fileField?: string | null) =>
+      referenceStatus(bibFilePath, key, fileField ?? null),
+  );
+
+  ipcMain.handle('reference:scan', async (_e, bibFilePath: string) => {
+    try {
+      const files = await scanReferenceDir(bibFilePath);
+      return { ok: true as const, files };
+    } catch (err) {
+      return { ok: false as const, error: (err as Error).message };
+    }
   });
 
   ipcMain.handle('pandoc:detect', async () => {
