@@ -54,6 +54,7 @@ const SHORTCUTS: Group[] = [
     titleKey: 'shortcuts.group.view',
     items: [
       { keys: ['Cmd/Ctrl', '\\'], labelKey: 'menu.view.toggleSidebar' },
+      { keys: ['Cmd/Ctrl', 'Shift', '\\'], labelKey: 'menu.view.toggleRightSidebar' },
       { keys: ['Cmd/Ctrl', 'Shift', 'L'], labelKey: 'menu.view.toggleTheme' },
       { keys: ['Cmd/Ctrl', '/'], labelKey: 'menu.view.toggleSourceMode' },
       { keys: ['Cmd/Ctrl', 'Shift', 'E'], labelKey: 'menu.view.showFiles' },

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MarkdownEditor } from './editor/MarkdownEditor';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
+import { RightSidebar } from './components/RightSidebar';
 import { MemoPanel } from './components/MemoPanel';
 import { QuickOpen } from './components/QuickOpen';
 import { PandocInstallDialog } from './components/PandocInstallDialog';
@@ -18,6 +19,7 @@ import type { BibEntry } from '@shared/bibtex';
 import { useBibliographyStore } from './store/bibliographyStore';
 import { useAppStore } from './store/appStore';
 import { useSidebarStore } from './store/sidebarStore';
+import { useRightSidebarStore } from './store/rightSidebarStore';
 import { useMemoPanelStore } from './store/memoPanelStore';
 import { useMemoSidecarStore } from './store/memoSidecarStore';
 import { memoIdFor, pruneOrphans } from '../shared/memoSidecar';
@@ -77,6 +79,8 @@ export function App() {
   const updateGitStatus = useSidebarStore((s) => s.updateGitStatus);
   const toggleSidebarVisible = useSidebarStore((s) => s.toggleVisible);
   const showWith = useSidebarStore((s) => s.showWith);
+  const toggleRightSidebarVisible = useRightSidebarStore((s) => s.toggleVisible);
+  const rightSidebarShowWith = useRightSidebarStore((s) => s.showWith);
   const memoPanelManuallyHidden = useMemoPanelStore((s) => s.manuallyHidden);
   const setMemoPanelManuallyHidden = useMemoPanelStore((s) => s.setManuallyHidden);
   const toggleMemoPanel = useMemoPanelStore((s) => s.toggle);
@@ -149,6 +153,13 @@ export function App() {
           visible: prefs.sidebar.visible,
           activeTab: prefs.sidebar.activeTab,
           width: prefs.sidebar.width,
+        });
+      }
+      if (prefs.rightSidebar) {
+        useRightSidebarStore.setState({
+          visible: prefs.rightSidebar.visible,
+          activeTab: prefs.rightSidebar.activeTab,
+          width: prefs.rightSidebar.width,
         });
       }
       if (prefs.memoPanel) {
@@ -384,14 +395,15 @@ export function App() {
         return;
       }
       if (cmd === 'toggleSidebar') { toggleSidebarVisible(); return; }
+      if (cmd === 'toggleRightSidebar') { toggleRightSidebarVisible(); return; }
       if (cmd === 'toggleMemoPanel') { toggleMemoPanel(); return; }
       if (cmd === 'showFiles') { showWith('files'); return; }
       if (cmd === 'showOutline') { showWith('outline'); return; }
       if (cmd === 'showSearch') { showWith('search'); return; }
       if (cmd === 'showMemos') { showWith('comments'); return; }
       if (cmd === 'showChanges') { showWith('changes'); return; }
-      if (cmd === 'showReferences') { showWith('references'); return; }
-      if (cmd === 'showAi') { showWith('ai'); return; }
+      if (cmd === 'showReferences') { rightSidebarShowWith('references'); return; }
+      if (cmd === 'showAi') { rightSidebarShowWith('ai'); return; }
       if (cmd === 'openKeyboardShortcuts') { setShortcutsOpen(true); return; }
       if (cmd === 'addMemo' && view) { wrapComment(view); view.focus(); return; }
       if (cmd === 'cmInsert' && view) { wrapCmInsert(view); view.focus(); return; }
@@ -569,6 +581,47 @@ export function App() {
           content={content}
           view={editorViewRef.current}
           onApplyOutlineMove={(newDoc) => setContent(newDoc)}
+          onOpenFile={async (p) => {
+            if (!(await maybeDiscard())) return;
+            const r = await window.api.fileOpenPath(p);
+            setFile(r.path, r.content);
+          }}
+          onOpenHit={async (absPath, line) => {
+            if (!(await maybeDiscard())) return;
+            const r = await window.api.fileOpenPath(absPath);
+            setFile(r.path, r.content);
+            // Defer line jump until after the editor mounts the new doc.
+            setTimeout(() => {
+              const view = editorViewRef.current;
+              if (!view) return;
+              const safeLine = Math.min(Math.max(line, 1), view.state.doc.lines);
+              const info = view.state.doc.line(safeLine);
+              view.dispatch({
+                selection: { anchor: info.from },
+                effects: EditorView.scrollIntoView(info.from, { y: 'center' }),
+              });
+              view.focus();
+            }, 50);
+          }}
+        />
+        <div style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
+          <MarkdownEditor
+            value={content}
+            onChange={setContent}
+            onReady={(v) => { editorViewRef.current = v; }}
+            filePath={filePath}
+            macros={macros}
+          />
+        </div>
+        <MemoPanel
+          view={editorViewRef.current}
+          content={content}
+          visible={parseComments(content).length > 0 && !memoPanelManuallyHidden}
+          onClose={() => setMemoPanelManuallyHidden(true)}
+        />
+        <RightSidebar
+          content={content}
+          view={editorViewRef.current}
           onInsertCitation={(key) => insertCitationAtCaret(`[@${key}]`)}
           onCitationRenamed={migrateCitationsInDoc}
           onOpenAiPalette={() => {
@@ -609,43 +662,6 @@ export function App() {
           }}
           onInsertCitationFromDoi={() => setCitationDialogOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
-          onOpenFile={async (p) => {
-            if (!(await maybeDiscard())) return;
-            const r = await window.api.fileOpenPath(p);
-            setFile(r.path, r.content);
-          }}
-          onOpenHit={async (absPath, line) => {
-            if (!(await maybeDiscard())) return;
-            const r = await window.api.fileOpenPath(absPath);
-            setFile(r.path, r.content);
-            // Defer line jump until after the editor mounts the new doc.
-            setTimeout(() => {
-              const view = editorViewRef.current;
-              if (!view) return;
-              const safeLine = Math.min(Math.max(line, 1), view.state.doc.lines);
-              const info = view.state.doc.line(safeLine);
-              view.dispatch({
-                selection: { anchor: info.from },
-                effects: EditorView.scrollIntoView(info.from, { y: 'center' }),
-              });
-              view.focus();
-            }, 50);
-          }}
-        />
-        <div style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
-          <MarkdownEditor
-            value={content}
-            onChange={setContent}
-            onReady={(v) => { editorViewRef.current = v; }}
-            filePath={filePath}
-            macros={macros}
-          />
-        </div>
-        <MemoPanel
-          view={editorViewRef.current}
-          content={content}
-          visible={parseComments(content).length > 0 && !memoPanelManuallyHidden}
-          onClose={() => setMemoPanelManuallyHidden(true)}
         />
       </div>
       <StatusBar />

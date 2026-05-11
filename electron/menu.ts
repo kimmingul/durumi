@@ -206,6 +206,7 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           : []),
         { type: 'separator' },
         { label: tr('menu.view.toggleSidebar'), accelerator: 'CommandOrControl+\\', click: () => send('toggleSidebar') },
+        { label: tr('menu.view.toggleRightSidebar'), accelerator: 'CommandOrControl+Shift+\\', click: () => send('toggleRightSidebar') },
         { label: tr('menu.view.showFiles'), accelerator: 'CommandOrControl+Shift+E', click: () => send('showFiles') },
         { label: tr('menu.view.showOutline'), accelerator: 'CommandOrControl+Shift+O', click: () => send('showOutline') },
         { label: tr('menu.view.showSearch'), accelerator: 'CommandOrControl+Shift+F', click: () => send('showSearch') },

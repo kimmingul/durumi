@@ -99,3 +99,64 @@ describe('preferences migration: lastFolder -> workspaceFolders', () => {
     expect((b as unknown as { lastFolder?: unknown }).lastFolder).toBeUndefined();
   });
 });
+
+describe('rightSidebar migration (v0.1.8.4)', () => {
+  it("migrates sidebar.activeTab='references' to the right sidebar", async () => {
+    fileStore.set(
+      PREFS_PATH,
+      JSON.stringify({
+        theme: 'system',
+        sidebar: { visible: true, activeTab: 'references', width: 240 },
+      }),
+    );
+    const { getPreferences } = await import('../../electron/preferences');
+    const prefs = await getPreferences();
+    // Left side resets to the default-safe value.
+    expect(prefs.sidebar.activeTab).toBe('files');
+    // Right side adopts the legacy value AND becomes visible so the
+    // first launch after upgrade feels continuous.
+    expect(prefs.rightSidebar.activeTab).toBe('references');
+    expect(prefs.rightSidebar.visible).toBe(true);
+  });
+
+  it("migrates sidebar.activeTab='ai' to the right sidebar", async () => {
+    fileStore.set(
+      PREFS_PATH,
+      JSON.stringify({
+        theme: 'system',
+        sidebar: { visible: true, activeTab: 'ai', width: 240 },
+      }),
+    );
+    const { getPreferences } = await import('../../electron/preferences');
+    const prefs = await getPreferences();
+    expect(prefs.sidebar.activeTab).toBe('files');
+    expect(prefs.rightSidebar.activeTab).toBe('ai');
+    expect(prefs.rightSidebar.visible).toBe(true);
+  });
+
+  it("leaves rightSidebar at defaults when sidebar.activeTab is a valid left-side value ('outline')", async () => {
+    fileStore.set(
+      PREFS_PATH,
+      JSON.stringify({
+        theme: 'system',
+        sidebar: { visible: true, activeTab: 'outline', width: 240 },
+      }),
+    );
+    const { getPreferences } = await import('../../electron/preferences');
+    const prefs = await getPreferences();
+    // Left side keeps the user's saved value verbatim.
+    expect(prefs.sidebar.activeTab).toBe('outline');
+    // Right side stays at documented defaults.
+    expect(prefs.rightSidebar.visible).toBe(false);
+    expect(prefs.rightSidebar.activeTab).toBe('references');
+    expect(prefs.rightSidebar.width).toBe(280);
+  });
+
+  it('a fresh prefs file (no sidebar at all) yields the documented rightSidebar defaults', async () => {
+    const { getPreferences } = await import('../../electron/preferences');
+    const prefs = await getPreferences();
+    expect(prefs.rightSidebar.visible).toBe(false);
+    expect(prefs.rightSidebar.activeTab).toBe('references');
+    expect(prefs.rightSidebar.width).toBe(280);
+  });
+});

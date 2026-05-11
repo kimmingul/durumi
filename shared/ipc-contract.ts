@@ -24,7 +24,19 @@ export interface Preferences {
   recentFiles: string[];
   sidebar: {
     visible: boolean;
-    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes' | 'references' | 'ai';
+    /** Left-sidebar tabs only. References + AI moved to `rightSidebar` in v0.1.8.4. */
+    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes';
+    width: number;
+  };
+  /**
+   * Right-side authoring assistance pane introduced in v0.1.8.4. Holds the
+   * References and AI tabs that were previously on the left sidebar. Owns
+   * its own visibility, active tab, and width so left/right can be
+   * toggled independently.
+   */
+  rightSidebar: {
+    visible: boolean;
+    activeTab: 'references' | 'ai';
     width: number;
   };
   /**
@@ -124,7 +136,7 @@ export type MenuCommand =
   | 'findPrev'
   | 'bold' | 'italic' | 'code' | 'link'
   | 'strikethrough' | 'insertTable' | 'toggleTask' | 'codeBlock'
-  | 'openFolder' | 'toggleSidebar' | 'showFiles' | 'showOutline' | 'showSearch' | 'quickOpen'
+  | 'openFolder' | 'toggleSidebar' | 'toggleRightSidebar' | 'showFiles' | 'showOutline' | 'showSearch' | 'quickOpen'
   | 'toggleFocusMode' | 'toggleTypewriterMode'
   | 'toggleMemoPanel'
   | 'addMemo'

@@ -2,8 +2,6 @@ import { useEffect, useRef } from 'react';
 import { useSidebarStore } from '../store/sidebarStore';
 import { CommentsTab } from './sidebar/CommentsTab';
 import { ChangesTab } from './sidebar/ChangesTab';
-import { ReferencesTab } from './sidebar/ReferencesTab';
-import { AiTab } from './sidebar/AiTab';
 import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { FileTree } from './sidebar/FileTree';
 import { Outline } from './sidebar/Outline';
@@ -19,15 +17,6 @@ interface SidebarProps {
   onOpenFile: (path: string) => void;
   onOpenHit?: (absPath: string, line: number, column: number) => void;
   onApplyOutlineMove?: (newDoc: string) => void;
-  /** Insert `[@key]` at the editor caret (used by the References tab). */
-  onInsertCitation?: (key: string) => void;
-  /** Migrate `[@oldKey]` → `[@newKey]` across the active document. */
-  onCitationRenamed?: (oldKey: string, newKey: string) => void;
-  /** AI sidebar action handlers (v0.1.8.3). */
-  onOpenAiPalette?: () => void;
-  onSuggestCitations?: () => void;
-  onInsertCitationFromDoi?: () => void;
-  onOpenSettings?: () => void;
 }
 
 export function Sidebar({
@@ -36,12 +25,6 @@ export function Sidebar({
   onOpenFile,
   onOpenHit,
   onApplyOutlineMove,
-  onInsertCitation,
-  onCitationRenamed,
-  onOpenAiPalette,
-  onSuggestCitations,
-  onInsertCitationFromDoi,
-  onOpenSettings,
 }: SidebarProps) {
   const visible = useSidebarStore((s) => s.visible);
   const activeTab = useSidebarStore((s) => s.activeTab);
@@ -135,20 +118,6 @@ export function Sidebar({
               </span>
             )}
           </button>
-          <button
-            className={'cm-sidebar-tab' + (activeTab === 'references' ? ' cm-sidebar-tab-active' : '')}
-            onClick={() => setActiveTab('references')}
-            data-testid="sidebar-tab-references"
-          >
-            {t('sidebar.references')}
-          </button>
-          <button
-            className={'cm-sidebar-tab' + (activeTab === 'ai' ? ' cm-sidebar-tab-active' : '')}
-            onClick={() => setActiveTab('ai')}
-            data-testid="sidebar-tab-ai"
-          >
-            {t('sidebar.ai')}
-          </button>
         </div>
         <div className="cm-sidebar-body">
           {activeTab === 'files' && <FileTree onOpenFile={onOpenFile} />}
@@ -163,22 +132,6 @@ export function Sidebar({
           )}
           {activeTab === 'changes' && (
             <ChangesTab content={content} onJump={onJump} />
-          )}
-          {activeTab === 'references' && (
-            <ReferencesTab
-              onInsertCitation={onInsertCitation ?? (() => undefined)}
-              documentText={content}
-              onCitationRenamed={onCitationRenamed}
-            />
-          )}
-          {activeTab === 'ai' && (
-            <AiTab
-              selectionText={view ? view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to) : ''}
-              onOpenPalette={onOpenAiPalette ?? (() => undefined)}
-              onSuggestCitations={onSuggestCitations ?? (() => undefined)}
-              onInsertCitationFromDoi={onInsertCitationFromDoi ?? (() => undefined)}
-              onOpenSettings={onOpenSettings ?? (() => undefined)}
-            />
           )}
         </div>
       </aside>

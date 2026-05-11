@@ -30,6 +30,11 @@ const DEFAULTS: Preferences = {
     activeTab: 'files',
     width: 240,
   },
+  rightSidebar: {
+    visible: false,
+    activeTab: 'references',
+    width: 280,
+  },
   memoPanel: {
     width: 320,
     hideResolvedDefault: true,
@@ -79,14 +84,29 @@ function migrateLegacy(
   loaded: Partial<Preferences> & { lastFolder?: string | null },
 ): Partial<Preferences> {
   const { lastFolder, ...rest } = loaded;
-  if (rest.workspaceFolders !== undefined) {
-    // Already migrated; drop legacy field if still present.
-    return rest;
+  let next: Partial<Preferences> = rest;
+  if (next.workspaceFolders === undefined && typeof lastFolder === 'string' && lastFolder.length > 0) {
+    next = { ...next, workspaceFolders: [lastFolder] };
   }
-  if (typeof lastFolder === 'string' && lastFolder.length > 0) {
-    return { ...rest, workspaceFolders: [lastFolder] };
+  // v0.1.8.4: References + AI moved from the left sidebar to a dedicated
+  // right sidebar. If the user's saved activeTab is one of those values,
+  // surface it on the right side and reset the left to its default so the
+  // first launch after upgrade feels continuous (their last-used tab is
+  // still open, just on the new side).
+  const sidebar = next.sidebar as undefined | { activeTab?: unknown };
+  const oldActive = sidebar?.activeTab;
+  if (oldActive === 'references' || oldActive === 'ai') {
+    next = {
+      ...next,
+      sidebar: { ...(sidebar as object), activeTab: 'files' },
+      rightSidebar: {
+        ...((next.rightSidebar as object) ?? {}),
+        visible: true,
+        activeTab: oldActive,
+      } as Preferences['rightSidebar'],
+    };
   }
-  return rest;
+  return next;
 }
 
 function mergeDefaults(loaded: Partial<Preferences>): Preferences {
@@ -97,6 +117,10 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
     sidebar: {
       ...DEFAULTS.sidebar,
       ...(migrated.sidebar ?? {}),
+    },
+    rightSidebar: {
+      ...DEFAULTS.rightSidebar,
+      ...(migrated.rightSidebar ?? {}),
     },
     memoPanel: {
       ...DEFAULTS.memoPanel,

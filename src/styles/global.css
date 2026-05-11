@@ -828,3 +828,52 @@ body {
   color: #fff;
   border-color: var(--accent, #4a90e2);
 }
+
+/* Right-side authoring sidebar (v0.1.8.4). Mirrors `.cm-sidebar*` but
+   anchored to the right edge: `border-left` instead of `border-right`, and
+   the resizer sits on the panel's left edge. Shapes copied from the left
+   sidebar so themes (light/dark) stay consistent. */
+.cm-right-sidebar {
+  flex-shrink: 0;
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 13px;
+}
+.cm-right-sidebar-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.cm-right-sidebar-tab {
+  flex: 1;
+  padding: 8px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted-fg, var(--fg));
+  cursor: pointer;
+  font: inherit;
+}
+.cm-right-sidebar-tab-active {
+  color: var(--fg);
+  border-bottom-color: var(--accent, var(--fg));
+  font-weight: 600;
+}
+.cm-right-sidebar-body {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0;
+}
+.cm-right-sidebar-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+}
+.cm-right-sidebar-resizer:hover {
+  background: var(--accent, var(--border));
+}
