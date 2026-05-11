@@ -94,6 +94,35 @@ export interface Preferences {
     ncbiApiKey: string | null;
     /** Personal ORCID iD (e.g. `0000-0002-1825-0097`). Used by Track C. */
     orcidId: string | null;
+    /**
+     * v0.1.10 — Default behavior when adding a reference. When `true`, the
+     * add flow also inserts `[@key]` at the caret. The DOI modal exposes a
+     * checkbox that mirrors this default so users can opt-in per-add.
+     */
+    insertCitationOnAdd: boolean;
+    /**
+     * v0.1.10 — Auto-save the Crossref `abstract` (or metadata stub) to
+     * `reference/<key>.md` whenever a reference is added.
+     */
+    autoSaveAbstract: boolean;
+    /**
+     * v0.1.10 — Right sidebar references-tab sort key.
+     * - `addedDesc` / `addedAsc`: by .bib append order
+     * - `author`: first author surname A→Z
+     * - `yearDesc` / `yearAsc`: publication year
+     * - `key`: citation key A→Z
+     * - `citationOrder`: order of first appearance in the open doc
+     * - `unused`: entries with no `[@key]` in the doc first
+     */
+    sortBy:
+      | 'addedDesc'
+      | 'addedAsc'
+      | 'author'
+      | 'yearDesc'
+      | 'yearAsc'
+      | 'key'
+      | 'citationOrder'
+      | 'unused';
   };
   /**
    * AI-assisted writing (v0.1.8). API keys are stored as opaque encrypted

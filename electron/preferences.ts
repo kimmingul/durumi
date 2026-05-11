@@ -53,6 +53,9 @@ const DEFAULTS: Preferences = {
     email: null,
     ncbiApiKey: null,
     orcidId: null,
+    insertCitationOnAdd: false,
+    autoSaveAbstract: true,
+    sortBy: 'addedDesc',
   },
   ai: {
     provider: 'anthropic',
