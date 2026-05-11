@@ -6,7 +6,11 @@ import type { BibEntry } from '@shared/bibtex';
 export interface InsertCitationDialogProps {
   open: boolean;
   onClose: () => void;
-  /** Called with the freshly-minted `[@key]` text once the user confirms. */
+  /**
+   * Called with the freshly-minted `[@key]` text once the user confirms,
+   * if (and only if) the "also insert into the text" checkbox is checked.
+   * The default for the checkbox follows `prefs.bibliography.insertCitationOnAdd`.
+   */
   onInsert: (citation: string) => void;
 }
 
@@ -28,17 +32,24 @@ export function InsertCitationDialog(props: InsertCitationDialogProps) {
   const { open, onClose, onInsert } = props;
   const [doi, setDoi] = useState('');
   const [phase, setPhase] = useState<Phase>({ kind: 'input' });
+  // v0.1.10 — per-add toggle. Default mirrors the pref but does not
+  // persist back: the user changes the pref itself only via Settings.
+  const [alsoInsert, setAlsoInsert] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const filePath = useBibliographyStore((s) => s.filePath);
   const addFromDoi = useBibliographyStore((s) => s.addFromDoi);
 
-  // Reset when reopened.
+  // Reset when reopened. Pulls the latest pref so toggling the default in
+  // Settings is reflected on the next open without a reload.
   useEffect(() => {
     if (open) {
       setDoi('');
       setPhase({ kind: 'input' });
       // Defer focus so the dialog mounts first.
       setTimeout(() => inputRef.current?.focus(), 0);
+      void window.api.prefsGet().then((prefs) => {
+        setAlsoInsert(prefs.bibliography?.insertCitationOnAdd ?? false);
+      });
     }
   }, [open]);
 
@@ -80,7 +91,9 @@ export function InsertCitationDialog(props: InsertCitationDialogProps) {
     setPhase({ kind: 'inserting' });
     const r = await addFromDoi(doi.trim());
     if (r.ok) {
-      onInsert(`[@${r.key}]`);
+      // v0.1.10 — only drop `[@key]` into the body when the user opted in
+      // (default = `prefs.bibliography.insertCitationOnAdd`).
+      if (alsoInsert) onInsert(`[@${r.key}]`);
       onClose();
     } else {
       setPhase({ kind: 'error', message: r.message });
@@ -178,6 +191,18 @@ export function InsertCitationDialog(props: InsertCitationDialogProps) {
               <EntryPreview entry={phase.entry} />
             </div>
           )}
+        </div>
+        <div style={alsoInsertRowStyle}>
+          <label style={alsoInsertLabelStyle}>
+            <input
+              type="checkbox"
+              checked={alsoInsert}
+              onChange={(e) => setAlsoInsert(e.target.checked)}
+              disabled={phase.kind === 'inserting'}
+              data-testid="insert-citation-also-insert"
+            />
+            <span>{t('dialog.insertCitation.alsoInsert')}</span>
+          </label>
         </div>
         <footer style={footerStyle}>
           <button
@@ -374,4 +399,17 @@ const footerStyle: React.CSSProperties = {
   gap: 8,
   padding: '10px 18px 14px',
   borderTop: '1px solid var(--border, #e2e2e2)',
+};
+
+const alsoInsertRowStyle: React.CSSProperties = {
+  padding: '8px 18px 0',
+  borderTop: '1px solid var(--border, #e2e2e2)',
+};
+
+const alsoInsertLabelStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  fontSize: 13,
+  cursor: 'pointer',
 };

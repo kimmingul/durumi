@@ -71,8 +71,13 @@ const SHORTCUTS: Group[] = [
       { keys: ['Cmd/Ctrl', 'Shift', 'M'], labelKey: 'menu.review.toggleMemoPanel' },
       { keys: ['F3'], labelKey: 'menu.review.nextMemo' },
       { keys: ['Shift', 'F3'], labelKey: 'menu.review.prevMemo' },
-      { keys: ['Cmd/Ctrl', 'Shift', 'B'], labelKey: 'menu.review.insertCitationFromDoi' },
+    ],
+  },
+  {
+    titleKey: 'shortcuts.group.references',
+    items: [
       { keys: ['Cmd/Ctrl', 'Shift', 'I'], labelKey: 'menu.review.openCitePalette' },
+      { keys: ['Cmd/Ctrl', 'Shift', 'B'], labelKey: 'menu.review.insertCitationFromDoi' },
     ],
   },
   {

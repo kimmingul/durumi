@@ -81,19 +81,83 @@ export interface AppendError {
 }
 
 /**
+ * v0.1.10 — duplicate-DOI rejection. When the incoming entry's DOI
+ * (case-normalised, prefix-stripped) is already present in the bib, we
+ * refuse to add a second copy and surface the existing key so the UI can
+ * highlight / focus that row.
+ */
+export interface AppendDuplicateDoi {
+  ok: false;
+  error: 'duplicate-doi';
+  existingKey: string;
+}
+
+/**
+ * v0.1.10 — weak-match dedup. Triggered when no DOI is available; we
+ * compare normalised title + first-author surname + year. The caller is
+ * expected to surface this as a "Possible duplicate — add anyway?" confirm.
+ */
+export interface AppendDuplicateWeak {
+  ok: false;
+  error: 'duplicate-weak';
+  existingKey: string;
+  normalizedTitle: string;
+}
+
+/**
  * Append a new entry. The caller passes a `BibEntry` with an empty `key`
  * (the Crossref pipeline always does — see `crossrefMessageToEntry`); we
  * mint a unique key by reading the existing file and asking
  * `makeCitationKey`. If the entry already has a `key` we keep it but still
  * de-collide.
+ *
+ * v0.1.10 — adds a duplicate-check pass before minting the key:
+ *   1. If the incoming entry has a DOI and the bib already contains an
+ *      entry with the same (normalised) DOI, return `duplicate-doi`.
+ *   2. Otherwise, if the incoming entry has no DOI but matches an existing
+ *      entry on (normalised title, first-author surname, year), return
+ *      `duplicate-weak` so the renderer can surface a confirm modal.
+ *
+ * The caller can bypass the weak match by setting `force: true`.
  */
+export interface AppendOptions {
+  /** Skip the weak (title+author+year) duplicate check. */
+  force?: boolean;
+}
+
 export async function appendEntry(
   filePath: string,
   entry: BibEntry,
-): Promise<AppendResult | AppendError> {
+  opts: AppendOptions = {},
+): Promise<AppendResult | AppendError | AppendDuplicateDoi | AppendDuplicateWeak> {
   const existing = await readSafely(filePath);
   const parsed = parseBibTeX(existing);
   const taken = new Set(parsed.entries.map((e) => e.key));
+
+  // --- v0.1.10 dedup ----------------------------------------------------
+  // `force: true` bypasses BOTH the DOI and weak-match checks. Callers
+  // (e.g. upsertEntry) use it when the user explicitly authored the entry.
+  if (!opts.force) {
+    const incomingDoi = normalizeDoi(entry.fields.doi ?? '');
+    if (incomingDoi.length > 0) {
+      for (const existingEntry of parsed.entries) {
+        const existingDoi = normalizeDoi(existingEntry.fields.doi ?? '');
+        if (existingDoi.length > 0 && existingDoi === incomingDoi) {
+          return { ok: false, error: 'duplicate-doi', existingKey: existingEntry.key };
+        }
+      }
+    } else {
+      const weak = findWeakDuplicate(entry, parsed.entries);
+      if (weak) {
+        return {
+          ok: false,
+          error: 'duplicate-weak',
+          existingKey: weak.existingKey,
+          normalizedTitle: weak.normalizedTitle,
+        };
+      }
+    }
+  }
 
   const desiredKey = entry.key && entry.key.length > 0 ? entry.key : null;
   const key = desiredKey && !taken.has(desiredKey)
@@ -107,6 +171,61 @@ export async function appendEntry(
   const writeResult = await atomicWrite(filePath, next);
   if (!writeResult.ok) return { ok: false, error: writeResult.error };
   return { ok: true, key, path: filePath };
+}
+
+/**
+ * Idempotent DOI normalisation. Strips the optional `https://(dx.)?doi.org/`
+ * prefix, lowercases, and drops any trailing slash + surrounding whitespace.
+ * Empty / undefined input becomes the empty string so callers can `===`
+ * against it without a separate null check.
+ */
+export function normalizeDoi(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return '';
+  const stripped = trimmed.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '');
+  return stripped.replace(/\/+$/, '').toLowerCase();
+}
+
+interface WeakMatch {
+  existingKey: string;
+  normalizedTitle: string;
+}
+
+function findWeakDuplicate(incoming: BibEntry, existing: BibEntry[]): WeakMatch | null {
+  const nt = normalizeTitle(incoming.fields.title ?? '');
+  if (nt.length < 4) return null; // titles like "On X" are too noisy to match
+  const surname = firstAuthorSurname(incoming.fields.author ?? incoming.fields.editor ?? '');
+  const year = (incoming.fields.year ?? incoming.fields.date ?? '').match(/\d{4}/)?.[0] ?? '';
+  if (!surname || !year) return null;
+  for (const e of existing) {
+    const eNt = normalizeTitle(e.fields.title ?? '');
+    if (eNt !== nt) continue;
+    const eSurname = firstAuthorSurname(e.fields.author ?? e.fields.editor ?? '');
+    if (eSurname !== surname) continue;
+    const eYear = (e.fields.year ?? e.fields.date ?? '').match(/\d{4}/)?.[0] ?? '';
+    if (eYear !== year) continue;
+    return { existingKey: e.key, normalizedTitle: nt };
+  }
+  return null;
+}
+
+function normalizeTitle(raw: string): string {
+  return raw
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{P}]+/gu, ' ')
+    .trim();
+}
+
+function firstAuthorSurname(raw: string): string {
+  if (!raw) return '';
+  const first = raw.split(/\s+and\s+/i)[0]!.trim();
+  if (!first) return '';
+  const surnameRaw = first.includes(',')
+    ? (first.split(',')[0] ?? '')
+    : (first.split(/\s+/).pop() ?? '');
+  return surnameRaw.normalize('NFKC').toLowerCase();
 }
 
 /**
@@ -187,7 +306,16 @@ export async function upsertEntry(
   const parsed = parseBibTeX(existing);
   const idx = indexBibEntries(parsed);
   if (!idx.has(entry.key)) {
-    return appendEntry(filePath, entry);
+    // Upsert is a user-driven write (edit-entry dialog Save). `force` skips
+    // the v0.1.10 dedup checks so we can't accidentally surface a duplicate
+    // rejection for an entry the user is explicitly authoring.
+    const r = await appendEntry(filePath, entry, { force: true });
+    if (r.ok) return r;
+    // With force=true neither duplicate-* path can fire — narrow to AppendError.
+    if (r.error === 'duplicate-doi' || r.error === 'duplicate-weak') {
+      return { ok: false, error: r.error };
+    }
+    return r;
   }
   // Rebuild the file with `entry` replacing the old definition. We rewrite
   // every entry from the in-memory array so spacing/formatting normalises.

@@ -338,11 +338,24 @@ export interface IpcApi {
    * Append an entry to the `.bib` file at `filePath`. The caller passes a
    * `BibEntry` whose `key` may be empty — main mints a unique key via
    * `makeCitationKey` and returns the final value.
+   *
+   * v0.1.10 — surfaces two dedup outcomes alongside the existing key so
+   * the renderer can highlight / focus the duplicate row:
+   *   - `duplicate-doi`: DOI normalises to one already in the bib (hard reject)
+   *   - `duplicate-weak`: title + first-author surname + year match an
+   *     existing entry; the caller is expected to confirm before retrying
+   *     with `{ force: true }`.
    */
   bibliographyAppendEntry: (
     filePath: string,
     entry: BibEntry,
-  ) => Promise<{ ok: true; key: string; path: string } | { ok: false; error: string }>;
+    opts?: { force?: boolean },
+  ) => Promise<
+    | { ok: true; key: string; path: string }
+    | { ok: false; error: 'duplicate-doi'; existingKey: string }
+    | { ok: false; error: 'duplicate-weak'; existingKey: string; normalizedTitle: string }
+    | { ok: false; error: string }
+  >;
   /** Read + parse `.bib` so the renderer doesn't reimplement BibTeX parsing. */
   bibliographyReadEntries: (
     filePath: string,
@@ -442,6 +455,21 @@ export interface IpcApi {
     bibFilePath: string,
     entry: BibEntry,
   ) => Promise<ReferenceDownloadResult>;
+  /**
+   * v0.1.10 — write `reference/<key>.md` from the entry's metadata
+   * (Crossref `abstract` if present, else a stub) when no file is already
+   * on disk for that key. Unlike `referenceDownload`, this never touches
+   * the network and never overwrites a user-curated PDF / Markdown.
+   *
+   * Used by the add-flow when `prefs.bibliography.autoSaveAbstract` is on.
+   */
+  bibliographyAutoSaveAbstract: (
+    bibFilePath: string,
+    entry: BibEntry,
+  ) => Promise<
+    | { ok: true; skipped: boolean; path: string | null; relPath: string | null }
+    | { ok: false; error: string }
+  >;
   /** Open a saved reference file with the OS default app. */
   referenceOpen: (
     bibFilePath: string,

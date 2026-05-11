@@ -25,7 +25,7 @@ import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
 import { resolveDOI, resolveORCID, searchCrossref, searchKoreaMed, searchPubMed } from './bibliographyFetch';
 import { appendEntry as appendBibEntry, ensureBibFile, removeEntry as removeBibEntry, renameEntryKey as renameBibEntryKey, upsertEntry as upsertBibEntry } from './bibliographyWrite';
-import { downloadReference } from './referenceDownload';
+import { autoSaveAbstract, downloadReference } from './referenceDownload';
 import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
 import { extractDoiFromFile } from './referenceImport';
 import { extractPdfText } from './pdfText';
@@ -349,10 +349,23 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'bibliography:appendEntry',
-    async (_e, filePath: string, entry: BibEntry) => {
-      const r = await appendBibEntry(filePath, entry);
-      if (!r.ok) return { ok: false as const, error: r.error };
-      return { ok: true as const, key: r.key, path: r.path };
+    async (_e, filePath: string, entry: BibEntry, opts?: { force?: boolean }) => {
+      const r = await appendBibEntry(filePath, entry, { force: opts?.force });
+      if (r.ok) return { ok: true as const, key: r.key, path: r.path };
+      // v0.1.10: surface the dedup variants alongside their existingKey so
+      // the renderer can highlight / focus the duplicate row.
+      if (r.error === 'duplicate-doi') {
+        return { ok: false as const, error: 'duplicate-doi' as const, existingKey: r.existingKey };
+      }
+      if (r.error === 'duplicate-weak') {
+        return {
+          ok: false as const,
+          error: 'duplicate-weak' as const,
+          existingKey: r.existingKey,
+          normalizedTitle: r.normalizedTitle,
+        };
+      }
+      return { ok: false as const, error: r.error };
     },
   );
 
@@ -483,6 +496,20 @@ export function registerIpcHandlers(): void {
         };
       }
       return { ok: false as const, code: r.code, message: r.message };
+    },
+  );
+
+  ipcMain.handle(
+    'bibliography:autoSaveAbstract',
+    async (_e, bibFilePath: string, entry: BibEntry) => {
+      const r = await autoSaveAbstract(bibFilePath, entry);
+      if (!r.ok) return { ok: false as const, error: r.error };
+      return {
+        ok: true as const,
+        skipped: r.skipped,
+        path: r.path,
+        relPath: r.relPath,
+      };
     },
   );
 

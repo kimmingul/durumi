@@ -287,6 +287,56 @@ async function writeAbstractMd(
   return { ...r, source };
 }
 
+/**
+ * v0.1.10 — auto-save abstract on add. Unlike `downloadReference`, this
+ * helper does NOT make any network call and does NOT overwrite an existing
+ * `reference/<key>.*` file (it's idempotent for repeat-add flows). When a
+ * matching file is already on disk we return `{ ok: true, skipped: true }`
+ * so the caller can distinguish "skipped — already present" from "wrote".
+ */
+export interface AutoSaveAbstractResult {
+  ok: true;
+  /** `true` when a reference file already existed and we left it alone. */
+  skipped: boolean;
+  /** Filesystem path of the file we wrote (or that already existed). */
+  path: string | null;
+  /** `references.bib`-relative path of the file we wrote (when not skipped). */
+  relPath: string | null;
+}
+
+export interface AutoSaveAbstractError {
+  ok: false;
+  error: string;
+}
+
+export async function autoSaveAbstract(
+  bibPath: string,
+  entry: BibEntry,
+): Promise<AutoSaveAbstractResult | AutoSaveAbstractError> {
+  if (!entry.key) {
+    return { ok: false, error: 'entry has no key' };
+  }
+  try {
+    await ensureReferenceDir(bibPath);
+    // If ANY file already lives at reference/<key>.{pdf,md} we treat that
+    // as the user's chosen artefact and skip.
+    const dir = referenceDir(bibPath);
+    for (const ext of ['pdf', 'md'] as const) {
+      const candidate = `${dir}/${entry.key}.${ext}`;
+      try {
+        await fs.access(candidate);
+        return { ok: true, skipped: true, path: candidate, relPath: null };
+      } catch {
+        // not present — keep probing
+      }
+    }
+    const r = await writeAbstractMd(bibPath, entry, 'abstract');
+    return { ok: true, skipped: false, path: r.path, relPath: r.relPath };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'unknown error' };
+  }
+}
+
 // ---------------- Common write helpers ----------------------------------
 
 async function downloadPdf(

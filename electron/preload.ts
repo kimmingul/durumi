@@ -85,8 +85,8 @@ const api: IpcApi = {
   bibliographyResolveDoi: (doi) => ipcRenderer.invoke('bibliography:resolveDoi', doi),
   bibliographyEnsureFile: (docPath) =>
     ipcRenderer.invoke('bibliography:ensureFile', docPath),
-  bibliographyAppendEntry: (filePath, entry) =>
-    ipcRenderer.invoke('bibliography:appendEntry', filePath, entry),
+  bibliographyAppendEntry: (filePath, entry, opts) =>
+    ipcRenderer.invoke('bibliography:appendEntry', filePath, entry, opts),
   bibliographyReadEntries: (filePath) =>
     ipcRenderer.invoke('bibliography:readEntries', filePath),
   bibliographySearchCrossref: (query, limit) =>
@@ -111,6 +111,8 @@ const api: IpcApi = {
   aiChat: (messages, options) => ipcRenderer.invoke('ai:chat', messages, options),
   referenceDownload: (bibFilePath, entry) =>
     ipcRenderer.invoke('reference:download', bibFilePath, entry),
+  bibliographyAutoSaveAbstract: (bibFilePath, entry) =>
+    ipcRenderer.invoke('bibliography:autoSaveAbstract', bibFilePath, entry),
   referenceOpen: (bibFilePath, relPath) =>
     ipcRenderer.invoke('reference:open', bibFilePath, relPath),
   referenceStatus: (bibFilePath, key, fileField) =>

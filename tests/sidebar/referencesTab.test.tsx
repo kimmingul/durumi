@@ -25,7 +25,23 @@ interface ApiMock {
   referenceScan: ReturnType<typeof vi.fn>;
   referenceExtractDoi: ReturnType<typeof vi.fn>;
   referenceOpen: ReturnType<typeof vi.fn>;
+  prefsGet: ReturnType<typeof vi.fn>;
+  prefsSet: ReturnType<typeof vi.fn>;
 }
+
+// Minimum Preferences shape the component touches. Mirrors
+// `electron/preferences.ts` DEFAULTS for the bibliography slice — the test
+// only needs `bibliography.sortBy` to drive the sort dropdown.
+const PREFS_STUB = {
+  bibliography: {
+    email: null,
+    ncbiApiKey: null,
+    orcidId: null,
+    insertCitationOnAdd: false,
+    autoSaveAbstract: true,
+    sortBy: 'addedDesc',
+  },
+};
 
 function installApiMock(): ApiMock {
   const api: ApiMock = {
@@ -42,6 +58,8 @@ function installApiMock(): ApiMock {
     referenceScan: vi.fn().mockResolvedValue({ ok: true, files: [] }),
     referenceExtractDoi: vi.fn().mockResolvedValue({ doi: null, source: 'none' }),
     referenceOpen: vi.fn().mockResolvedValue({ ok: true }),
+    prefsGet: vi.fn().mockResolvedValue(PREFS_STUB),
+    prefsSet: vi.fn().mockResolvedValue(undefined),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).api = api;
@@ -151,7 +169,7 @@ describe('ReferencesTab', () => {
     cleanup();
   });
 
-  it('Add button calls bibliographyAppendEntry and emits the key via onInsert', async () => {
+  it('Add button (plain click) appends entry but does NOT insert citation', async () => {
     const api = installApiMock();
     api.bibliographySearchCrossref.mockResolvedValueOnce({
       ok: true,
@@ -168,6 +186,31 @@ describe('ReferencesTab', () => {
     expect(addBtn).not.toBeNull();
     await act(async () => {
       addBtn.click();
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(api.bibliographyAppendEntry).toHaveBeenCalled();
+    expect(onInsert).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('Shift+click on Add appends entry AND inserts [@key] at caret', async () => {
+    const api = installApiMock();
+    api.bibliographySearchCrossref.mockResolvedValueOnce({
+      ok: true,
+      hits: [{ entry: sampleEntry, externalId: '10.x/y', source: 'crossref' }],
+    });
+    const onInsert = vi.fn();
+    const { host, cleanup } = mount(onInsert);
+    const input = host.querySelector('[data-testid="references-search-input"]') as HTMLInputElement;
+    await act(async () => {
+      setInputValue(input, 'q', 'input');
+    });
+    await act(async () => { await new Promise((r) => setTimeout(r, 350)); });
+    const addBtn = host.querySelector('[data-testid="references-add"]') as HTMLButtonElement;
+    expect(addBtn).not.toBeNull();
+    // Dispatch a real MouseEvent so `e.shiftKey` reaches the React handler.
+    await act(async () => {
+      addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
       await new Promise((r) => setTimeout(r, 10));
     });
     expect(api.bibliographyAppendEntry).toHaveBeenCalled();

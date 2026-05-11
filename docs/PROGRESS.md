@@ -1,6 +1,88 @@
 # Durumi — Progress
 
-## v0.1.8.3 (current) — UI/UX polish: AI sidebar, shortcuts, i18n
+## v0.1.10 (current) — Reference workflow refinements
+
+Three-track release sharpening the day-to-day reference workflow.
+Driven by a six-item user audit (see `memory/v0_1_10_plan.md`).
+
+### Track A — Menu restructure
+The single "검토" submenu was carrying memo work, change-tracking,
+references, and AI all at once. Split into three top-level menus:
+
+```
+검토 ▶               (memo + change-tracking + export toggles)
+참고문헌 ▶            (cite palette, DOI add, bulk DOI, file import,
+                      AI citation suggest, References sidebar)
+AI 작성 도우미 ▶      (Polish selection, AI sidebar)
+```
+
+Labels also updated for clarity — e.g. "DOI로 인용 삽입" → "DOI로
+참고문헌 추가", "참고문헌 탭 보이기" → "참고문헌 사이드바 열기".
+All `MenuCommand` ids unchanged, so the renderer wiring is identical.
+KeyboardShortcutsDialog regrouped to match (new "References" group).
+
+### Track B — Add-flow redesign
+1. **Body-insert toggle on add.** Default OFF. `InsertCitationDialog`
+   gains a `☐ 본문에도 [@key] 삽입` checkbox seeded from
+   `prefs.bibliography.insertCitationOnAdd`.
+2. **Smart-merge of adjacent cite groups.** New helper
+   `insertCitationSmart(doc, pos, key)` in `shared/citationMerge.ts`.
+   Inserting `[@b]` next to `[@a]` produces `[@a; @b]`; inserting a
+   key already in the adjacent group is rejected with the
+   "이미 인용되어 있습니다" toast. Wired through
+   `App.insertCitationAtCaret` and `CitePalette` so every
+   cite-insertion path benefits.
+3. **Crossref abstract auto-save.** Default ON
+   (`prefs.bibliography.autoSaveAbstract`). When a reference is added,
+   if `reference/<key>.{md,pdf}` doesn't exist, the Crossref `abstract`
+   (or a metadata stub) is written to `reference/<key>.md`. The 📥
+   button keeps its original meaning ("fetch a better copy"). New IPC
+   `bibliographyAutoSaveAbstract`.
+4. **DOI-based duplicate prevention.** `appendEntry` normalises the
+   DOI (lowercase, strip `https://doi.org/`, trailing slash) and
+   rejects an add when a match exists, returning
+   `{ ok: false, error: 'duplicate-doi', existingKey }`. No-DOI
+   adds fall through to a weak match (normalised title + first-author
+   surname + year) that prompts the user via `window.confirm` before
+   retrying with `force: true`. The right sidebar scrolls and flashes
+   the existing row via the new `highlightedKey` store slice.
+
+### Track C — Sidebar polish
+- **Sort dropdown** above the references list. Eight options
+  driven by `prefs.bibliography.sortBy` (single source of truth,
+  no local React state): added-newest/oldest, author A→Z,
+  year newest/oldest, citation-key A→Z, citation-order in the open
+  document, uncited-first. Pure helper at
+  `src/components/sidebar/referenceSort.ts` with 12 vitest cases.
+- **Shift-click on "추가" in search-result cards** = add + insert
+  `[@key]` at the caret. Plain click stays add-only. Wired via the
+  existing `onInsertCitation` prop — no new editor handles needed.
+
+### New preferences (`prefs.bibliography`)
+- `insertCitationOnAdd: boolean` — default `false`
+- `autoSaveAbstract: boolean` — default `true`
+- `sortBy: 'addedDesc' | 'addedAsc' | 'author' | 'yearDesc' | 'yearAsc' | 'key' | 'citationOrder' | 'unused'` — default `'addedDesc'`
+
+Migration: `mergeDefaults` already spreads `DEFAULTS.bibliography`
+over loaded prefs, so existing users pick up the defaults transparently.
+
+### Quality gates
+- 1175 Vitest tests across 137 files (1162 baseline + 13 new
+  `citationMerge.test.ts` cases). Up from 1129 in v0.1.8.3.
+- `pnpm typecheck` clean
+- `pnpm lint` clean
+- `pnpm build` clean
+
+### Workflow note
+Implemented as three parallel subagents in git worktrees from a
+shared prep commit (prefs scaffold). Worktree diffs were merged
+manually with one cross-track wiring step (smart-merge integrated
+into `App.insertCitationAtCaret`, highlightedKey subscription added
+to `ReferencesTab`).
+
+---
+
+## v0.1.8.3 — UI/UX polish: AI sidebar, shortcuts, i18n
 
 Three-track polish release. No new architecture invariants; everything
 sits on top of the v0.1.8.x surface area.

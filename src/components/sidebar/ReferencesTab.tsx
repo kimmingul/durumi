@@ -4,8 +4,21 @@ import { useBibliographyStore, type OrphanFile } from '../../store/bibliographyS
 import { OrphanRegisterDialog } from '../OrphanRegisterDialog';
 import { EditEntryDialog } from '../EditEntryDialog';
 import { RenameKeyDialog } from '../RenameKeyDialog';
+import { usePreferences } from '../../hooks/usePreferences';
+import { sortReferences, type SortBy } from './referenceSort';
 import type { BibEntry } from '@shared/bibtex';
 import type { BibliographySearchHit } from '@shared/ipc-contract';
+
+const SORT_OPTIONS: ReadonlyArray<{ value: SortBy; labelKey: string }> = [
+  { value: 'addedDesc', labelKey: 'references.sort.addedDesc' },
+  { value: 'addedAsc', labelKey: 'references.sort.addedAsc' },
+  { value: 'author', labelKey: 'references.sort.author' },
+  { value: 'yearDesc', labelKey: 'references.sort.yearDesc' },
+  { value: 'yearAsc', labelKey: 'references.sort.yearAsc' },
+  { value: 'key', labelKey: 'references.sort.key' },
+  { value: 'citationOrder', labelKey: 'references.sort.citationOrder' },
+  { value: 'unused', labelKey: 'references.sort.unused' },
+];
 
 interface ReferencesTabProps {
   /** Insert `[@key]` at the editor caret. */
@@ -47,6 +60,24 @@ export function ReferencesTab({
   const scanFileStatuses = useBibliographyStore((s) => s.scanFileStatuses);
   const updateEntry = useBibliographyStore((s) => s.updateEntry);
   const deleteEntry = useBibliographyStore((s) => s.deleteEntry);
+  const highlightedKey = useBibliographyStore((s) => s.highlightedKey);
+  const clearHighlightedKey = useBibliographyStore((s) => s.clearHighlightedKey);
+
+  useEffect(() => {
+    if (!highlightedKey) return;
+    const node = document.querySelector<HTMLElement>(
+      `[data-bib-key="${CSS.escape(highlightedKey)}"]`,
+    );
+    node?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const timer = window.setTimeout(clearHighlightedKey, 1500);
+    return () => window.clearTimeout(timer);
+  }, [highlightedKey, clearHighlightedKey]);
+
+  // Sort dropdown is driven by `prefs.bibliography.sortBy` — single source of
+  // truth. While prefs are still loading we fall back to `addedDesc` so the
+  // first paint matches the persisted default.
+  const { prefs, update: updatePrefs } = usePreferences();
+  const sortBy: SortBy = prefs?.bibliography?.sortBy ?? 'addedDesc';
 
   const [editingEntry, setEditingEntry] = useState<BibEntry | null>(null);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
@@ -118,15 +149,42 @@ export function ReferencesTab({
     return () => clearTimeout(timer);
   }, [search.query, search.source, online]);
 
+  // Build an "append index" the sort helper needs to honour .bib append order.
+  // `entries` mirrors the on-disk order, so its index IS the append index.
+  const appendIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    entries.forEach((e, i) => m.set(e.key, i));
+    return m;
+  }, [entries]);
+
   const filteredLocal = useMemo(() => {
     const term = filter.trim().toLowerCase();
-    if (!term) return entries;
-    return entries.filter((e) => entryMatchesFilter(e, term));
-  }, [entries, filter]);
+    const base = term
+      ? entries.filter((e) => entryMatchesFilter(e, term))
+      : entries;
+    return sortReferences(base, sortBy, { docText: documentText, appendIndex });
+  }, [entries, filter, sortBy, documentText, appendIndex]);
 
-  async function handleAddHit(hit: BibliographySearchHit) {
+  function handleSortChange(next: SortBy) {
+    if (!prefs) {
+      // Prefs not yet hydrated — write through to disk anyway; usePreferences
+      // does an optimistic local merge so the dropdown reflects `next` even
+      // before the IPC round-trip resolves.
+      void updatePrefs({ bibliography: { ...emptyBibliographyPatch(), sortBy: next } });
+      return;
+    }
+    void updatePrefs({
+      bibliography: { ...prefs.bibliography, sortBy: next },
+    });
+  }
+
+  // Plain click → add only. Shift+click → add + insert `[@key]` at caret.
+  // We piggyback on the existing `onInsertCitation` prop (App.tsx wires it to
+  // `insertCitationAtCaret(\`[@${key}]\`)`) so we don't need direct EditorView
+  // access in this component.
+  async function handleAddHit(hit: BibliographySearchHit, alsoInsert: boolean) {
     const r = await addEntry(hit.entry);
-    if (r.ok) {
+    if (r.ok && alsoInsert) {
       onInsertCitation(r.key);
     }
   }
@@ -249,7 +307,7 @@ export function ReferencesTab({
               <ResultCard
                 key={`${hit.source}:${hit.externalId}`}
                 hit={hit}
-                onAdd={() => { void handleAddHit(hit); }}
+                onAdd={(alsoInsert) => { void handleAddHit(hit, alsoInsert); }}
               />
             ))}
           </div>
@@ -307,14 +365,32 @@ export function ReferencesTab({
           <p style={pathLineStyle}>{t('references.target.none')}</p>
         )}
         {entries.length > 0 && (
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder={t('references.localFilterPlaceholder')}
-            style={localFilterStyle}
-            data-testid="references-local-filter"
-          />
+          <div style={localControlsRowStyle}>
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={t('references.localFilterPlaceholder')}
+              style={localFilterStyle}
+              data-testid="references-local-filter"
+            />
+            <label style={sortLabelStyle}>
+              <span style={mutedStyle}>{t('references.sort.label')}</span>
+              <select
+                value={sortBy}
+                onChange={(e) => handleSortChange(e.target.value as SortBy)}
+                style={selectStyle}
+                data-testid="references-sort"
+                aria-label={t('references.sort.label')}
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {t(opt.labelKey)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         )}
         {filteredLocal.length === 0 ? (
           <p style={emptyLineStyle} data-testid="references-local-empty">
@@ -328,6 +404,7 @@ export function ReferencesTab({
                 entry={entry}
                 fileStatus={fileStatus[entry.key]}
                 downloading={!!downloading[entry.key]}
+                highlighted={highlightedKey === entry.key}
                 onInsert={() => onInsertCitation(entry.key)}
                 onDownload={() => { void handleDownload(entry.key); }}
                 onOpenFile={(rel) => { void handleOpenFile(rel); }}
@@ -367,7 +444,14 @@ export function ReferencesTab({
   );
 }
 
-function ResultCard({ hit, onAdd }: { hit: BibliographySearchHit; onAdd: () => void }) {
+function ResultCard({
+  hit,
+  onAdd,
+}: {
+  hit: BibliographySearchHit;
+  /** `alsoInsert` is true when the user Shift+clicks the Add button. */
+  onAdd: (alsoInsert: boolean) => void;
+}) {
   const f = hit.entry.fields;
   const venue = f.journal ?? f.booktitle ?? f.publisher ?? '';
   const meta = [f.year, f.volume && `vol. ${f.volume}`, f.pages && `pp. ${f.pages}`]
@@ -389,10 +473,10 @@ function ResultCard({ hit, onAdd }: { hit: BibliographySearchHit; onAdd: () => v
       </div>
       <button
         type="button"
-        onClick={onAdd}
+        onClick={(e) => onAdd(e.shiftKey)}
         style={addButtonStyle}
         data-testid="references-add"
-        title={t('references.add')}
+        title={`${t('references.add')} — ${t('references.addAndInsertHint')}`}
       >
         {t('references.add')}
       </button>
@@ -404,6 +488,7 @@ interface LocalRowProps {
   entry: BibEntry;
   fileStatus: { exists: boolean; relPath: string | null; type: 'pdf' | 'md' | null } | undefined;
   downloading: boolean;
+  highlighted?: boolean;
   onInsert: () => void;
   onDownload: () => void;
   onOpenFile: (relPath: string) => void;
@@ -416,6 +501,7 @@ function LocalRow({
   entry,
   fileStatus,
   downloading,
+  highlighted,
   onInsert,
   onDownload,
   onOpenFile,
@@ -426,7 +512,15 @@ function LocalRow({
   const f = entry.fields;
   const hasFile = fileStatus?.exists ?? false;
   return (
-    <div style={localRowWrapperStyle} role="listitem" data-testid="references-local-row">
+    <div
+      style={{
+        ...localRowWrapperStyle,
+        ...(highlighted ? highlightedRowStyle : null),
+      }}
+      role="listitem"
+      data-testid="references-local-row"
+      data-bib-key={entry.key}
+    >
       <button
         type="button"
         className="cm-references-local-row"
@@ -490,6 +584,29 @@ function LocalRow({
       </div>
     </div>
   );
+}
+
+/**
+ * Build a minimal `bibliography` patch when prefs haven't hydrated yet. Keeps
+ * the type happy without forcing every caller through `if (!prefs) return`.
+ * The defaults here mirror `electron/preferences.ts` DEFAULTS.bibliography.
+ */
+function emptyBibliographyPatch(): {
+  email: string | null;
+  ncbiApiKey: string | null;
+  orcidId: string | null;
+  insertCitationOnAdd: boolean;
+  autoSaveAbstract: boolean;
+  sortBy: SortBy;
+} {
+  return {
+    email: null,
+    ncbiApiKey: null,
+    orcidId: null,
+    insertCitationOnAdd: false,
+    autoSaveAbstract: true,
+    sortBy: 'addedDesc',
+  };
 }
 
 function summary(f: Record<string, string>): string {
@@ -674,21 +791,40 @@ const pathLineStyle: React.CSSProperties = {
   wordBreak: 'break-all',
 };
 
-const localFilterStyle: React.CSSProperties = {
+const localControlsRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
   margin: '6px 8px 4px',
+};
+
+const localFilterStyle: React.CSSProperties = {
+  flex: 1,
   padding: '4px 8px',
   fontSize: 12,
   border: '1px solid var(--border, #c8c8c8)',
   borderRadius: 4,
   background: 'var(--bg, #fff)',
   color: 'inherit',
-  width: 'calc(100% - 16px)',
+  minWidth: 0,
+};
+
+const sortLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  flexShrink: 0,
 };
 
 const localRowWrapperStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   borderBottom: '1px solid var(--border, #f0f0f0)',
+  transition: 'background-color 600ms ease',
+};
+
+const highlightedRowStyle: React.CSSProperties = {
+  backgroundColor: 'var(--bib-highlight, rgba(255, 215, 0, 0.28))',
 };
 
 const localRowStyle: React.CSSProperties = {

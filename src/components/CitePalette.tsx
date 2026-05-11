@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { EditorView } from '@codemirror/view';
 import { useBibliographyStore } from '../store/bibliographyStore';
 import { fuzzyRank } from '../utils/fuzzy';
 import { t, useLanguage } from '../i18n/t';
 import type { BibEntry } from '@shared/bibtex';
+import { insertCitationSmart } from '@shared/citationMerge';
 
 /**
  * Cmd/Ctrl+Shift+I — fuzzy palette over the entries currently in
@@ -10,21 +12,56 @@ import type { BibEntry } from '@shared/bibtex';
  *
  * Mirrors the look of `QuickOpen` so the keyboard model is identical: type
  * to filter, ↑/↓ to move, Enter to confirm, Esc to close.
+ *
+ * v0.1.10 — when `editorView` is provided we dispatch the cite directly
+ * through `insertCitationSmart` so two adjacent `[@a][@b]` insertions
+ * collapse into `[@a; @b]`. Without `editorView` we fall back to the
+ * legacy `onPick(key)` callback so App-level code can keep doing its
+ * own dispatch (used for tests and for the App's existing wiring).
  */
 export interface CitePaletteProps {
   open: boolean;
   onClose: () => void;
   onPick: (key: string) => void;
+  /** Optional — when given, we dispatch the cite via smart-merge here. */
+  editorView?: EditorView | null;
+  /** Surfaces "already cited" rejections; defaults to `window.alert`. */
+  onDuplicate?: (key: string) => void;
 }
 
 const MAX_RESULTS = 50;
 
-export function CitePalette({ open, onClose, onPick }: CitePaletteProps) {
+export function CitePalette({ open, onClose, onPick, editorView, onDuplicate }: CitePaletteProps) {
   useLanguage();
   const entries = useBibliographyStore((s) => s.entries);
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function pick(key: string): void {
+    // Smart-merge path: dispatch via the editor view when we have it.
+    if (editorView) {
+      const doc = editorView.state.doc.toString();
+      const pos = editorView.state.selection.main.from;
+      const outcome = insertCitationSmart(doc, pos, key);
+      if (outcome.kind === 'duplicate') {
+        if (onDuplicate) onDuplicate(key);
+        else {
+          // eslint-disable-next-line no-alert
+          window.alert(t('toast.bibliography.citationDuplicate'));
+        }
+        return;
+      }
+      editorView.dispatch({
+        changes: { from: outcome.from, to: outcome.to, insert: outcome.insert },
+        selection: { anchor: outcome.caret },
+      });
+      editorView.focus();
+      return;
+    }
+    // Fallback (App.tsx wiring): hand the key off and let the caller dispatch.
+    onPick(key);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -76,9 +113,9 @@ export function CitePalette({ open, onClose, onPick }: CitePaletteProps) {
               setActiveIdx((i) => Math.max(i - 1, 0));
             } else if (e.key === 'Enter') {
               e.preventDefault();
-              const pick = ranked[activeIdx];
-              if (pick) {
-                onPick(pick.item.key);
+              const choice = ranked[activeIdx];
+              if (choice) {
+                pick(choice.item.key);
                 onClose();
               }
             }
@@ -91,7 +128,7 @@ export function CitePalette({ open, onClose, onPick }: CitePaletteProps) {
               className={'cm-quickopen-item' + (i === activeIdx ? ' active' : '')}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onPick(r.item.key);
+                pick(r.item.key);
                 onClose();
               }}
               onMouseMove={() => setActiveIdx(i)}

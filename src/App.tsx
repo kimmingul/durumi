@@ -47,7 +47,8 @@ import { renderHtml } from './export/renderHtml';
 import { promoteComments, stripComments } from '../shared/comments';
 import { transformCm } from '../shared/criticMarkup';
 import { findTemplate } from '../shared/manuscriptTemplates';
-import { useLanguage, resolveRendererLang } from './i18n/t';
+import { t, useLanguage, resolveRendererLang } from './i18n/t';
+import { insertCitationSmart } from '../shared/citationMerge';
 import { basenameOf, stripMarkdownExt } from './utils/path';
 
 function upsertCustomCssTag(css: string) {
@@ -782,6 +783,26 @@ export function App() {
   function insertCitationAtCaret(citation: string) {
     const view = editorViewRef.current;
     if (!view) return;
+    const single = citation.match(/^\[@([^\]\s;,]+)\]$/);
+    if (single) {
+      const outcome = insertCitationSmart(
+        view.state.doc.toString(),
+        view.state.selection.main.from,
+        single[1],
+      );
+      if (outcome.kind === 'duplicate') {
+        // eslint-disable-next-line no-alert
+        window.alert(t('toast.bibliography.citationDuplicate'));
+        view.focus();
+        return;
+      }
+      view.dispatch({
+        changes: { from: outcome.from, to: outcome.to, insert: outcome.insert },
+        selection: { anchor: outcome.caret },
+      });
+      view.focus();
+      return;
+    }
     const { from, to } = view.state.selection.main;
     view.dispatch({
       changes: { from, to, insert: citation },
