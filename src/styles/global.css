@@ -72,11 +72,53 @@ body {
 .status-bar {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   padding: 4px 12px;
   border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--muted-fg);
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.status-bar-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg, transparent);
+}
+.status-bar-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--muted-fg);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.status-bar-mode-btn:last-child {
+  border-right: none;
+}
+.status-bar-mode-btn:hover {
+  background: var(--hover, rgba(127, 127, 127, 0.12));
+}
+.status-bar-mode-btn-active {
+  background: var(--active, rgba(64, 128, 255, 0.18));
+  color: var(--fg, inherit);
+  font-weight: 600;
+}
+.status-bar-mode-icon {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+  font-weight: 700;
 }
 
 [data-theme="light"] {

@@ -196,6 +196,32 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
       label: tr('menu.view'),
       submenu: [
         { label: tr('menu.view.toggleTheme'), accelerator: 'CmdOrCtrl+Shift+L', click: () => send('toggleTheme') },
+        {
+          label: tr('menu.view.editMode'),
+          submenu: [
+            {
+              label: tr('menu.view.editMode.wysiwyg'),
+              type: 'radio',
+              checked: (prefs.editor?.defaultMode ?? 'wysiwyg') === 'wysiwyg',
+              accelerator: 'CmdOrCtrl+Shift+1',
+              click: () => send({ type: 'setEditMode', mode: 'wysiwyg' }),
+            },
+            {
+              label: tr('menu.view.editMode.typora'),
+              type: 'radio',
+              checked: (prefs.editor?.defaultMode ?? 'wysiwyg') === 'typora',
+              accelerator: 'CmdOrCtrl+Shift+2',
+              click: () => send({ type: 'setEditMode', mode: 'typora' }),
+            },
+            {
+              label: tr('menu.view.editMode.markdown'),
+              type: 'radio',
+              checked: (prefs.editor?.defaultMode ?? 'wysiwyg') === 'markdown',
+              accelerator: 'CmdOrCtrl+Shift+3',
+              click: () => send({ type: 'setEditMode', mode: 'markdown' }),
+            },
+          ],
+        },
         { label: tr('menu.view.toggleSourceMode'), accelerator: 'CmdOrCtrl+/', click: () => send('toggleSourceMode') },
         { type: 'separator' },
         { role: 'zoomIn' },

@@ -68,6 +68,9 @@ const DEFAULTS: Preferences = {
     ghostTextIdleMs: 800,
     ghostTextSessionCap: 100,
   },
+  editor: {
+    defaultMode: 'wysiwyg',
+  },
 };
 
 let cache: Preferences | null = null;
@@ -140,6 +143,10 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
     ai: {
       ...DEFAULTS.ai,
       ...(migrated.ai ?? {}),
+    },
+    editor: {
+      ...DEFAULTS.editor,
+      ...(migrated.editor ?? {}),
     },
     lastWindow: {
       ...DEFAULTS.lastWindow,

@@ -154,11 +154,27 @@ export interface Preferences {
     ghostTextIdleMs: number;
     ghostTextSessionCap: number;
   };
+  /**
+   * v0.1.11 — editor display-mode preferences. Phase 2/3 will extend this
+   * with toolbar + style-preset fields; Phase 1 ships just the default
+   * mode toggle.
+   */
+  editor: {
+    /**
+     * Display mode applied to freshly-opened editors. `wysiwyg` hides
+     * markdown markers everywhere (including the active line via
+     * `Decoration.mark` + `display: none`); `typora` keeps the v0.1.10
+     * behaviour of revealing markers on the active line only; `markdown`
+     * disables live decorations entirely.
+     */
+    defaultMode: 'wysiwyg' | 'typora' | 'markdown';
+  };
 }
 
 export type MenuCommand =
   | 'new' | 'newWindow' | 'open' | 'save' | 'saveAs' | 'closeWindow'
   | 'toggleTheme' | 'toggleSourceMode' | 'zoomIn' | 'zoomOut' | 'zoomReset'
+  | { type: 'setEditMode'; mode: 'wysiwyg' | 'typora' | 'markdown' }
   | 'undo' | 'redo' | 'find'
   | 'findAndReplace'
   | 'findNext'

@@ -5,6 +5,7 @@ import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { useLanguage, t } from '../i18n/t';
 import { basenameOf } from '../utils/path';
 import { computeWordStats, WordStats } from '../utils/wordCount';
+import type { EditMode } from '../editor/editMode';
 
 const COUNT_DEBOUNCE_MS = 200;
 
@@ -21,10 +22,18 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
+const MODES: ReadonlyArray<{ mode: EditMode; labelKey: string; icon: string; titleKey: string }> = [
+  { mode: 'wysiwyg', labelKey: 'status.editMode.wysiwyg', icon: 'W', titleKey: 'status.editMode.wysiwyg.title' },
+  { mode: 'typora', labelKey: 'status.editMode.typora', icon: 'T', titleKey: 'status.editMode.typora.title' },
+  { mode: 'markdown', labelKey: 'status.editMode.markdown', icon: 'M', titleKey: 'status.editMode.markdown.title' },
+];
+
 export function StatusBar() {
   const filePath = useAppStore((s) => s.filePath);
   const content = useAppStore((s) => s.content);
   const isDirty = useAppStore((s) => s.isDirty);
+  const editMode = useAppStore((s) => s.editMode);
+  const setEditMode = useAppStore((s) => s.setEditMode);
   // Subscribe to language so labels re-render on switch.
   useLanguage();
   const name = filePath ? basenameOf(filePath) : t('status.untitled');
@@ -56,6 +65,25 @@ export function StatusBar() {
             {' '}<span className="status-bar-cm-badge status-bar-cm-comment" title={t('status.cm.comment')}>💬{cmCounts.comment}</span>
           </span></>
         )}
+      </span>
+      <span className="status-bar-mode" role="radiogroup" aria-label={t('status.editMode.group')} data-testid="status-edit-mode">
+        {MODES.map(({ mode, labelKey, icon, titleKey }) => (
+          <button
+            key={mode}
+            type="button"
+            role="radio"
+            aria-checked={editMode === mode}
+            className={`status-bar-mode-btn${editMode === mode ? ' status-bar-mode-btn-active' : ''}`}
+            title={`${t(titleKey)} (${t(labelKey)})`}
+            onClick={() => {
+              setEditMode(mode);
+              void window.api.prefsSet({ editor: { defaultMode: mode } });
+            }}
+          >
+            <span className="status-bar-mode-icon">{icon}</span>
+            <span className="status-bar-mode-label">{t(labelKey)}</span>
+          </button>
+        ))}
       </span>
     </div>
   );

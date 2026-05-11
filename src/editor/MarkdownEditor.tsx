@@ -28,6 +28,8 @@ import { citationAutocomplete } from './autocomplete/citationAutocomplete';
 import { citationHoverTooltip } from './decorations/citationHover';
 import { defaultGhostTextRefs, ghostTextExtension } from './ai/ghostText';
 import type { Macro } from '@shared/ipc-contract';
+import { EditMode, editModeStateExtension, setEditMode } from './editMode';
+import { wysiwygMarkerHider, wysiwygMarkerTheme } from './decorations/wysiwygMarkers';
 
 export interface MarkdownEditorProps {
   value: string;
@@ -35,13 +37,31 @@ export interface MarkdownEditorProps {
   onReady?: (view: EditorView) => void;
   filePath?: string | null;
   macros?: Macro[];
+  editMode?: EditMode;
 }
 
-export function MarkdownEditor({ value, onChange, onReady, filePath = null, macros = [] }: MarkdownEditorProps) {
+function decorationsForMode(mode: EditMode) {
+  // `markdown` strips the entire live-preview decoration set so the user
+  // sees plain markdown source. `typora` and `wysiwyg` share the same
+  // decoration bundle — the WYSIWYG-only active-line marker hider is
+  // always loaded and self-gates on the current mode.
+  return mode === 'markdown' ? [] : liveDecorations;
+}
+
+export function MarkdownEditor({
+  value,
+  onChange,
+  onReady,
+  filePath = null,
+  macros = [],
+  editMode = 'wysiwyg',
+}: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const filePathRef = useRef<string | null>(filePath);
   const macroCompartmentRef = useRef<Compartment>(new Compartment());
+  const editModeCompartmentRef = useRef<Compartment>(new Compartment());
+  const initialEditModeRef = useRef<EditMode>(editMode);
 
   useEffect(() => {
     filePathRef.current = filePath;
@@ -71,7 +91,10 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
             CriticMarkupExtension,
           ],
         }),
-        ...liveDecorations,
+        editModeStateExtension(),
+        editModeCompartmentRef.current.of(decorationsForMode(initialEditModeRef.current)),
+        wysiwygMarkerHider(),
+        wysiwygMarkerTheme,
         citationAutocomplete(),
         citationHoverTooltip(),
         ghostTextExtension({ refs: defaultGhostTextRefs }),
@@ -120,6 +143,17 @@ export function MarkdownEditor({ value, onChange, onReady, filePath = null, macr
       effects: macroCompartmentRef.current.reconfigure(buildMacroKeymap(macros)),
     });
   }, [macros]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: [
+        editModeCompartmentRef.current.reconfigure(decorationsForMode(editMode)),
+        setEditMode.of(editMode),
+      ],
+    });
+  }, [editMode]);
 
   return <div ref={hostRef} className="cm-host" style={{ height: '100%' }} />;
 }

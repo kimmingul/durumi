@@ -74,6 +74,8 @@ export function App() {
   const setSystemTheme = useAppStore((s) => s.setSystemTheme);
   const setThemePreference = useAppStore((s) => s.setThemePreference);
   const toggleSourceMode = useAppStore((s) => s.toggleSourceMode);
+  const editMode = useAppStore((s) => s.editMode);
+  const setEditModeStore = useAppStore((s) => s.setEditMode);
   const setWorkspaceFolders = useSidebarStore((s) => s.setWorkspaceFolders);
   const addFolder = useSidebarStore((s) => s.addFolder);
   const removeFolder = useSidebarStore((s) => s.removeFolder);
@@ -168,6 +170,9 @@ export function App() {
       }
       if (prefs.author?.name) {
         useMemoSidecarStore.getState().setAuthor(prefs.author.name);
+      }
+      if (prefs.editor?.defaultMode) {
+        useAppStore.getState().setEditMode(prefs.editor.defaultMode);
       }
     });
   }, [setThemePreference, setWorkspaceFolders, updateGitStatus, setLang, setMemoPanelWidth]);
@@ -381,7 +386,17 @@ export function App() {
         void window.api.prefsSet({ theme: next });
         return;
       }
-      if (cmd === 'toggleSourceMode') { toggleSourceMode(); return; }
+      if (cmd === 'toggleSourceMode') {
+        toggleSourceMode();
+        // Persist the resulting mode so the menu radio + next session match.
+        void window.api.prefsSet({ editor: { defaultMode: useAppStore.getState().editMode } });
+        return;
+      }
+      if (typeof cmd === 'object' && cmd.type === 'setEditMode') {
+        setEditModeStore(cmd.mode);
+        void window.api.prefsSet({ editor: { defaultMode: cmd.mode } });
+        return;
+      }
       if (cmd === 'openFolder') {
         const p = await window.api.dialogOpenFolder();
         if (p) {
@@ -612,6 +627,7 @@ export function App() {
             onReady={(v) => { editorViewRef.current = v; }}
             filePath={filePath}
             macros={macros}
+            editMode={editMode}
           />
         </div>
         <MemoPanel
