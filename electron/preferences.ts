@@ -2,7 +2,29 @@ import { app } from 'electron';
 import { promises as fs } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
-import type { Preferences } from '@shared/ipc-contract';
+import type { Preferences, StyleSet } from '@shared/ipc-contract';
+
+/**
+ * v0.1.11 Phase 3 — Durumi-default StyleSet, duplicated from
+ * `src/styles/journalPresets.ts` because main cannot import renderer code.
+ * The two definitions are kept in lockstep by `tests/styles/journalPresets.test.ts`.
+ */
+const DURUMI_DEFAULT_BODY =
+  'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+const DURUMI_DEFAULT_CODE =
+  "ui-monospace, 'SF Mono', Menlo, Consolas, 'Roboto Mono', monospace";
+const DURUMI_DEFAULT_STYLES: StyleSet = {
+  body:        { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 16, fontWeight: 400, color: null, lineHeight: 1.6 },
+  h1:          { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 24, fontWeight: 600, color: null, lineHeight: 1.3 },
+  h2:          { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 20, fontWeight: 600, color: null, lineHeight: 1.3 },
+  h3:          { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 18, fontWeight: 600, color: null, lineHeight: 1.35 },
+  h4:          { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 16, fontWeight: 600, color: null, lineHeight: 1.4 },
+  h5:          { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 14, fontWeight: 600, color: null, lineHeight: 1.4 },
+  h6:          { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 13, fontWeight: 600, color: null, lineHeight: 1.4 },
+  blockquote:  { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 16, fontWeight: 400, color: null, lineHeight: 1.6 },
+  code:        { fontFamily: DURUMI_DEFAULT_CODE, fontSizePx: 14, fontWeight: 400, color: null, lineHeight: 1.5 },
+  tableHeader: { fontFamily: DURUMI_DEFAULT_BODY, fontSizePx: 16, fontWeight: 700, color: null, lineHeight: 1.4 },
+};
 
 const FILE = () => join(app.getPath('userData'), 'preferences.json');
 
@@ -70,8 +92,38 @@ const DEFAULTS: Preferences = {
   },
   editor: {
     defaultMode: 'wysiwyg',
+    activePreset: 'durumi-default',
+    styles: DURUMI_DEFAULT_STYLES,
   },
 };
+
+const STYLE_ENTRY_KEYS = [
+  'body',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'blockquote',
+  'code',
+  'tableHeader',
+] as const;
+
+function isValidStyleSet(value: unknown): value is StyleSet {
+  if (!value || typeof value !== 'object') return false;
+  for (const k of STYLE_ENTRY_KEYS) {
+    const spec = (value as Record<string, unknown>)[k];
+    if (!spec || typeof spec !== 'object') return false;
+    const s = spec as Record<string, unknown>;
+    if (typeof s.fontFamily !== 'string') return false;
+    if (typeof s.fontSizePx !== 'number') return false;
+    if (typeof s.fontWeight !== 'number') return false;
+    if (s.color !== null && typeof s.color !== 'string') return false;
+    if (typeof s.lineHeight !== 'number') return false;
+  }
+  return true;
+}
 
 let cache: Preferences | null = null;
 let writeTimer: NodeJS.Timeout | null = null;
@@ -147,6 +199,12 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
     editor: {
       ...DEFAULTS.editor,
       ...(migrated.editor ?? {}),
+      // Guard against a corrupt / partial styles block — the renderer expects
+      // every entry to be present, so we fall back to the bundled default
+      // whenever the loaded value isn't a complete StyleSet.
+      styles: isValidStyleSet(migrated.editor?.styles)
+        ? migrated.editor!.styles
+        : DEFAULTS.editor.styles,
     },
     lastWindow: {
       ...DEFAULTS.lastWindow,

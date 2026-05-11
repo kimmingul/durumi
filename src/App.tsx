@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MarkdownEditor } from './editor/MarkdownEditor';
+import { EditorToolbar } from './components/EditorToolbar';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
@@ -50,6 +51,7 @@ import { findTemplate } from '../shared/manuscriptTemplates';
 import { t, useLanguage, resolveRendererLang } from './i18n/t';
 import { insertCitationSmart } from '../shared/citationMerge';
 import { basenameOf, stripMarkdownExt } from './utils/path';
+import { applyStyleSet } from './styles/applyStyles';
 
 function upsertCustomCssTag(css: string) {
   let el = document.getElementById('custom-css') as HTMLStyleElement | null;
@@ -174,6 +176,12 @@ export function App() {
       if (prefs.editor?.defaultMode) {
         useAppStore.getState().setEditMode(prefs.editor.defaultMode);
       }
+      // v0.1.11 Phase 3 — inject the persisted journal-style preset into
+      // the document so the editor + export pipeline pick it up without
+      // an app restart.
+      if (prefs.editor?.styles) {
+        applyStyleSet(prefs.editor.styles);
+      }
     });
   }, [setThemePreference, setWorkspaceFolders, updateGitStatus, setLang, setMemoPanelWidth]);
 
@@ -288,6 +296,45 @@ export function App() {
     const roots = useSidebarStore.getState().workspaceFolders;
     const hit = await window.api.bibliographyFind(filePath, roots);
     return hit?.source ?? null;
+  }
+
+  /**
+   * v0.1.11 Phase 2 — Toolbar "Image" button: open the OS picker and reuse
+   * the same `saveImage` IPC drag/paste flow uses, so the asset path lands
+   * in `<doc_dir>/assets/img-<ts>-<rand>.<ext>` with identical normalization.
+   */
+  async function pickAndInsertImage(): Promise<void> {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const picked = await window.api.dialogPickFile({
+      title: t('toolbar.image'),
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] },
+      ],
+    });
+    if (!picked) return;
+    const resp = await fetch(`file://${picked}`);
+    const arr = new Uint8Array(await resp.arrayBuffer());
+    const ext = picked.split('.').pop()?.toLowerCase() ?? 'png';
+    const mime =
+      ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
+      ext === 'gif' ? 'image/gif' :
+      ext === 'webp' ? 'image/webp' :
+      ext === 'svg' ? 'image/svg+xml' :
+      'image/png';
+    const result = await window.api.saveImage(arr, mime, filePath);
+    if ('error' in result) {
+      // eslint-disable-next-line no-alert
+      window.alert(t('image.noFileAlert'));
+      return;
+    }
+    const cursor = view.state.selection.main.head;
+    const md = `![](${result.relPath})`;
+    view.dispatch({
+      changes: { from: cursor, insert: md },
+      selection: { anchor: cursor + md.length },
+    });
+    view.focus();
   }
 
   async function doExport(format: 'html' | 'pdf'): Promise<void> {
@@ -620,15 +667,23 @@ export function App() {
             }, 50);
           }}
         />
-        <div style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
-          <MarkdownEditor
-            value={content}
-            onChange={setContent}
-            onReady={(v) => { editorViewRef.current = v; }}
-            filePath={filePath}
-            macros={macros}
-            editMode={editMode}
+        <div style={{ flex: 1, overflow: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <EditorToolbar
+            view={editorViewRef.current}
+            visible={editMode === 'wysiwyg'}
+            onOpenCitePalette={() => setCitePaletteOpen(true)}
+            onPickImage={pickAndInsertImage}
           />
+          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+            <MarkdownEditor
+              value={content}
+              onChange={setContent}
+              onReady={(v) => { editorViewRef.current = v; }}
+              filePath={filePath}
+              macros={macros}
+              editMode={editMode}
+            />
+          </div>
         </div>
         <MemoPanel
           view={editorViewRef.current}

@@ -33,3 +33,20 @@ export function toggleWrap(view: EditorView, before: string, after: string = bef
   if (unwrapIfWrapped(view, before, after)) return true;
   return wrapSelection(view, before, after);
 }
+
+/**
+ * Wrap the current selection in `<sup>…</sup>` (toggles off when the
+ * selection is already wrapped). Markdown-it has no native superscript syntax,
+ * so the raw HTML round-trips cleanly through every renderer in Durumi.
+ */
+export function toggleSup(view: EditorView): boolean {
+  return toggleWrap(view, '<sup>', '</sup>');
+}
+
+/**
+ * Wrap the current selection in `<sub>…</sub>` (toggles off when already
+ * wrapped). Same rationale as `toggleSup`.
+ */
+export function toggleSub(view: EditorView): boolean {
+  return toggleWrap(view, '<sub>', '</sub>');
+}

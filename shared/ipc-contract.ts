@@ -157,7 +157,7 @@ export interface Preferences {
   /**
    * v0.1.11 — editor display-mode preferences. Phase 2/3 will extend this
    * with toolbar + style-preset fields; Phase 1 ships just the default
-   * mode toggle.
+   * mode toggle. Phase 3 adds journal-style presets + per-entry overrides.
    */
   editor: {
     /**
@@ -168,7 +168,48 @@ export interface Preferences {
      * disables live decorations entirely.
      */
     defaultMode: 'wysiwyg' | 'typora' | 'markdown';
+    /**
+     * v0.1.11 Phase 3 — which prebuilt journal preset the user picked. When
+     * `null`, the active styles are treated as a custom (user-edited) set
+     * with no preset affiliation. Stored as a string so older builds that
+     * don't know about new preset ids round-trip cleanly.
+     */
+    activePreset: string | null;
+    /**
+     * v0.1.11 Phase 3 — the resolved style set. Injected into the editor +
+     * export pipeline via CSS custom properties. Always populated (even
+     * when `activePreset` is null) so a single source of truth flows to
+     * the renderer.
+     */
+    styles: StyleSet;
   };
+}
+
+/**
+ * v0.1.11 Phase 3 — single style entry. `color: null` means "inherit the
+ * theme foreground"; the renderer translates that to `inherit` when it
+ * writes the CSS custom property.
+ */
+export interface StyleSpec {
+  fontFamily: string;
+  fontSizePx: number;
+  fontWeight: number;
+  color: string | null;
+  lineHeight: number;
+}
+
+/** v0.1.11 Phase 3 — ten style entries covering body / headings / chrome. */
+export interface StyleSet {
+  body: StyleSpec;
+  h1: StyleSpec;
+  h2: StyleSpec;
+  h3: StyleSpec;
+  h4: StyleSpec;
+  h5: StyleSpec;
+  h6: StyleSpec;
+  blockquote: StyleSpec;
+  code: StyleSpec;
+  tableHeader: StyleSpec;
 }
 
 export type MenuCommand =

@@ -19,3 +19,19 @@ export function setHeading(view: EditorView, level: number): boolean {
   view.dispatch({ changes: { from: line.from, to: line.to, insert: newText } });
   return true;
 }
+
+/**
+ * Strip the leading `#…# ` prefix from the current line (the "Body" choice in
+ * the WYSIWYG toolbar's Style dropdown). No-op when the line has no heading
+ * prefix so selecting "Body" twice doesn't surprise users.
+ */
+export function clearHeading(view: EditorView): boolean {
+  const head = view.state.selection.main.head;
+  const line = view.state.doc.lineAt(head);
+  const match = line.text.match(HEADING_PREFIX);
+  if (!match) return false;
+  view.dispatch({
+    changes: { from: line.from, to: line.from + match[0].length, insert: '' },
+  });
+  return true;
+}

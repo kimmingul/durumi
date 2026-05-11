@@ -1,6 +1,107 @@
 # Durumi — Progress
 
-## v0.1.10 (current) — Reference workflow refinements
+## v0.1.11 (current) — Three-mode editor
+
+The editor learns to wear three faces. WYSIWYG is the new default for
+medical-manuscript drafting; Typora-style is preserved for v0.1.0-v0.1.10
+muscle memory; Markdown source is the escape hatch. Shipped as three
+phases over a single release.
+
+### Phase 1 — Mode infrastructure
+- New `src/editor/editMode.ts` exports `EditMode = 'wysiwyg' | 'typora' | 'markdown'`,
+  a `StateField` always loaded outside the mode Compartment, and the
+  `setEditMode` StateEffect.
+- `MarkdownEditor` wraps the live-decoration array in a `Compartment` —
+  Markdown mode swaps it for an empty array, suppressing every live
+  preview decoration so the user sees plain markdown source. WYSIWYG +
+  Typora share the same decoration bundle.
+- New `wysiwygMarkerHider` ViewPlugin (`src/editor/decorations/wysiwygMarkers.ts`)
+  scans the active line for inline markdown punctuation
+  (`*`, `_`, `**`, `__`, `~~`, `` ` ``, `#`, `>`, list markers) and adds
+  `Decoration.mark({ class: 'cm-md-marker-hidden' })`. A CSS rule with
+  `display: none` hides them. **Critical IME-safety detail**:
+  `Decoration.replace` is never used — the active-line invariant from
+  `durumi_project.md` (Korean/Japanese/Chinese IME composition) still
+  holds. This is the new architecture invariant #6.
+- `appStore` replaces the unused `sourceMode` boolean with `editMode` +
+  `lastNonMarkdownMode`. `Cmd+/` keeps working (now toggles between
+  Markdown and the previous mode).
+- New `prefs.editor.defaultMode` (default `'wysiwyg'`); `mergeDefaults`
+  back-fills.
+- View → Edit Mode submenu with `Cmd+Shift+1/2/3` shortcuts. New
+  MenuCommand variant `{ type: 'setEditMode', mode }`.
+- Status bar gets a 3-button segmented control (W/T/M) tied to prefs so
+  menu radio and control stay in sync.
+
+### Phase 2 — WYSIWYG toolbar
+- New chrome toolbar (`src/components/EditorToolbar.tsx`) renders above
+  the editor only in WYSIWYG mode. 36px tall, theme-token styled,
+  `role="toolbar"`.
+- Five button groups:
+  1. **Style dropdown** — Body / H1-H6 / Blockquote / Code block
+  2. **Inline** — Bold, Italic, Strike, Inline code, **Sup**, **Sub**
+     (`<sup>/<sub>` raw HTML, round-trips through markdown-it)
+  3. **List** — Bulleted, Numbered, Task, Indent, Outdent
+  4. **Insert** — Link, Image (OS file picker → existing `saveImage` IPC),
+     Table, Math (`$$\n\n$$`), Footnote (auto-numbered anchor + def),
+     Citation (opens cite palette)
+  5. **Review** — Highlight (CriticMarkup `{== ==}`), Memo, Track-change
+- New keymap helpers: `toggleSup`/`toggleSub` in `toggleWrap.ts`,
+  `clearHeading` in `setHeading.ts`.
+- Style dropdown auto-syncs to the caret line.
+- No new icon dependency — unicode glyphs only.
+
+### Phase 3 — Document styles
+- New "문서 스타일 / Document Styles" tab in Settings.
+- **6 prebuilt journal-flavoured presets** (draft display only — not
+  official typesetting):
+
+  | Preset | Body |
+  |:--|:--|
+  | Durumi default | Inter 16px, 1.6 (default) |
+  | Classic manuscript | Times New Roman 12pt, 2.0 (double-spaced) |
+  | Nature-style | Helvetica 14px, 1.5 |
+  | Lancet-style | Georgia 14px, 1.55 |
+  | JKMS / Korean Medical | Noto Serif KR 16px, 1.7 |
+  | Comfortable draft | Atkinson Hyperlegible 17px, 1.75 |
+
+- 10 per-entry style rows (Body / H1-H6 / Blockquote / Code / Table
+  header) — font family, size, weight, color, line-height. Editing any
+  field detaches from the preset and surfaces "Custom (user-edited)".
+- **Reset to Durumi default** button.
+- Styles apply live via 50 CSS custom properties on `:root` (e.g.
+  `--style-body-font`, `--style-h1-size`, …). The HTML/PDF export
+  pipeline inherits the same variables automatically.
+- Runtime `isValidStyleSet` validator in `mergeDefaults` so a corrupt
+  `styles` block falls back to defaults instead of crashing.
+
+### New preferences (`prefs.editor`)
+- `defaultMode: 'wysiwyg' | 'typora' | 'markdown'` — default `'wysiwyg'`
+- `activePreset: string | null` — default `'durumi-default'`; flips to
+  `null` when the user edits any per-entry field
+- `styles: StyleSet` — the resolved style set; always populated
+
+### New architecture invariant #6
+**WYSIWYG marker hiding uses `Decoration.mark` + CSS `display: none`,
+never `Decoration.replace`.** Documented in `durumi_project.md`.
+
+### Quality gates
+- 1210 Vitest tests across 141 files (1175 v0.1.10 baseline + 35 new:
+  10 wysiwygMarkers, 6 editMode, 14 journalPresets, 5 toggleSupSub).
+- `pnpm typecheck` clean
+- `pnpm lint` clean
+- `pnpm build` clean
+
+### Workflow note
+Phase 1 was committed sequentially (`5b16bf7`) so Phases 2 + 3 could
+fork from a stable base. Phase 2 (toolbar) and Phase 3 (styles) ran
+as parallel subagents in git worktrees; their diffs merged cleanly
+because they touched different namespaces in `dict.ts` and different
+sections of `App.tsx`.
+
+---
+
+## v0.1.10 — Reference workflow refinements
 
 Three-track release sharpening the day-to-day reference workflow.
 Driven by a six-item user audit (see `memory/v0_1_10_plan.md`).

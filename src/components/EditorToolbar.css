@@ -1,0 +1,114 @@
+/* Editor toolbar (v0.1.11 Phase 2) — visible only in WYSIWYG mode.
+ *
+ * Visual density matches the existing .status-bar chrome: 36px tall, same
+ * monospace counters font, same border tokens. Lives above MarkdownEditor
+ * inside the editor column so it scrolls with the sidebar layout.
+ */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+  color: var(--fg);
+  flex-wrap: wrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.editor-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.editor-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 6px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.editor-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  user-select: none;
+  line-height: 1;
+}
+
+.editor-toolbar-btn:hover:not(:disabled) {
+  background: var(--hover, rgba(127, 127, 127, 0.12));
+}
+
+.editor-toolbar-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.editor-toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.editor-toolbar-btn-active {
+  background: var(--active, rgba(64, 128, 255, 0.18));
+  color: var(--fg);
+}
+
+.editor-toolbar-mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.editor-toolbar-select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.editor-toolbar-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.editor-toolbar-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Accessible label that's visually hidden but still read by screen readers. */
+.editor-toolbar-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

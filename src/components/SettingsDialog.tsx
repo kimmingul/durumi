@@ -4,6 +4,19 @@ import { usePreferences } from '../hooks/usePreferences';
 import { useAppStore } from '../store/appStore';
 import { useMemoSidecarStore } from '../store/memoSidecarStore';
 import { AiUsageDashboard } from './AiUsageDashboard';
+import {
+  DEFAULT_PRESET_ID,
+  JOURNAL_PRESETS,
+  PRESET_IDS,
+  STYLE_ENTRIES,
+  cloneStyleSet,
+  type JournalPresetId,
+  type StyleEntryId,
+  type StyleSet,
+  type StyleSpec,
+} from '../styles/journalPresets';
+import { applyStyleSet } from '../styles/applyStyles';
+import type { Preferences } from '@shared/ipc-contract';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -217,6 +230,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 testId="language"
               />
             </Field>
+          </Section>
+
+          <Section heading={t('settings.styles')}>
+            <StylesSection prefs={prefs} update={update} />
           </Section>
 
           <Section heading={t('settings.export')}>
@@ -564,6 +581,208 @@ function FilePathRow({ value, onPick, onClear, onChange, placeholder, testId }: 
           {t('settings.clear')}
         </button>
       )}
+    </div>
+  );
+}
+
+interface StylesSectionProps {
+  prefs: Preferences;
+  update: (patch: Partial<Preferences>) => Promise<void>;
+}
+
+const FONT_WEIGHTS: Array<{ value: number; label: string }> = [
+  { value: 400, label: '400 — Regular' },
+  { value: 500, label: '500 — Medium' },
+  { value: 600, label: '600 — Semibold' },
+  { value: 700, label: '700 — Bold' },
+];
+
+function StylesSection({ prefs, update }: StylesSectionProps) {
+  // Defensive: prefs.editor may be partial during the first render of a test
+  // harness that injects a stub. Production prefs always carry every field
+  // thanks to mergeDefaults().
+  const editor = prefs.editor;
+  const activePreset: string | null = editor?.activePreset ?? null;
+  const styles: StyleSet = editor?.styles ?? cloneStyleSet(JOURNAL_PRESETS[DEFAULT_PRESET_ID].styles);
+
+  async function applyPatch(nextStyles: StyleSet, nextPreset: string | null) {
+    // Inject the new variables immediately so the editor reflects the change
+    // before the IPC round-trip completes — keeps the dropdown feel snappy.
+    applyStyleSet(nextStyles);
+    await update({
+      editor: {
+        ...editor,
+        // Preserve defaultMode if present (Phase 1 contract).
+        defaultMode: editor?.defaultMode ?? 'wysiwyg',
+        activePreset: nextPreset,
+        styles: nextStyles,
+      },
+    });
+  }
+
+  async function onPresetChange(id: string) {
+    if (!(id in JOURNAL_PRESETS)) return;
+    const preset = JOURNAL_PRESETS[id as JournalPresetId];
+    await applyPatch(cloneStyleSet(preset.styles), preset.id);
+  }
+
+  async function onSpecChange(entry: StyleEntryId, patch: Partial<StyleSpec>) {
+    const next: StyleSet = {
+      ...styles,
+      [entry]: { ...styles[entry], ...patch },
+    };
+    // Editing a single field detaches the StyleSet from the named preset.
+    await applyPatch(next, null);
+  }
+
+  async function onReset() {
+    const preset = JOURNAL_PRESETS[DEFAULT_PRESET_ID];
+    await applyPatch(cloneStyleSet(preset.styles), preset.id);
+  }
+
+  return (
+    <>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
+        {t('settings.styles.intro')}
+      </p>
+      <Field label={t('settings.styles.preset.label')}>
+        <div style={pathRowStyle}>
+          <select
+            value={activePreset ?? ''}
+            onChange={(e) => { void onPresetChange(e.target.value); }}
+            style={inputStyle}
+            data-testid="settings-styles-preset"
+          >
+            {activePreset === null && (
+              <option value="" disabled>
+                {t('settings.styles.preset.custom')}
+              </option>
+            )}
+            {PRESET_IDS.map((id) => (
+              <option key={id} value={id}>
+                {t(`settings.styles.preset.${JOURNAL_PRESETS[id].i18nKey}`)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => { void onReset(); }}
+            style={baseButton}
+            data-testid="settings-styles-reset"
+          >
+            {t('settings.styles.reset')}
+          </button>
+        </div>
+        <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--muted-fg, #6a6a6a)' }}>
+          {t('settings.styles.disclaimer')}
+        </p>
+      </Field>
+
+      {STYLE_ENTRIES.map((entry) => (
+        <StyleEntryRow
+          key={entry}
+          entry={entry}
+          spec={styles[entry]}
+          onChange={(patch) => { void onSpecChange(entry, patch); }}
+        />
+      ))}
+    </>
+  );
+}
+
+interface StyleEntryRowProps {
+  entry: StyleEntryId;
+  spec: StyleSpec;
+  onChange: (patch: Partial<StyleSpec>) => void;
+}
+
+function StyleEntryRow({ entry, spec, onChange }: StyleEntryRowProps) {
+  return (
+    <div
+      style={styleEntryStyle}
+      data-testid={`settings-styles-entry-${entry}`}
+    >
+      <div style={styleEntryHeaderStyle}>
+        <span style={fieldLabelStyle}>{t(`settings.styles.entry.${entry}`)}</span>
+      </div>
+      <div style={styleEntryGridStyle}>
+        <label style={styleEntryFieldStyle}>
+          <span style={styleEntrySublabelStyle}>{t('settings.styles.field.fontFamily')}</span>
+          <input
+            type="text"
+            value={spec.fontFamily}
+            onChange={(e) => onChange({ fontFamily: e.target.value })}
+            style={inputStyle}
+            data-testid={`settings-styles-${entry}-font`}
+          />
+        </label>
+        <label style={styleEntryFieldStyle}>
+          <span style={styleEntrySublabelStyle}>{t('settings.styles.field.fontSize')}</span>
+          <input
+            type="number"
+            min={8}
+            max={96}
+            step={1}
+            value={spec.fontSizePx}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n) && n > 0) onChange({ fontSizePx: n });
+            }}
+            style={inputStyle}
+            data-testid={`settings-styles-${entry}-size`}
+          />
+        </label>
+        <label style={styleEntryFieldStyle}>
+          <span style={styleEntrySublabelStyle}>{t('settings.styles.field.fontWeight')}</span>
+          <select
+            value={spec.fontWeight}
+            onChange={(e) => onChange({ fontWeight: Number(e.target.value) })}
+            style={inputStyle}
+            data-testid={`settings-styles-${entry}-weight`}
+          >
+            {FONT_WEIGHTS.map((w) => (
+              <option key={w.value} value={w.value}>{w.label}</option>
+            ))}
+          </select>
+        </label>
+        <label style={styleEntryFieldStyle}>
+          <span style={styleEntrySublabelStyle}>{t('settings.styles.field.lineHeight')}</span>
+          <input
+            type="number"
+            min={1}
+            max={4}
+            step={0.05}
+            value={spec.lineHeight}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n) && n > 0) onChange({ lineHeight: n });
+            }}
+            style={inputStyle}
+            data-testid={`settings-styles-${entry}-lh`}
+          />
+        </label>
+        <label style={{ ...styleEntryFieldStyle, gridColumn: '1 / -1' }}>
+          <span style={styleEntrySublabelStyle}>{t('settings.styles.field.color')}</span>
+          <div style={pathRowStyle}>
+            <input
+              type="color"
+              value={spec.color ?? '#000000'}
+              onChange={(e) => onChange({ color: e.target.value })}
+              data-testid={`settings-styles-${entry}-color`}
+              style={{ padding: 0, width: 36, height: 28, border: '1px solid var(--border, #c8c8c8)', background: 'transparent' }}
+            />
+            <button
+              type="button"
+              onClick={() => onChange({ color: null })}
+              style={baseButton}
+              data-testid={`settings-styles-${entry}-color-clear`}
+              disabled={spec.color === null}
+            >
+              {t('settings.styles.color.inherit')}
+            </button>
+          </div>
+        </label>
+      </div>
     </div>
   );
 }
@@ -1089,4 +1308,38 @@ const wordItemStyle: React.CSSProperties = {
   border: '1px solid var(--border, #c8c8c8)',
   background: 'var(--code-bg, #f5f5f5)',
   fontSize: 12,
+};
+
+const styleEntryStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  padding: '8px 10px',
+  border: '1px solid var(--border, #e2e2e2)',
+  borderRadius: 6,
+  background: 'var(--bg, #fff)',
+};
+
+const styleEntryHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+};
+
+const styleEntryGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: 8,
+};
+
+const styleEntryFieldStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 3,
+  minWidth: 0,
+};
+
+const styleEntrySublabelStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: 'var(--muted-fg, #6a6a6a)',
 };
