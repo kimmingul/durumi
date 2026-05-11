@@ -38,7 +38,13 @@ export const editModeField: StateField<EditMode> = StateField.define<EditMode>({
 });
 
 export function currentEditMode(state: EditorState): EditMode {
-  return state.field(editModeField, false) ?? 'wysiwyg';
+  // Field-not-registered fallback is `typora` so legacy decoration tests
+  // (which set up an EditorState without `editModeStateExtension`) keep
+  // asserting the v0.1.0-style active-line invariant — i.e. raw markers
+  // on the active line. Production always registers the field via
+  // `MarkdownEditor`, so the production initial value comes from the
+  // field's `create()` (`'wysiwyg'`), not from this fallback.
+  return state.field(editModeField, false) ?? 'typora';
 }
 
 export function isWysiwygMode(state: EditorState): boolean {

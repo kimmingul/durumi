@@ -2,6 +2,25 @@ import { Decoration, WidgetType } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import type { SyntaxNodeRef } from '@lezer/common';
 import { decorationPlugin } from './framework';
+import { isWysiwygMode } from '../editMode';
+import { shouldHideMarker } from './activeLine';
+
+/**
+ * Walk the `Link` node's children for a `URL` — i.e. the URL part of a
+ * real `[label](url)` inline link. Tentative shortcut links like
+ * `[Your Department]` parse as Link too but lack a URL child; in WYSIWYG
+ * mode we suppress the `cm-md-link` styling on those so the brackets and
+ * label render as plain literal text (matching the v0.1.12 strict-literal
+ * intent — only deliberate `[label](url)` constructs look like links).
+ */
+function linkHasUrl(node: SyntaxNodeRef): boolean {
+  let cur = node.node.firstChild;
+  while (cur) {
+    if (cur.name === 'URL') return true;
+    cur = cur.nextSibling;
+  }
+  return false;
+}
 
 /**
  * Renders Markdown link syntax in three flavors:
@@ -50,22 +69,30 @@ function findLabelBrackets(node: SyntaxNodeRef, doc: string): LinkBounds | null 
 export function linkDecoration(): Extension {
   return decorationPlugin({
     nodes: ['Link'],
-    visit(builder, { from, to, lineActive, doc, node }) {
+    visit(builder, { from, to, lineActive, doc, node, view }) {
       const bounds = findLabelBrackets(node, doc);
       if (!bounds) return;
       const { openBracket, closeBracket } = bounds;
       const textFrom = openBracket + 1;
       const textTo = closeBracket;
-      if (!lineActive) {
+      const hide = shouldHideMarker(view.state, lineActive);
+      if (hide) {
         if (openBracket > from) {
           builder.add(from, openBracket, Decoration.replace({ widget: new HiddenMarkerWidget() }));
         }
         builder.add(openBracket, textFrom, Decoration.replace({ widget: new HiddenMarkerWidget() }));
       }
       if (textTo > textFrom) {
-        builder.add(textFrom, textTo, Decoration.mark({ class: 'cm-md-link' }));
+        // v0.1.12 — suppress link styling in WYSIWYG mode unless this is
+        // a real `[label](url)`. Tentative shortcut `[Text]` constructs
+        // (no URL child) should look like plain literal text. Real
+        // inline links keep their Word-style colour + underline.
+        const wysiwyg = isWysiwygMode(view.state);
+        if (!wysiwyg || linkHasUrl(node)) {
+          builder.add(textFrom, textTo, Decoration.mark({ class: 'cm-md-link' }));
+        }
       }
-      if (!lineActive && to > closeBracket) {
+      if (hide && to > closeBracket) {
         builder.add(closeBracket, to, Decoration.replace({ widget: new HiddenMarkerWidget() }));
       }
     },

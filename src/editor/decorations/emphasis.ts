@@ -1,6 +1,7 @@
 import { Decoration, WidgetType } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { decorationPlugin } from './framework';
+import { shouldHideMarker } from './activeLine';
 
 class HiddenMarkerWidget extends WidgetType {
   toDOM() {
@@ -14,7 +15,7 @@ class HiddenMarkerWidget extends WidgetType {
 export function emphasisDecoration(): Extension {
   return decorationPlugin({
     nodes: ['StrongEmphasis', 'Emphasis'],
-    visit(builder, { from, to, nodeName, lineActive, doc }) {
+    visit(builder, { from, to, nodeName, lineActive, doc, view }) {
       const isBold = nodeName === 'StrongEmphasis';
       const className = isBold ? 'cm-md-bold' : 'cm-md-italic';
       const markerLen = isBold ? 2 : 1;
@@ -22,7 +23,7 @@ export function emphasisDecoration(): Extension {
       const tail = doc.slice(to - markerLen, to);
       const okHead = isBold ? (head === '**' || head === '__') : (head === '*' || head === '_');
       const okTail = isBold ? (tail === '**' || tail === '__') : (tail === '*' || tail === '_');
-      const shouldHide = !lineActive && okHead && okTail;
+      const shouldHide = shouldHideMarker(view.state, lineActive) && okHead && okTail;
       if (shouldHide) {
         builder.add(from, from + markerLen, Decoration.replace({ widget: new HiddenMarkerWidget() }));
       }

@@ -53,8 +53,8 @@ describe('editMode', () => {
     expect(currentEditMode(after)).toBe('markdown');
   });
 
-  it('currentEditMode falls back to wysiwyg when the field is absent', () => {
+  it('currentEditMode falls back to typora when the field is absent (legacy test compat)', () => {
     const bare = EditorState.create({ doc: 'no field' });
-    expect(currentEditMode(bare)).toBe('wysiwyg');
+    expect(currentEditMode(bare)).toBe('typora');
   });
 });

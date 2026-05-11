@@ -1,94 +1,28 @@
 import { app } from 'electron';
 import type { Preferences } from '@shared/ipc-contract';
+import { menuLabels } from '@shared/menuLabels';
 
 export type Lang = 'en' | 'ko';
 
 /**
- * Strings used by the Electron main process: native menu labels, and any
- * dialog strings raised from the main process (discard prompt, auto-update).
+ * Strings used by the Electron main process. Two groups:
  *
- * Keep this dict in sync with the renderer's `src/i18n/dict.ts` for shared
- * keys. We intentionally don't import the renderer dict — keeping main-process
- * code free of renderer imports avoids accidental DOM/React dependencies in
- * the bundled main script.
+ *   - `menu.*` — sourced from `@shared/menuLabels`, the single dictionary
+ *     shared with the renderer. Before v0.1.12 these lived in two copies
+ *     that drifted on every menu restructure (the v0.1.10 References /
+ *     AI Assist menus shipped with the renderer copy updated but the
+ *     main-process copy missing, so the native menu showed raw i18n keys).
+ *
+ *   - Main-process-only: context menu (right-click on the editor surface),
+ *     the discard / unsaved-changes dialog raised from the main process,
+ *     and the auto-updater notifications.
+ *
+ * Pure-data module — no React, no DOM. Safe to bundle into main.
  */
 const dict: Record<Lang, Record<string, string>> = {
   en: {
-    // App menu
-    'menu.file': 'File',
-    'menu.file.new': 'New',
-    'menu.file.newWindow': 'New Window',
-    'menu.file.open': 'Open…',
-    'menu.file.openFolder': 'Open Folder…',
-    'menu.file.closeFolder': 'Close Folder',
-    'menu.file.noFoldersOpen': 'No folders open',
-    'menu.file.openRecent': 'Open Recent',
-    'menu.file.noRecent': 'No recent files',
-    'menu.file.save': 'Save',
-    'menu.file.saveAs': 'Save As…',
-    'menu.file.export': 'Export',
-    'menu.file.exportHtml': 'HTML…',
-    'menu.file.exportPdf': 'PDF…',
-    'menu.file.exportDocx': 'Word (.docx)…',
-    'menu.file.exportLatex': 'LaTeX (.tex)…',
-    'menu.file.newFromTemplate': 'New from Template',
-    'menu.file.import': 'Import',
-    'menu.file.importDocx': 'Word (.docx)…',
-    'menu.file.quickOpen': 'Quick Open…',
-    'menu.file.closeWindow': 'Close Window',
-    'menu.app.settings': 'Settings…',
-    'menu.file.settings': 'Settings…',
-    'menu.edit': 'Edit',
-    'menu.edit.find': 'Find',
-    'menu.edit.findAndReplace': 'Find and Replace',
-    'menu.edit.findNext': 'Find Next',
-    'menu.edit.findPrev': 'Find Previous',
-    'menu.edit.bold': 'Bold',
-    'menu.edit.italic': 'Italic',
-    'menu.edit.inlineCode': 'Inline Code',
-    'menu.edit.insertLink': 'Insert Link',
-    'menu.edit.heading': 'Heading',
-    'menu.edit.strikethrough': 'Strikethrough',
-    'menu.edit.insertTable': 'Insert Table',
-    'menu.edit.toggleTask': 'Toggle Task Marker',
-    'menu.edit.codeBlock': 'Code Block',
-    'menu.edit.openMacrosConfig': 'Open Macros Config…',
-    'menu.edit.resetMacrosDefaults': 'Reset Macros to Medical Defaults',
-    'menu.view': 'View',
-    'menu.view.toggleTheme': 'Toggle Theme',
-    'menu.view.toggleSourceMode': 'Toggle Source Mode',
-    'menu.view.toggleSidebar': 'Toggle Sidebar',
-    'menu.view.showFiles': 'Show Files',
-    'menu.view.showOutline': 'Show Outline',
-    'menu.view.showSearch': 'Find in Files',
-    'menu.view.focusMode': 'Focus Mode',
-    'menu.view.typewriterMode': 'Typewriter Mode',
-    'menu.view.openCustomCss': 'Open Custom CSS…',
-    'menu.view.language': 'Language',
-    'menu.view.language.system': 'System',
-    'menu.view.language.en': 'English',
-    'menu.view.language.ko': '한국어',
-    'menu.view.toggleMemoPanel': 'Toggle Memo Panel',
-    'menu.review': 'Review',
-    'menu.review.addMemo': 'Add memo',
-    'menu.review.toggleMemoPanel': 'Toggle memo panel',
-    'menu.review.changes': 'Track changes',
-    'menu.review.cm.insert': 'Mark as insertion',
-    'menu.review.cm.delete': 'Mark as deletion',
-    'menu.review.cm.substitute': 'Mark as substitution',
-    'menu.review.cm.highlight': 'Mark as highlight',
-    'menu.review.cm.comment': 'Add reviewer comment',
-    'menu.review.showMemos': 'Show Memos tab',
-    'menu.review.showChanges': 'Show Changes tab',
-    'menu.review.nextMemo': 'Next memo',
-    'menu.review.prevMemo': 'Previous memo',
-    'menu.review.exportIncludeComments': 'Include memos in export',
-    'menu.review.exportPreserveAnnotations': 'Include track changes in export',
-    'menu.help': 'Help',
-    'menu.help.about': 'About Durumi',
-    'menu.help.aboutDetail': 'Durumi — a paper crane for medical research.',
-    'menu.help.checkForUpdates': 'Check for Updates…',
-    'menu.help.openGitHub': 'Open GitHub',
+    ...menuLabels.en,
+
     // Editor right-click context menu
     'context.cut': 'Cut',
     'context.copy': 'Copy',
@@ -125,81 +59,8 @@ const dict: Record<Lang, Record<string, string>> = {
     'updates.btn.restart': 'Restart now',
   },
   ko: {
-    'menu.file': '파일',
-    'menu.file.new': '새 파일',
-    'menu.file.newWindow': '새 창',
-    'menu.file.open': '열기…',
-    'menu.file.openFolder': '폴더 열기…',
-    'menu.file.closeFolder': '폴더 닫기',
-    'menu.file.noFoldersOpen': '열린 폴더 없음',
-    'menu.file.openRecent': '최근 파일',
-    'menu.file.noRecent': '최근 파일 없음',
-    'menu.file.save': '저장',
-    'menu.file.saveAs': '다른 이름으로 저장…',
-    'menu.file.export': '내보내기',
-    'menu.file.exportHtml': 'HTML…',
-    'menu.file.exportPdf': 'PDF…',
-    'menu.file.exportDocx': 'Word (.docx)…',
-    'menu.file.exportLatex': 'LaTeX (.tex)…',
-    'menu.file.newFromTemplate': '템플릿으로 새로 만들기',
-    'menu.file.import': '가져오기',
-    'menu.file.importDocx': 'Word (.docx)…',
-    'menu.file.quickOpen': '빠르게 열기…',
-    'menu.file.closeWindow': '창 닫기',
-    'menu.app.settings': '설정…',
-    'menu.file.settings': '설정…',
-    'menu.edit': '편집',
-    'menu.edit.find': '찾기',
-    'menu.edit.findAndReplace': '찾아 바꾸기',
-    'menu.edit.findNext': '다음 찾기',
-    'menu.edit.findPrev': '이전 찾기',
-    'menu.edit.bold': '굵게',
-    'menu.edit.italic': '기울임',
-    'menu.edit.inlineCode': '인라인 코드',
-    'menu.edit.insertLink': '링크 삽입',
-    'menu.edit.heading': '제목',
-    'menu.edit.strikethrough': '취소선',
-    'menu.edit.insertTable': '표 삽입',
-    'menu.edit.toggleTask': '할 일 표시 전환',
-    'menu.edit.codeBlock': '코드 블록',
-    'menu.edit.openMacrosConfig': '매크로 설정 열기…',
-    'menu.edit.resetMacrosDefaults': '매크로를 의학연구 기본값으로 초기화',
-    'menu.view': '보기',
-    'menu.view.toggleTheme': '테마 전환',
-    'menu.view.toggleSourceMode': '소스 모드 전환',
-    'menu.view.toggleSidebar': '사이드바 전환',
-    'menu.view.showFiles': '파일 보기',
-    'menu.view.showOutline': '목차 보기',
-    'menu.view.showSearch': '파일에서 찾기',
-    'menu.view.focusMode': '포커스 모드',
-    'menu.view.typewriterMode': '타자기 모드',
-    'menu.view.openCustomCss': '사용자 CSS 열기…',
-    'menu.view.language': '언어',
-    'menu.view.language.system': '시스템',
-    'menu.view.language.en': 'English',
-    'menu.view.language.ko': '한국어',
-    'menu.view.toggleMemoPanel': '메모 패널 전환',
-    'menu.review': '검토',
-    'menu.review.addMemo': '메모 추가',
-    'menu.review.toggleMemoPanel': '메모 패널 표시/숨기기',
-    'menu.review.changes': '변경 추적',
-    'menu.review.cm.insert': '삽입 표시',
-    'menu.review.cm.delete': '삭제 표시',
-    'menu.review.cm.substitute': '치환 표시',
-    'menu.review.cm.highlight': '강조 표시',
-    'menu.review.cm.comment': '주석 표시',
-    'menu.review.showMemos': '메모 탭 보이기',
-    'menu.review.showChanges': '변경 탭 보이기',
-    'menu.review.nextMemo': '다음 메모로 이동',
-    'menu.review.prevMemo': '이전 메모로 이동',
-    'menu.review.exportIncludeComments': '내보내기에 메모 포함',
-    'menu.review.exportPreserveAnnotations': '내보내기에 변경 표시 포함',
-    'menu.help': '도움말',
-    'menu.help.about': 'Durumi 정보',
-    'menu.help.aboutDetail': '두루미 — 의학 연구를 위한 종이학.',
-    'menu.help.checkForUpdates': '업데이트 확인…',
-    'menu.help.openGitHub': 'GitHub 열기',
-    // Editor right-click context menu
+    ...menuLabels.ko,
+
     'context.cut': '잘라내기',
     'context.copy': '복사',
     'context.paste': '붙여넣기',
@@ -244,21 +105,8 @@ export function resolveLang(pref: Preferences['language']): Lang {
   return app.getLocale().toLowerCase().startsWith('ko') ? 'ko' : 'en';
 }
 
-/**
- * Look up `key` in the requested language. Falls back to English then to
- * the raw key, mirroring the renderer's `t()`. Substitutes `{name}`-style
- * placeholders from `vars`.
- */
-export function t(
-  key: string,
-  lang: Lang,
-  vars?: Record<string, string>,
-): string {
-  let s = dict[lang][key] ?? dict.en[key] ?? key;
-  if (vars) {
-    for (const k of Object.keys(vars)) {
-      s = s.split(`{${k}}`).join(vars[k]!);
-    }
-  }
-  return s;
+export function t(key: string, lang: Lang, vars?: Record<string, string>): string {
+  const raw = dict[lang][key] ?? dict.en[key] ?? key;
+  if (!vars) return raw;
+  return raw.replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? `{${name}}`);
 }

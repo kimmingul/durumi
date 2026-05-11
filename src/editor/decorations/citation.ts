@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { hasActiveLine, userActiveField } from './activeLine';
+import { isWysiwygMode } from '../editMode';
 
 /**
  * Renders citation spans as compact superscript markers when the caret is not
@@ -80,7 +81,7 @@ function buildDecorations(state: EditorState): DecorationSet {
       ns.push(String(n));
     }
     const cursorTouches = active && sel.from <= span.to && sel.to >= span.from;
-    if (cursorTouches) continue;
+    if (cursorTouches && !isWysiwygMode(state)) continue;
     decos.push(Decoration.replace({ widget: new CitationWidget(ns) }).range(span.from, span.to));
   }
   return Decoration.set(decos, true);

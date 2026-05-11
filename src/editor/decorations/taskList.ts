@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
 import { Extension, RangeSetBuilder } from '@codemirror/state';
 import { getActiveLineRange } from './activeLine';
+import { isWysiwygMode } from '../editMode';
 
 class CheckboxWidget extends WidgetType {
   constructor(readonly checked: boolean, readonly from: number, readonly to: number) {
@@ -47,6 +48,7 @@ export function taskListDecoration(): Extension {
 function build(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const active = getActiveLineRange(view.state);
+  const wysiwyg = isWysiwygMode(view.state);
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(view.state).iterate({
       from,
@@ -58,7 +60,7 @@ function build(view: EditorView): DecorationSet {
         const lineStart = view.state.doc.lineAt(node.from).from;
         const lineEnd = view.state.doc.lineAt(node.to).to;
         const lineActive = !(lineEnd < active.from || lineStart > active.to);
-        if (lineActive) return;
+        if (!wysiwyg && lineActive) return;
         const checked = text === '[x]';
         builder.add(
           node.from,

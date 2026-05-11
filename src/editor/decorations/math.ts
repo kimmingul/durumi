@@ -2,6 +2,7 @@ import katex from 'katex';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
 import { EditorState, Extension, RangeSetBuilder, StateField } from '@codemirror/state';
 import { scanBlockMath, scanInlineMath, type BlockMathRange, type InlineMathRange } from '../math/scan';
+import { isWysiwygMode } from '../editMode';
 
 /**
  * Inline math widget. Renders `$tex$` as a `<span>` containing KaTeX HTML.
@@ -68,9 +69,10 @@ function buildInlineDecorations(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const blocks = scanBlockMath(state);
   const inlines = scanInlineMath(state, blocks);
+  const wysiwyg = isWysiwygMode(state);
   // matchAll yields matches in document order, so `from` is non-decreasing.
   for (const m of inlines) {
-    if (inlineOverlapsActiveLine(state, m)) continue;
+    if (!wysiwyg && inlineOverlapsActiveLine(state, m)) continue;
     builder.add(
       m.from,
       m.to,
@@ -105,8 +107,9 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
   const blocks = scanBlockMath(state);
   // Sort defensively (matchAll already returns document order).
   blocks.sort((a, b) => a.from - b.from);
+  const wysiwyg = isWysiwygMode(state);
   for (const b of blocks) {
-    if (blockContainsCursor(state, b)) continue;
+    if (!wysiwyg && blockContainsCursor(state, b)) continue;
     builder.add(
       b.from,
       b.to,

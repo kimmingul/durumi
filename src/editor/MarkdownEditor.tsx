@@ -29,7 +29,7 @@ import { citationHoverTooltip } from './decorations/citationHover';
 import { defaultGhostTextRefs, ghostTextExtension } from './ai/ghostText';
 import type { Macro } from '@shared/ipc-contract';
 import { EditMode, editModeStateExtension, setEditMode } from './editMode';
-import { wysiwygMarkerHider, wysiwygMarkerTheme } from './decorations/wysiwygMarkers';
+import { wysiwygEscapeFilter } from './wysiwygEscape';
 
 export interface MarkdownEditorProps {
   value: string;
@@ -93,8 +93,7 @@ export function MarkdownEditor({
         }),
         editModeStateExtension(),
         editModeCompartmentRef.current.of(decorationsForMode(initialEditModeRef.current)),
-        wysiwygMarkerHider(),
-        wysiwygMarkerTheme,
+        wysiwygEscapeFilter(),
         citationAutocomplete(),
         citationHoverTooltip(),
         ghostTextExtension({ refs: defaultGhostTextRefs }),

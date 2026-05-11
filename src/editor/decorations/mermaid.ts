@@ -27,6 +27,7 @@ import {
 } from '@codemirror/view';
 import { EditorState, Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { getCachedSvg, isInflight, requestRender } from '../mermaid/renderer';
+import { isWysiwygMode } from '../editMode';
 
 export interface MermaidFence {
   /** Outer block range — covers opening ``` line through closing ``` line. */
@@ -96,10 +97,11 @@ function build(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const head = state.selection.main.head;
   const fences = findMermaidFences(state);
+  const wysiwyg = isWysiwygMode(state);
   for (const f of fences) {
-    // Active-block guard: cursor anywhere inside the fence (including the
-    // opening/closing ``` lines) means show raw source — no decoration.
-    if (head >= f.from && head <= f.to) continue;
+    // Active-block guard (Typora only): cursor anywhere inside the fence
+    // means show raw source. WYSIWYG always renders the diagram.
+    if (!wysiwyg && head >= f.from && head <= f.to) continue;
     const svg = getCachedSvg(f.body);
     builder.add(
       f.from,

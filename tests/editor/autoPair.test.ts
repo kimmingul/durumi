@@ -2,16 +2,26 @@ import { describe, it, expect } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { autoPair } from '../../src/editor/keymap/autoPair';
+import {
+  editModeStateExtension,
+  setEditMode,
+  type EditMode,
+} from '../../src/editor/editMode';
 
-function setup(doc: string, anchor: number, head?: number): EditorView {
+function setup(doc: string, anchor: number, head?: number, mode: EditMode = 'typora'): EditorView {
   const state = EditorState.create({
     doc,
     selection: { anchor, head: head ?? anchor },
-    extensions: [autoPair()],
+    extensions: [editModeStateExtension(), autoPair()],
   });
   const parent = document.createElement('div');
   document.body.appendChild(parent);
-  return new EditorView({ state, parent });
+  const view = new EditorView({ state, parent });
+  // v0.1.12 — autoPair now consults `currentEditMode`. Legacy tests use
+  // Typora mode by default to assert the prior wrap behaviour; WYSIWYG-mode
+  // bail is covered by the dedicated cases at the bottom of the file.
+  view.dispatch({ effects: setEditMode.of(mode) });
+  return view;
 }
 
 function type(view: EditorView, ch: string): void {
@@ -59,6 +69,29 @@ describe('autoPair', () => {
   it('still auto-closes [, {, ", and `', () => {
     for (const [open, close] of [['[', ']'], ['{', '}'], ['"', '"'], ['`', '`']] as const) {
       const view = setup('', 0);
+      type(view, open);
+      expect(view.state.doc.toString()).toBe(open + close);
+      view.destroy();
+    }
+  });
+
+  // v0.1.12 — WYSIWYG-mode interactions: markdown markers must NOT auto-pair
+  // (the wysiwygEscape filter escapes them instead). Non-markdown pairs
+  // (`(`, `{`, `"`, `'`) keep working.
+  it('skips markdown marker auto-pairing in WYSIWYG mode', () => {
+    for (const ch of ['*', '_', '`', '[', '~', '=']) {
+      const view = setup('', 0, undefined, 'wysiwyg');
+      type(view, ch);
+      // The character lands as a single char — escape filter is NOT loaded
+      // in this test, so we just observe that autoPair didn't add a closer.
+      expect(view.state.doc.toString()).toBe(ch);
+      view.destroy();
+    }
+  });
+
+  it('still auto-pairs non-markdown brackets/quotes in WYSIWYG mode', () => {
+    for (const [open, close] of [['(', ')'], ['{', '}'], ['"', '"'], ["'", "'"]] as const) {
+      const view = setup('', 0, undefined, 'wysiwyg');
       type(view, open);
       expect(view.state.doc.toString()).toBe(open + close);
       view.destroy();

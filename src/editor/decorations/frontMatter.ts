@@ -3,6 +3,7 @@ import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { parseFrontMatter, frontMatterString } from '../../../shared/frontMatter';
 import { hasActiveLine, userActiveField } from './activeLine';
+import { isWysiwygMode } from '../editMode';
 
 class FrontMatterSummaryWidget extends WidgetType {
   constructor(private readonly summary: string) {
@@ -48,7 +49,11 @@ function buildDecorations(state: EditorState): DecorationSet {
       const from = node.from;
       const lineEnd = state.doc.lineAt(node.to).to;
       const sel = state.selection.main;
-      const inside = hasActiveLine(state) && sel.from <= lineEnd && sel.to >= from;
+      const inside =
+        !isWysiwygMode(state) &&
+        hasActiveLine(state) &&
+        sel.from <= lineEnd &&
+        sel.to >= from;
       if (inside) {
         const startLine = state.doc.lineAt(from).number;
         const endLine = state.doc.lineAt(lineEnd).number;

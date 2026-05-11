@@ -1,4 +1,5 @@
 import { EditorSelection, EditorState, Extension } from '@codemirror/state';
+import { currentEditMode } from '../editMode';
 
 const PAIRS_FULL: Record<string, string> = {
   '(': ')',
@@ -25,6 +26,17 @@ const WRAP_ONLY: Record<string, string> = {
 const ALL_KEYS = new Set([...Object.keys(PAIRS_FULL), ...Object.keys(WRAP_ONLY)]);
 
 /**
+ * v0.1.12 — in WYSIWYG mode, the WYSIWYG escape filter escapes user-typed
+ * markdown markers character-by-character. We must NOT let autoPair
+ * pre-empt those keys (otherwise `*` would auto-wrap as `**|**` and the
+ * escape filter would see no plain insertion to handle). Generic
+ * non-markdown pairs (`(`, `{`, `<`, `"`, `'`) keep working.
+ */
+const MARKDOWN_PAIR_KEYS: ReadonlySet<string> = new Set([
+  '*', '_', '`', '[', '~', '=', '^', '$',
+]);
+
+/**
  * Wraps selected text in markdown pairs, and inserts closing pairs for
  * conventional pairs (brackets, quotes, asterisks, underscores, backticks).
  *
@@ -35,6 +47,7 @@ export function autoPair(): Extension {
   return EditorState.transactionFilter.of((tr) => {
     if (!tr.isUserEvent('input.type') && !tr.isUserEvent('input')) return tr;
     if (tr.changes.empty) return tr;
+    const wysiwyg = currentEditMode(tr.startState) === 'wysiwyg';
 
     interface Insertion {
       from: number;
@@ -55,6 +68,12 @@ export function autoPair(): Extension {
         return;
       }
       if (!ALL_KEYS.has(text)) {
+        bail = true;
+        return;
+      }
+      // In WYSIWYG mode, let markdown markers flow through to the escape
+      // filter unmodified so they get backslash-escaped instead of paired.
+      if (wysiwyg && MARKDOWN_PAIR_KEYS.has(text)) {
         bail = true;
         return;
       }

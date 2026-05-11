@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { hasActiveLine, userActiveField } from './activeLine';
+import { isWysiwygMode } from '../editMode';
 
 /**
  * Renders footnote references and definitions in live preview:
@@ -83,11 +84,12 @@ function buildDecorations(state: EditorState): DecorationSet {
   const decos: Range<Decoration>[] = [];
   const sel = state.selection.main;
   const active = hasActiveLine(state);
+  const wysiwyg = isWysiwygMode(state);
   const { refs, defs } = collectFootnotes(state);
 
   for (const ref of refs) {
     const cursorTouches = active && sel.from <= ref.to && sel.to >= ref.from;
-    if (cursorTouches) continue;
+    if (cursorTouches && !wysiwyg) continue;
     decos.push(
       Decoration.replace({
         widget: new FootnoteRefWidget(ref.label),
@@ -99,7 +101,7 @@ function buildDecorations(state: EditorState): DecorationSet {
     const startLine = state.doc.lineAt(def.from);
     decos.push(Decoration.line({ class: 'cm-md-footnote-def-line' }).range(startLine.from));
     const cursorOnLine = active && sel.from >= startLine.from && sel.from <= startLine.to;
-    if (!cursorOnLine) {
+    if (!cursorOnLine || wysiwyg) {
       // Hide the [^id]: prefix; show only " text…"
       const colonEnd = def.labelTo + 2; // `]:` after label
       decos.push(

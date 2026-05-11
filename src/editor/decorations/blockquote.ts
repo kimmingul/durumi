@@ -1,7 +1,7 @@
 import { Decoration } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { decorationPlugin } from './framework';
-import { getActiveLineRange, hasActiveLine } from './activeLine';
+import { getActiveLineRange, hasActiveLine, shouldHideMarker } from './activeLine';
 import { HiddenMarkerWidget } from './heading';
 
 /**
@@ -28,13 +28,14 @@ export function blockquoteDecoration(): Extension {
       const end = state.doc.lineAt(to).number;
       // The framework's `lineActive` flag is computed for the whole node range
       // (entire Blockquote block), so we can't trust it for per-line decisions
-      // about marker visibility. Re-derive per line.
+      // about marker visibility. Re-derive per line — and route through
+      // `shouldHideMarker` so WYSIWYG mode hides on every line uniformly.
       const userActive = hasActiveLine(state);
       const activeLineNumber = userActive ? getActiveLineRange(state).number : -1;
       for (let n = start; n <= end; n++) {
         const line = state.doc.line(n);
         builder.add(line.from, line.from, Decoration.line({ class: 'cm-md-blockquote' }));
-        if (n === activeLineNumber) continue;
+        if (!shouldHideMarker(state, n === activeLineNumber)) continue;
         const match = BLOCKQUOTE_MARKER_RE.exec(line.text);
         if (!match) continue;
         const replaceFrom = line.from + match[1].length;

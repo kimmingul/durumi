@@ -1,9 +1,37 @@
 import { StateField, Transaction, type EditorState, type Extension } from '@codemirror/state';
+import { currentEditMode } from '../editMode';
 
 export interface ActiveLineRange {
   from: number;
   to: number;
   number: number;
+}
+
+/**
+ * Decision helper for marker-hiding decoration plugins (emphasis, heading,
+ * link, html-inline, list, blockquote, inlineCode, strikethrough, escape,
+ * etc.). Returns `true` when the plugin should hide its markdown markers
+ * for the given range.
+ *
+ * In Typora mode (and Markdown mode where decorations are off anyway) the
+ * historical rule is: hide on inactive lines, show on the active line so
+ * the user can edit raw markers. Hence `!lineActive`.
+ *
+ * In WYSIWYG mode the user wants a uniform Word-like rendering regardless
+ * of whether the caret is on the line — so we hide markers on ALL lines.
+ * The v0.1.0 active-line invariant about `Decoration.replace` was about
+ * IME composition safety, and it only matters for content-bearing widgets
+ * (image / math / mermaid / table / taskList / horizontalRule / etc.).
+ * Pure marker-hiding widgets (empty `cm-md-marker-hidden` spans) don't
+ * disrupt composition because users don't compose into punctuation chars.
+ *
+ * Block-widget plugins should NOT use this helper — they should keep
+ * their own `if (lineActive) return` guard so the user can still see and
+ * edit the underlying source when the caret lands on the widget.
+ */
+export function shouldHideMarker(state: EditorState, lineActive: boolean): boolean {
+  if (currentEditMode(state) === 'wysiwyg') return true;
+  return !lineActive;
 }
 
 export function getActiveLineRange(state: EditorState): ActiveLineRange {

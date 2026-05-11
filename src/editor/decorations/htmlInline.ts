@@ -1,7 +1,7 @@
 import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
-import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
+import { getActiveLineRange, hasActiveLine, shouldHideMarker, userActiveField } from './activeLine';
 
 /**
  * Renders raw inline HTML tags that have an obvious visual semantic
@@ -80,13 +80,14 @@ function buildDecorations(state: EditorState): DecorationSet {
     if (open.to > close.from) continue;
     const cls = `cm-md-html-${open.name}`;
     const active = rangeTouchesActiveLine(state, open.from, close.to);
-    if (!active) {
+    const hide = shouldHideMarker(state, active);
+    if (hide) {
       ranges.push(Decoration.replace({ widget: new HiddenWidget() }).range(open.from, open.to));
     }
     if (open.to < close.from) {
       ranges.push(Decoration.mark({ class: cls }).range(open.to, close.from));
     }
-    if (!active) {
+    if (hide) {
       ranges.push(Decoration.replace({ widget: new HiddenWidget() }).range(close.from, close.to));
     }
   }

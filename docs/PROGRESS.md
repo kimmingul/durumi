@@ -1,6 +1,131 @@
 # Durumi — Progress
 
-## v0.1.11 (current) — Three-mode editor
+## v0.1.12 (current) — WYSIWYG strict-literal mode
+
+A direct fix for a real surprise in v0.1.11: typing `#` in WYSIWYG mode
+was still triggering markdown heading parsing, so the line jumped to a
+giant H1 even though "WYSIWYG" promises Word-like literal characters.
+v0.1.12 makes WYSIWYG mean what it says.
+
+### The escape filter
+
+A new `transactionFilter` (`src/editor/wysiwygEscape.ts`) intercepts
+user-typed single characters in WYSIWYG mode and rewrites markdown
+markers with a backslash escape:
+
+| User types | Storage | Display |
+|:--|:--|:--|
+| `#`, `>`, `<`, `*`, `_`, `` ` ``, `[`, `]`, `~` | `\#`, `\>`, `\<`, `\*`, … | `#`, `>`, `<`, `*`, … |
+| `-`, `+` at line start | `\-`, `\+` | `-`, `+` |
+| `.` after digits at line start (`1.`, `12.`, …) | `1\.`, `12\.` | `1.`, `12.` |
+| Anything else | unchanged | unchanged |
+
+A companion `wysiwygEscapeHider` ViewPlugin scans the visible viewport
+(not just the active line) and hides every leading `\` in an escape
+sequence via `Decoration.mark` + `display: none`. The user sees clean
+`#`, `*`, `[`, … even on lines they're not editing. Source files
+round-trip through the markdown parser as literal characters — no
+heading, no emphasis, no list, no link, and no raw HTML for the typed
+`<sup>` / `<sub>` cases.
+
+### Active-line invariant relaxed — uniform rendering
+
+v0.1.0 invariant #1 ("커서 줄에 `Decoration.replace` 금지") was originally
+a blanket rule for IME composition safety. v0.1.12 narrows it to a
+**Typora-only** rule: in Typora mode the active line keeps the legacy
+"show raw markers / source" behaviour. In **WYSIWYG mode every plugin
+renders on the active line too** — both inline marker hiders (empty
+`cm-md-marker-hidden` widgets) and content widgets (HR, image, math,
+mermaid, table, taskList, frontMatter, citation pill, footnote pill).
+CodeMirror 6's composition handling (automatic bailout on widget
+boundaries) is trusted; if a specific widget surfaces an IME issue in
+practice, it can be migrated to `mark + display:none + side widget`
+later.
+
+So every marker-hiding decoration plugin (emphasis, heading, link,
+inlineCode, strikethrough, blockquote, htmlInline, escape, autolink,
+lineBreak) gets a `shouldHideMarker(state, lineActive)` helper:
+
+    Typora:   hide on inactive lines only (`!lineActive`)
+    WYSIWYG:  hide on every line, including the active one
+    Markdown: decorations are off via the Compartment
+
+The result: in WYSIWYG mode a line like `**Authors:** [Your Name]<sup>1</sup>`
+renders as `Authors: Your Name1` whether or not the caret is on it —
+the same Word-like appearance regardless of active-line state. Each
+plugin owns its own marker; no second "patch hider" trying to mimic
+what the plugins already do.
+
+URL nodes only get hidden when their parent is a `Link` node — i.e.
+they're the URL part of `[label](url)`. Standalone `URL` nodes that
+Lezer emits for autolinks (plain emails like `mgkim@jbnu.ac.kr`, bare
+`<https://example.com>`) stay visible: hiding an autolink would erase
+the address from the user's view. `link.ts` also suppresses the
+`cm-md-link` colour-and-underline styling in WYSIWYG mode for tentative
+shortcut `[Text]` constructs (no URL child); real `[label](url)` inline
+links keep the styling.
+
+List markers (`1.`, `-`, `*`, `+`) stay visible in every mode — that's
+the visual rendering of a list. `list.ts` only adds a `cm-md-list-item`
+line class for indentation. WYSIWYG agrees with Typora here.
+
+### What still produces formatting in WYSIWYG
+
+- Toolbar buttons (Bold, Italic, Style dropdown → H1, …) — dispatched
+  programmatically without `userEvent: 'input.type'`, so the filter
+  bypasses them and the inserted `**`, `# `, `[@key]`, etc. land
+  unescaped.
+- Keyboard shortcuts that wire to the same helpers (`Cmd+B`, `Cmd+1`,
+  `Cmd+Shift+I`, …) — same path, same result.
+- Existing markdown content in opened files — only *new typing* is
+  escaped; loaded docs are untouched.
+- Paste — content is preserved as markdown, not escaped.
+
+### Citation autocomplete behaviour change
+
+`[@key]` autocomplete is *disabled in WYSIWYG mode*. The user must use
+the toolbar Citation button (or `Cmd+Shift+I` cite palette). Typora and
+Markdown modes keep the `[@` autocomplete trigger.
+
+### autoPair coordination
+
+`autoPair` now consults `currentEditMode`. In WYSIWYG, the markdown
+marker keys (`*`, `_`, `` ` ``, `[`, `~`, `=`, `^`, `$`) bail out of
+autopairing so the escape filter sees a clean single-character insertion.
+Generic non-markdown pairs (`(`, `{`, `<`, `"`, `'`) keep working.
+
+### Style dropdown unescape
+
+`setHeading` and `clearHeading` now recognise both the raw `#` prefix
+and the WYSIWYG-escaped `\#` prefix. So toggling H1 → Body → H1 on a
+typed-then-escaped heading line cleans up correctly.
+
+### Architecture invariant #6 reinforced
+
+The original invariant "WYSIWYG marker hide is `Decoration.mark` +
+CSS `display:none` only" is preserved. The new escape filter is purely
+a transaction-level rewrite — no decorations, no DOM manipulation.
+IME composition is unaffected (composition transactions use
+`input.compose`, not `input.type`, so the filter doesn't touch them).
+
+### Quality gates
+
+- 1248 vitest tests across 144 files (1210 v0.1.11 baseline + 17 escape
+  filter cases + 3 escape-input integration cases + 7 autoPair + escape
+  integration + 9 Lezer tree assertions + 10 plugin-level WYSIWYG render
+  cases proving each marker-hiding plugin honours the relaxed invariant
+  on the active line + the autoPair WYSIWYG guard cases).
+- typecheck / lint / build clean.
+
+### Docs
+
+`docs/editor-modes.md` updated with the new escape table, FAQ entries
+on `[@` autocomplete and `Cmd+B` workflow, and a clear restatement that
+toolbar/shortcuts are the canonical formatting paths in WYSIWYG.
+
+---
+
+## v0.1.11 — Three-mode editor
 
 The editor learns to wear three faces. WYSIWYG is the new default for
 medical-manuscript drafting; Typora-style is preserved for v0.1.0-v0.1.10

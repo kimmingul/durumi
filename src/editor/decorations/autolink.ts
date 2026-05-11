@@ -2,6 +2,7 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import type { SyntaxNodeRef } from '@lezer/common';
 import { decorationPlugin } from './framework';
+import { shouldHideMarker } from './activeLine';
 
 /**
  * Renders three URL-bearing constructs the editor previously left as raw text:
@@ -30,7 +31,7 @@ function isWrappedUrl(node: SyntaxNodeRef): boolean {
 export function autolinkDecoration(): Extension {
   return decorationPlugin({
     nodes: ['Autolink', 'URL'],
-    visit(builder, { from, to, lineActive, nodeName, node }) {
+    visit(builder, { from, to, lineActive, nodeName, node, view }) {
       if (nodeName === 'URL') {
         // Only top-level (linkified bare) URLs — children of Autolink/Link/etc.
         // are decorated by the parent's visitor.
@@ -42,13 +43,14 @@ export function autolinkDecoration(): Extension {
       const open = from;       // position of `<`
       const close = to - 1;    // position of `>`
       const inner = { from: open + 1, to: close };
-      if (!lineActive) {
+      const hide = shouldHideMarker(view.state, lineActive);
+      if (hide) {
         builder.add(open, inner.from, Decoration.replace({ widget: new HiddenMarkerWidget() }));
       }
       if (inner.to > inner.from) {
         builder.add(inner.from, inner.to, Decoration.mark({ class: 'cm-md-autolink' }));
       }
-      if (!lineActive) {
+      if (hide) {
         builder.add(inner.to, to, Decoration.replace({ widget: new HiddenMarkerWidget() }));
       }
     },

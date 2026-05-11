@@ -1,6 +1,7 @@
 import { Decoration, WidgetType } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { decorationPlugin } from './framework';
+import { shouldHideMarker } from './activeLine';
 
 const HEADING_NODES = [
   'ATXHeading1', 'ATXHeading2', 'ATXHeading3',
@@ -27,15 +28,15 @@ export class HiddenMarkerWidget extends WidgetType {
 export function headingDecoration(): Extension {
   return decorationPlugin({
     nodes: HEADING_NODES,
-    visit(builder, { from, to, nodeName, lineActive, doc }) {
+    visit(builder, { from, to, nodeName, lineActive, doc, view }) {
       const level = LEVEL[nodeName] ?? 1;
       // Setext markers live on a separate line (`===` / `---` underneath) and
       // shouldn't be replaced — leave them visible. ATX still hides the
-      // leading `# ` when the line is inactive.
+      // leading `# ` when the line is inactive (or always in WYSIWYG mode).
       if (nodeName.startsWith('ATX')) {
         const markerLen = level + 1;
         const head = doc.slice(from, from + markerLen);
-        const shouldHide = !lineActive && /^#+ $/.test(head);
+        const shouldHide = shouldHideMarker(view.state, lineActive) && /^#+ $/.test(head);
         if (shouldHide) {
           builder.add(
             from,

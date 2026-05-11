@@ -4,13 +4,46 @@
 
 A cross-platform markdown editor (macOS + Windows 11) that grows from a Typora-style live-preview editor into an end-to-end manuscript studio for medical researchers. The crane (학, 鶴) is also a homophone for *learning* (學) — the brand carries the dual meaning of scholarship and the origami crane folded for someone's healing.
 
-**Current version: v0.1.8.3.** Typora-parity foundation complete; medical-research features now include live reference search (Crossref / PubMed / KoreaMed / ORCID), a local PDF / MD reference library that mirrors `references.bib`, AI-assisted writing (selection rewrites, citation suggestions, inline ghost-text completion), citation-key rename with atomic doc migration, BibTeX / RIS import, AI usage + cost dashboard, and a dedicated AI sidebar tab. CriticMarkup track-changes, memo threading with sidecar metadata, manuscript templates, and the rest of v0.1.2–v0.1.5 are intact and unchanged.
+**Current version: v0.1.12.** Highlights since v0.1.8.3:
+
+- **v0.1.12 — WYSIWYG strict-literal mode**: typing markdown markers in WYSIWYG mode auto-escapes them so `#`, `*`, `[` etc. stay literal characters; toolbar / shortcuts are the only path to real formatting. Active-line invariant relaxed so WYSIWYG renders the same on every line regardless of the caret position.
+- **v0.1.11 — Three-mode editor**: WYSIWYG (default, Word-like) / Typora-style / Markdown source, switchable via status-bar segmented control or `Cmd+Shift+1/2/3`. WYSIWYG ships with a formatting toolbar and six journal-flavoured style presets (Durumi default / Classic manuscript / Nature / Lancet / JKMS / Comfortable draft).
+- **v0.1.10 — Reference workflow refinements**: 검토 menu split into 검토 / 참고문헌 / AI 작성 도우미 top-level menus; smart-merge of adjacent `[@a; @b]` citations; DOI dedup with row highlight; Crossref abstract auto-saved to `reference/<key>.md` on add; 8-option sort dropdown in the references sidebar.
+- **v0.1.9 — Reference docs**: comprehensive `docs/reference-management.md` user guide.
+- **v0.1.8.4** — Right sidebar split (References + AI moved out of the left sidebar into a dedicated right pane with independent visibility / width).
 
 ## Features
 
+### Three edit modes (v0.1.11)
+
+The editor wears three faces. Switch via status-bar W/T/M segmented control, the View → Edit Mode submenu, or keyboard:
+
+- **WYSIWYG** *(default, `Cmd/Ctrl + Shift + 1`)* — MS Word-style. Markdown markers never visible. Formatting via toolbar (Style / Inline / List / Insert / Review groups) or shortcuts. Typing `#`, `*`, `[`, `<` auto-escapes so the characters stay literal — toolbar and `Cmd+B` / `Cmd+1` etc. are the only path to real formatting. v0.1.12 narrows the v0.1.0 active-line invariant so widgets (image, math, mermaid, table, taskList, HR, citation pill, footnote pill, frontMatter) render on every line, including the one the caret is on.
+- **Typora-style** *(`Cmd/Ctrl + Shift + 2`)* — the v0.1.0~v0.1.10 default. Markdown rendered on inactive lines; raw source shown on the active line so you can edit markers.
+- **Markdown source** *(`Cmd/Ctrl + Shift + 3`)* — plain markdown with syntax highlighting. Live-preview decorations off entirely.
+
+`Cmd/Ctrl + /` toggles between Markdown and the previously-used mode. Default mode persists in `prefs.editor.defaultMode`.
+
+See [docs/editor-modes.md](docs/editor-modes.md) for the full user guide, FAQ, and IME-safety notes.
+
+### Document style presets (v0.1.11)
+
+Settings → "문서 스타일 / Document Styles" gives 10 per-entry style rows (body, H1-H6, blockquote, code, table header — each with font family / size / weight / colour / line-height) plus six pre-built journal-flavoured presets:
+
+| Preset | Body |
+|:--|:--|
+| Durumi default | Inter 16px, 1.6 (the on-screen default) |
+| Classic manuscript | Times New Roman 12pt, 2.0 (double-spaced, NEJM/JAMA submission feel) |
+| Nature-style | Helvetica 14px, 1.5 |
+| Lancet-style | Georgia 14px, 1.55 |
+| JKMS / Korean Medical | Noto Serif KR 16px, 1.7 |
+| Comfortable draft | Atkinson Hyperlegible 17px, 1.75 |
+
+Styles apply live through 50 CSS custom properties on `:root` — the editor and the HTML/PDF export pipeline see the same variables. Reset-to-default button restores the Durumi preset. Names are *display* hints only; submission formatting still goes through the export pipeline.
+
 ### Live preview — Markdown coverage
 
-Built on CodeMirror 6 + `@lezer/markdown` + GFM, with active-line invariant (the line under the caret never gets `Decoration.replace`, keeping IME composition safe).
+Built on CodeMirror 6 + `@lezer/markdown` + GFM. v0.1.0~v0.1.11 enforced "no `Decoration.replace` on the active line" to protect IME composition; v0.1.12 narrows this to **Typora mode only** — WYSIWYG renders uniformly across active and inactive lines (CodeMirror 6's composition handling is trusted; punctuation markers don't carry IME composition targets anyway).
 
 - Headings — ATX `#` … `######` and Setext `===` / `---`
 - Emphasis — `*em*`, `_em_`, `**strong**`, `__strong__`, `***both***`
@@ -172,17 +205,48 @@ Eleven default macros for medical-stat boilerplate (editable via `Edit → Open 
 
 Token expansion: `${YYYY}-${MM}-${DD}`, `${date}`, `${time}`, `${selection}`, `${cursor}`.
 
-### Sidebar (7 tabs)
+### Sidebars (left 5 tabs + right 2 tabs, v0.1.8.4)
+
+The left and right sidebars are independent — each has its own visibility toggle, active tab, and width. The right sidebar opens via `Cmd/Ctrl + Shift + \`.
+
+**Left sidebar (5 tabs)** — file navigation / review:
 
 - **Files** — multi-folder workspace; per-root `fs.watch`; `.md` filter; lazy expansion; right-click context menu (new file / new folder / rename / duplicate / move to trash / reveal / copy path); git status indicators (modified / added / untracked / deleted / renamed; aggregated to parent folders)
 - **Outline** — heading tree of the current document with active-heading highlight that follows the editor viewport; **drag-to-reorder sections** (rewrites the markdown source)
 - **Search** — across-file workspace search with case / whole-word / regex filters; results grouped by file; click jumps to line. Excludes `.git`, `node_modules`, files > 1 MB, binaries
 - **메모 / Memos** — aggregated `%% %%` notes across the current document; click to focus the chat-panel card
 - **변경 / Changes** — aggregated CriticMarkup annotations grouped by kind (insertion / deletion / substitution / highlight / comment); click → jump
-- **참고문헌 / References** (v0.1.6+) — Crossref / PubMed / KoreaMed search; local `.bib` entries with file-status badges and ✎ / 🔑 / ✕ actions; "📁 미등록 파일" section for orphan PDFs / MDs the user dropped in
+
+**Right sidebar (2 tabs)** — authoring assistance:
+
+- **참고문헌 / References** (v0.1.6+) — Crossref / PubMed / KoreaMed search; local `.bib` entries with file-status badges and ✎ / 🔑 / ✕ actions; "📁 미등록 파일" section for orphan PDFs / MDs the user dropped in. **v0.1.10**: 8-option sort dropdown (added/author/year/key/citation-order/uncited-first), Shift-click on search-card 추가 = add + insert `[@key]`, DOI dedup highlights existing row when a duplicate is rejected
 - **AI** (v0.1.8.3) — provider status, quick selection commands, citation actions, session usage stats, recent activity log
 
-Drag-handle resize; persisted state (visibility, active tab, width, all open workspace folders).
+Drag-handle resize on both; persisted state (visibility, active tab, width, all open workspace folders).
+
+### WYSIWYG formatting toolbar (v0.1.11)
+
+Visible only in WYSIWYG mode — a 36px toolbar above the editor, five button groups:
+
+| Group | Buttons |
+|:--|:--|
+| Style | Style dropdown (Body / H1-H6 / Blockquote / Code block — auto-syncs to caret) |
+| Inline | Bold / Italic / Strike / Inline code / **Superscript** / **Subscript** *(raw `<sup>/<sub>` HTML inline)* |
+| List | Bulleted / Numbered / Task / Indent / Outdent |
+| Insert | Link / Image (OS picker) / Table / Math (`$$\n\n$$`) / Footnote (auto-numbered) / Citation (opens cite palette) |
+| Review | CriticMarkup highlight / Memo / Track-change toggle |
+
+No new icon dependency — unicode glyphs only.
+
+### Reference workflow (v0.1.6 ~ v0.1.10)
+
+Beyond the live search + local library shipped in v0.1.6/v0.1.7, v0.1.10 added:
+
+- **Body-insert toggle on add**: `InsertCitationDialog` gains a `☐ 본문에도 [@key] 삽입` checkbox (default OFF, seeded by `prefs.bibliography.insertCitationOnAdd`). Toolbar Citation button + Shift-click on search-card 추가 do the "add + insert" path.
+- **Smart-merge of adjacent cite groups**: inserting `[@b]` next to `[@a]` produces `[@a; @b]`; inserting a key already in the adjacent group is rejected with the "이미 인용되어 있습니다" toast.
+- **Crossref abstract auto-save** (default ON): adding a reference writes `reference/<key>.md` from the Crossref `abstract` (or a metadata stub) so you have a one-click target before the PDF is fetched.
+- **DOI-based dedup**: `appendEntry` normalises DOIs and rejects duplicates with the existing key surfaced; missing-DOI weak match (title + first-author + year) prompts before re-adding.
+- **Top-level "참고문헌" + "AI 작성 도우미" menus** split out from the legacy 검토 menu so the menu bar matches the actual feature surface.
 
 ### Quick Open & navigation
 
@@ -249,16 +313,23 @@ Drag-handle resize; persisted state (visibility, active tab, width, all open wor
 
 ## Documentation
 
+- **[docs/editor-modes.md](docs/editor-modes.md)** — 3-mode editor (WYSIWYG / Typora / Markdown) user guide: switching, IME safety, style presets, FAQ
+- **[docs/wysiwyg-test.md](docs/wysiwyg-test.md)** — comprehensive WYSIWYG regression-test fixture covering every widget + IME composition scenarios
+- **[docs/reference-management.md](docs/reference-management.md)** — 참고문헌 관리 가이드 (Korean): add flow, local PDF/MD library, smart-merge, sort options, key rename, AI suggestion, shortcuts (v0.1.10)
 - **[docs/durumi-markdown-reference.md](docs/durumi-markdown-reference.md)** — comprehensive Korean markdown reference (Typora 1.13 baseline + Durumi extensions: citations, memos, manuscript metadata, KaTeX coverage, export pipeline, shortcut tables)
-- **[docs/reference-management.md](docs/reference-management.md)** — 참고문헌 관리 가이드 (Korean): 4 ways to add references, local PDF/MD library, key rename, AI suggestion, shortcuts, troubleshooting (v0.1.9)
 - **[docs/typora-spec.md](docs/typora-spec.md)** — Typora 1.13 parity spec (Phases A/B/C, deliberate non-goals, references)
 - **[docs/PROGRESS.md](docs/PROGRESS.md)** — release tracker for every version + roadmap
 - **[docs/RELEASE.md](docs/RELEASE.md)** — signing posture + auto-update runbook
 
 ## Recent additions
 
-- **v0.1.8.3** — AI sidebar tab (7th tab) consolidates the AI entry points; F1 keyboard-shortcuts dialog; Korean i18n polish pass
-- **v0.1.8.2** — pdfjs-dist replaces the regex-on-raw-bytes PDF scanner; DOI extraction now finds DOIs in compressed content streams, and citation suggestion enriches each candidate with the first ~3 pages of its local PDF
+- **v0.1.12** — WYSIWYG strict-literal escape filter; v0.1.0 active-line invariant narrowed so WYSIWYG renders uniformly across active/inactive lines; menu i18n consolidated into a single `shared/menuLabels.ts` source of truth
+- **v0.1.11** — Three-mode editor (WYSIWYG default / Typora / Markdown source); status-bar W/T/M segmented control + `Cmd+Shift+1/2/3`; WYSIWYG formatting toolbar; six journal-flavoured style presets with reset-to-default
+- **v0.1.10** — Reference workflow refinements: split 검토 menu into 참고문헌 + AI 작성 도우미 top-level menus; smart-merge `[@a; @b]`; DOI dedup with sidebar row highlight; Crossref abstract auto-save on add; 8-option sort dropdown
+- **v0.1.9** — Comprehensive `docs/reference-management.md` user guide
+- **v0.1.8.4** — Left + right sidebar split (References + AI moved to a dedicated right pane with independent visibility / width)
+- **v0.1.8.3** — AI sidebar tab consolidates the AI entry points; F1 keyboard-shortcuts dialog; Korean i18n polish pass
+- **v0.1.8.2** — pdfjs-dist replaces the regex-on-raw-bytes PDF scanner; DOI extraction now finds DOIs in compressed content streams; citation suggestion enriches each candidate with the first ~3 pages of its local PDF
 - **v0.1.8.1** — Atomic citation-key rename across bib + active doc; AI usage + cost dashboard (localStorage-backed); inline ghost-text completion (off by default, opt in via Settings)
 - **v0.1.8** — LLM client with safeStorage-encrypted keys; selection rewrite palette (`Cmd/Ctrl + Shift + /`); AI citation suggestion with hallucination guard against the live bibliography set
 - **v0.1.7.1** — Entry edit / delete in the references sidebar; bulk DOI add (paste a list, sequential through Crossref); `.bib` / `.ris` import with collision handling
@@ -270,7 +341,7 @@ Drag-handle resize; persisted state (visibility, active tab, width, all open wor
 
 ## Roadmap — vision toward a manuscript studio
 
-The features below build on the v0.1.8.3 foundation. Items 1 + 2 are shipped:
+The features below build on the v0.1.12 foundation. Items 1 + 2 are shipped:
 
 ### ✓ 1 — Live reference search (shipped in v0.1.6)
 - API integrations: PubMed, KoreaMed, Crossref, ORCID
@@ -322,8 +393,8 @@ pnpm dev
 
 ```bash
 pnpm build              # bundle main + preload + renderer
-pnpm make:mac           # produce dist-build/Durumi-0.1.8.3-*.dmg (run on macOS)
-pnpm make:win           # produce dist-build/Durumi Setup 0.1.8.3.exe (run on Windows 11)
+pnpm make:mac           # produce dist-build/Durumi-0.1.12-*.dmg (run on macOS)
+pnpm make:win           # produce dist-build/Durumi Setup 0.1.12.exe (run on Windows 11)
 ```
 
 See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, signing posture, auto-update setup).
@@ -333,7 +404,7 @@ See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, sig
 ```bash
 pnpm typecheck          # 0 errors expected
 pnpm lint               # 0 errors / 0 warnings expected
-pnpm test               # 1129 Vitest unit tests
+pnpm test               # 1250 Vitest unit tests (v0.1.12)
 pnpm test:e2e           # 16 Playwright Electron tests (run pnpm build first)
 ```
 
@@ -390,10 +461,19 @@ User-defined macros via `macros.json` extend / override these.
 | `Cmd/Ctrl + Shift + L` | Toggle theme |
 | `Cmd/Ctrl + /` | Toggle source mode (debugging) |
 
+### Edit mode (v0.1.11)
+| Shortcut | Action |
+|---|---|
+| `Cmd/Ctrl + Shift + 1` | WYSIWYG mode |
+| `Cmd/Ctrl + Shift + 2` | Typora-style mode |
+| `Cmd/Ctrl + Shift + 3` | Markdown source mode |
+| `Cmd/Ctrl + /` | Toggle Markdown ↔ previous mode |
+
 ### View / sidebar
 | Shortcut | Action |
 |---|---|
-| `Cmd/Ctrl + \` | Toggle sidebar |
+| `Cmd/Ctrl + \` | Toggle left sidebar |
+| `Cmd/Ctrl + Shift + \` | Toggle right sidebar (References / AI) |
 | `Cmd/Ctrl + Shift + E` | Show Files tab |
 | `Cmd/Ctrl + Shift + O` | Show Outline tab |
 | `Cmd/Ctrl + Shift + F` | Show Search tab |
@@ -405,12 +485,12 @@ User-defined macros via `macros.json` extend / override these.
 | `F8` | Focus Mode toggle |
 | `F9` | Typewriter Mode toggle |
 
-### Citations & AI assist (v0.1.6 – v0.1.8.3)
+### Citations & AI assist (v0.1.6 – v0.1.12)
 | Shortcut | Action |
 |---|---|
-| `Cmd/Ctrl + Shift + B` | Insert citation from DOI (Crossref) |
-| `Cmd/Ctrl + Shift + I` | Insert citation palette (fuzzy over `references.bib`) |
-| `Cmd/Ctrl + Shift + /` | AI assist on selection (palette) |
+| `Cmd/Ctrl + Shift + B` | Add reference from DOI (Crossref) |
+| `Cmd/Ctrl + Shift + I` | Insert citation into text (fuzzy palette over `references.bib`) |
+| `Cmd/Ctrl + Shift + /` | Polish selection with AI (palette) |
 | `Tab` | Accept inline ghost-text suggestion (when present) |
 | `Esc` | Dismiss ghost text / close palettes |
 
@@ -469,35 +549,46 @@ src/                         Renderer (React + CodeMirror 6)
 │   ├── jumpToLine.ts        Cursor + scrollIntoView helper
 │   ├── openSearch.ts        Search panel openers
 │   ├── viewModes.ts         Focus / Typewriter modes
+│   ├── editMode.ts          v0.1.11 — WYSIWYG / Typora / Markdown state
+│   ├── wysiwygEscape.ts     v0.1.12 — strict-literal markdown escape filter
 │   └── theme.ts             CM6 theme via CSS variables
 ├── components/
-│   ├── Sidebar.tsx          Collapsible shell, 5 tabs
+│   ├── Sidebar.tsx          Left sidebar shell (5 tabs)
+│   ├── RightSidebar.tsx     Right sidebar shell (v0.1.8.4 — 2 tabs)
 │   ├── sidebar/             FileTree, WorkspaceRoot, FileTreeNode, Outline,
-│   │                        OutlineItem, SearchTab, CommentsTab, ChangesTab
+│   │                        OutlineItem, SearchTab, CommentsTab, ChangesTab,
+│   │                        ReferencesTab, referenceSort.ts (v0.1.10)
 │   ├── MemoPanel.tsx        Right-side chat panel host
 │   ├── MemoCard.tsx         Per-memo card (header / textarea / replies)
+│   ├── EditorToolbar.tsx    v0.1.11 — WYSIWYG formatting toolbar
 │   ├── QuickOpen.tsx        Cmd/Ctrl+P fuzzy file palette
 │   ├── PandocInstallDialog.tsx
 │   ├── SettingsDialog.tsx
-│   └── StatusBar.tsx        Word/char/reading-time + memo count + CM badges
+│   └── StatusBar.tsx        Word/char + memo count + CM badges +
+│                            v0.1.11 W/T/M edit-mode segmented control
 ├── hooks/                   useFolderTree / useDocOutline / useDocComments /
 │                            useActiveHeading / useMemoSync /
 │                            useMemoCaretFocus / useMemoMeta /
 │                            useDocCriticMarkup
-├── store/                   zustand stores (appStore, sidebarStore,
-│                            memoSidecarStore)
+├── store/                   zustand stores (appStore including editMode,
+│                            sidebarStore, rightSidebarStore (v0.1.8.4),
+│                            memoSidecarStore, bibliographyStore)
 ├── utils/                   relativeTime.ts (i18n-aware "3h ago" / "3시간 전")
 ├── export/                  markdown-it pipeline + KaTeX + Mermaid +
 │                            BibTeX renderer + escapeHtml + slug
-├── i18n/                    dict.ts + t.ts (en + ko)
+├── i18n/                    dict.ts + t.ts (en + ko) — menu.* sourced from
+│                            `shared/menuLabels.ts` (v0.1.12)
 └── styles/                  Global CSS, light/dark tokens, git status dots,
-                             memo chip colors, CriticMarkup decoration colors
+                             memo chip colors, CriticMarkup decoration colors,
+                             journalPresets.ts (v0.1.11), applyStyles.ts
 
 shared/
 ├── ipc-contract.ts          IPC types shared by main and renderer
+├── menuLabels.ts            Native-menu i18n source of truth (v0.1.12)
 ├── frontMatter.ts           YAML extractor
 ├── bibtex.ts                BibTeX parser + indexer
 ├── citation.ts              Vancouver formatter + key collector
+├── citationMerge.ts         Smart-merge `[@a; @b]` helper (v0.1.10)
 ├── manuscriptTemplates.ts   IMRaD / CONSORT / PRISMA / CARE / STROBE
 ├── comments.ts              %% memo %% parser + strip / promote +
 │                            replaceMemo helper (single source of truth
@@ -512,10 +603,13 @@ build/
 ├── icon.svg                 Master logo (origami crane on 한지 paper)
 └── icon.png                 1024×1024 app icon (rendered from icon.svg)
 
-tests/                       Vitest unit tests (1129)
+tests/                       Vitest unit tests (1250 in v0.1.12)
 e2e/                         Playwright Electron tests (16)
 docs/
 ├── durumi-markdown-reference.md   Korean markdown reference (~1311 lines)
+├── editor-modes.md          3-mode editor guide (WYSIWYG/Typora/Markdown)
+├── reference-management.md  Reference workflow user guide (v0.1.10)
+├── wysiwyg-test.md          WYSIWYG regression-test fixture
 ├── typora-spec.md           Typora 1.13 parity spec
 ├── PROGRESS.md              Progress tracker + roadmap
 └── RELEASE.md               Signing + auto-update runbook

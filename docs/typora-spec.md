@@ -1,5 +1,13 @@
 # Typora 1.13 Parity Spec
 
+> **Status (v0.1.12)**: Phases A / B / C **complete**. Typora-parity is the
+> baseline that v0.1.0 shipped on top of. Durumi has since evolved beyond
+> Typora — three edit modes (WYSIWYG default / Typora / Markdown source,
+> see [editor-modes.md](editor-modes.md)), v0.1.10 reference-workflow
+> refinements, v0.1.11 journal style presets, v0.1.12 strict-literal
+> WYSIWYG escape. This document is preserved as a historical record of
+> the parity-foundation phase.
+
 **Source of truth:** Typora support docs (support.typora.io) and the
 1.13 release notes (2026-04-03). This memo captures the exact syntax
 and behavior we will mirror, plus deliberate scope decisions for the

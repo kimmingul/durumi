@@ -1,7 +1,7 @@
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { decorationPlugin } from './framework';
-import { getActiveLineRange, hasActiveLine } from './activeLine';
+import { getActiveLineRange, hasActiveLine, shouldHideMarker } from './activeLine';
 
 /**
  * Visualizes Markdown hard line breaks — two trailing spaces OR a trailing
@@ -33,7 +33,8 @@ export function lineBreakDecoration(): Extension {
       // *below*. Compute activity by line number instead, off the marker's
       // start position.
       const markerLine = state.doc.lineAt(from).number;
-      if (hasActiveLine(state) && getActiveLineRange(state).number === markerLine) return;
+      const lineActive = hasActiveLine(state) && getActiveLineRange(state).number === markerLine;
+      if (!shouldHideMarker(state, lineActive)) return;
       // ViewPlugin decorations may not span line breaks, so clamp to the end
       // of the marker's own line — we only replace the visible marker
       // (trailing spaces or backslash), never the newline itself.

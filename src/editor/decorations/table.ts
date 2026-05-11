@@ -3,6 +3,7 @@ import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/v
 import { EditorState, Extension, RangeSetBuilder, StateField } from '@codemirror/state';
 import MarkdownIt from 'markdown-it';
 import { getActiveLineRange } from './activeLine';
+import { isWysiwygMode } from '../editMode';
 
 const md = new MarkdownIt({ html: false, linkify: false });
 
@@ -163,10 +164,11 @@ function build(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const tables = collectTables(state);
   const active = getActiveLineRange(state);
+  const wysiwyg = isWysiwygMode(state);
   for (const t of tables) {
     for (const r of t.rowLines) {
       const lineActive = !(r.to < active.from || r.from > active.to);
-      if (lineActive) continue;
+      if (!wysiwyg && lineActive) continue;
       const widget = new TableRowWidget(r.cells, t.alignment, t.cols, r.kind);
       builder.add(r.from, r.to, Decoration.replace({ widget, block: true }));
     }

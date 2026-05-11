@@ -35,24 +35,72 @@ Durumi의 편집 화면은 **3가지 모드** 중 하나로 작동합니다. 작
 
 ## WYSIWYG 모드 자세히
 
-### 동작 원리
+### 동작 원리 (v0.1.12부터 강화)
 
-마크다운 마커(`**`, `_`, `#`, `>`, 목록 표시 등)를 `Decoration.mark`로
-hidden 처리하고 CSS `display: none`으로 화면에서 제거합니다. 텍스트
-자체는 문서에 그대로 존재 — 커서 이동, 검색, copy/paste 모두 정상.
+WYSIWYG에서는 **타이핑한 마크다운 기호를 자동으로 이스케이프**합니다.
+
+| 사용자 타이핑 | 저장된 소스 | 화면 표시 |
+|:--|:--|:--|
+| `#` | `\#` | `#` (글자) |
+| `# Heading` | `\# Heading` | `# Heading` (글자, **heading 아님**) |
+| `*foo*` | `\*foo\*` | `*foo*` (글자, **italic 아님**) |
+| `> quote` | `\> quote` | `> quote` (글자, blockquote 아님) |
+| `1. item` (라인 시작) | `1\. item` | `1. item` (글자, 번호 리스트 아님) |
+| `[foo]` | `\[foo\]` | `[foo]` (글자, link 아님) |
+| `<sup>1</sup>` | `\<sup\>1\</sup\>` | `<sup>1</sup>` (글자, HTML 위첨자 아님) |
+
+서식을 적용하려면 **반드시 툴바 또는 단축키**를 사용:
+- 굵게: Bold 버튼 또는 `Cmd+B`
+- Heading 1: Style 드롭다운 → "제목 1" 또는 `Cmd+1`
+- 인용: Insert citation 버튼 (cite palette)
+- 등등
+
+### 기존 마크다운 문서
+
+이미 작성된 마크다운 (`# Hello` 등)을 열면 **그대로 heading으로
+렌더링**됩니다. 자동 이스케이프는 *새로 타이핑하는 문자*에만
+적용됩니다. Style 드롭다운 → "본문"으로 heading을 일반 텍스트로
+변환 가능.
+
+### 붙여넣기
+
+붙여넣기 내용은 escape **안 합니다**. 다른 마크다운 문서를 복사해
+오면 서식이 보존됩니다.
 
 ### IME 안전성
 
-한국어/일본어/중국어 IME 합성을 보호하기 위해 마커 hide에 절대
-`Decoration.replace`를 쓰지 않습니다. 활성 줄 invariant가 그대로
-지켜집니다.
+v0.1.12부터 invariant #1이 완화되었습니다: **content widget의
+`Decoration.replace`만 활성 줄 금지** (image, math, mermaid, table 등).
+Inline 마커 hiding (empty `cm-md-marker-hidden` widget으로 `**`, `[`,
+`<`, `#` 등 punctuation을 숨기는 것)은 활성 줄에서도 안전 — 사용자가
+punctuation에 한국어 합성을 시도하지 않으므로 IME composition 영향
+없음.
 
-### 블록 위젯 (이미지/수식/Mermaid)
+이 완화 덕분에 WYSIWYG 모드는 **활성 라인과 비활성 라인을 동일하게**
+렌더링할 수 있고, 각 decoration plugin이 자기 마커만 책임지면 됩니다
+(별도 패치 hider 불필요). 이스케이프 필터도 IME composition 트랜잭션
+(`input.compose`)을 건드리지 않습니다.
 
-이미지·수식·Mermaid 같은 **블록 위젯**은 비활성 줄에서는 렌더링되고,
-**활성 줄에서는 원본 markdown source**를 보여줍니다. 이는 의도된
-편집 affordance입니다 — 활성 줄에서 원본을 보면서 수정할 수 있도록.
-(클릭하면 자동으로 source가 보임)
+### autoPair
+
+WYSIWYG 모드에서 인라인 마커 (`*`, `_`, `` ` ``, `[`, `~`, `=`)의
+**autoPair는 비활성화**됩니다 (escape와 충돌 방지). 일반 괄호 (`(`,
+`{`, `<`) 와 따옴표는 정상 동작.
+
+### 블록 위젯 (이미지/수식/Mermaid/표/HR/각주/인용 등)
+
+**v0.1.12부터 변경**: WYSIWYG 모드에서는 **모든 widget이 활성 라인에도
+렌더**됩니다. 이미지, 표, 수식(인라인+블록), Mermaid, HR, 체크박스,
+각주 pill, 인용 pill, frontMatter 요약 — 라인 위로 캐럿이 와도 위젯
+그대로 표시되어 Word와 같은 일관성을 유지합니다.
+
+Typora 모드에서는 v0.1.0~v0.1.11과 동일하게 활성 라인에서 원본 source가
+보입니다 (편집 affordance).
+
+캐럿이 위젯 영역에 있을 때 한글 IME 합성이 깨지는 경우가 발견되면
+알려주세요 — 해당 widget만 보수적으로 되돌리거나 mark+display:none+
+side-widget 패턴으로 마이그레이션 가능합니다. (현재 CodeMirror 6의
+composition 경계 자동 bailout을 신뢰)
 
 ### 툴바 (WYSIWYG 모드에서만)
 
@@ -158,8 +206,15 @@ A. 표 셀에 캐럿을 두면 자동으로 raw 소스(`| col1 | col2 |`)가 보
    다른 줄로 이동하면 다시 렌더된 표가 보입니다.
 
 **Q. WYSIWYG에서 마크다운 단축키(`**`로 굵게 등)가 동작하나요?**
-A. 네. CodeMirror의 기존 keymap이 그대로 적용됩니다. `**foo**`를
-   타이핑하면 마커가 즉시 숨겨지고 굵은 텍스트만 보입니다.
+A. v0.1.12부터 **변경**: 타이핑한 `**`은 자동으로 `\*\*`로 escape되어
+   글자로 인식됩니다. 굵게는 **`Cmd+B`** 또는 툴바 Bold 버튼을 쓰세요.
+   같은 결과를 더 안전하게 얻습니다.
+
+**Q. WYSIWYG에서 `[@cite]` autocomplete가 작동하나요?**
+A. v0.1.12부터 **작동 안 함**. `[`이 escape되어 `\[`이 되므로
+   autocomplete가 발동하지 않습니다. 인용은 **툴바의 Citation 버튼**
+   또는 `Cmd+Shift+I`로 cite palette를 열어 삽입하세요. Typora /
+   Markdown 모드에서는 `[@` autocomplete가 그대로 동작합니다.
 
 **Q. Markdown 모드에서 작성한 내용을 WYSIWYG에서 보면 다르게 보이나요?**
 A. 같은 문서지만 **렌더된 모습**으로 표시됩니다. 마크다운 문법은

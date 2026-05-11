@@ -2,6 +2,7 @@ import { Decoration, WidgetType } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import type { SyntaxNodeRef } from '@lezer/common';
 import { decorationPlugin } from './framework';
+import { shouldHideMarker } from './activeLine';
 
 /**
  * Renders Markdown image syntax `![alt](src)` and `![alt](src "title")` as an
@@ -60,8 +61,8 @@ function partsFromImage(node: SyntaxNodeRef, doc: string): ImageParts | null {
 export function imageDecoration(): Extension {
   return decorationPlugin({
     nodes: ['Image'],
-    visit(builder, { from, to, lineActive, doc, node }) {
-      if (lineActive) return;
+    visit(builder, { from, to, lineActive, doc, node, view }) {
+      if (!shouldHideMarker(view.state, lineActive)) return;
       const parts = partsFromImage(node, doc);
       if (!parts) return;
       builder.add(
