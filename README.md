@@ -250,6 +250,7 @@ Drag-handle resize; persisted state (visibility, active tab, width, all open wor
 ## Documentation
 
 - **[docs/durumi-markdown-reference.md](docs/durumi-markdown-reference.md)** — comprehensive Korean markdown reference (Typora 1.13 baseline + Durumi extensions: citations, memos, manuscript metadata, KaTeX coverage, export pipeline, shortcut tables)
+- **[docs/reference-management.md](docs/reference-management.md)** — 참고문헌 관리 가이드 (Korean): 4 ways to add references, local PDF/MD library, key rename, AI suggestion, shortcuts, troubleshooting (v0.1.9)
 - **[docs/typora-spec.md](docs/typora-spec.md)** — Typora 1.13 parity spec (Phases A/B/C, deliberate non-goals, references)
 - **[docs/PROGRESS.md](docs/PROGRESS.md)** — release tracker for every version + roadmap
 - **[docs/RELEASE.md](docs/RELEASE.md)** — signing posture + auto-update runbook
