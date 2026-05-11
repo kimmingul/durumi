@@ -9,8 +9,15 @@ available for smoke-testing.
 ```bash
 pnpm release:tag patch        # or: minor | major
 git push origin main
-git push origin v0.1.8.3      # whatever tag the helper printed
+git push origin v0.1.9        # whatever tag the helper printed
 ```
+
+> ⚠️ **Versions must be strict SemVer 2.0.0** (`MAJOR.MINOR.PATCH`,
+> optionally with `-PRERELEASE` or `+BUILD` suffix). `electron-builder`
+> rejects 4-segment versions like `0.1.8.4` with
+> `Invalid version: "0.1.8.4"` at build time. If you need a quick polish
+> on top of a release, bump the PATCH (e.g. `0.1.9 → 0.1.10`) rather
+> than appending a fourth segment.
 
 `pnpm release:tag` is a thin wrapper around `scripts/release.sh`. It:
 
