@@ -1,6 +1,78 @@
 # Durumi — Progress
 
-## v0.1.14 (current) — License migration: MIT → Apache 2.0 + CLA
+## v0.2.0 (current) — Hardening: atomic markdown write + CriticMarkup XSS fix
+
+First hardening release. Lands the two highest-priority items from the
+external review of v0.1.14 — both real data-integrity / trust bugs in
+shipped code, not feature work. Sets up the v0.2.x cycle that will
+work through the remaining P1 items in [docs/v0.2-hardening.md](v0.2-hardening.md).
+
+### What changed
+
+**Atomic Markdown body save.** Previously the main document save path
+([electron/ipc.ts](../electron/ipc.ts) `file:save`, `file:saveAs`,
+`export:file` HTML branch) called `fs.writeFile` directly. A crash or
+power loss mid-write could leave the user's manuscript truncated. The
+memo sidecar and `.bib` writer already used tmp+rename — the body was
+the *least* protected file in the app despite being the most valuable.
+
+A new shared helper `writeFileAtomic` in [electron/fs.ts](../electron/fs.ts)
+now does the tmp+rename + parent-dir creation in one place. Both the
+sidecar writer and `bibliographyWrite.atomicWrite` were reduced to thin
+wrappers around it, so all three storage paths share the same
+crash-consistency contract.
+
+Tmp filenames combine `pid + ts + process-local counter`. The counter
+fixes a latent bug in the previous tmp-naming scheme (`pid + ts` only)
+where two writes within the same millisecond would collide on the tmp
+filename and one would mysteriously ENOENT on rename. The bug existed
+in `bibliographyWrite` since v0.1.6 — surfaced by the new
+`writeFileAtomic` concurrency test.
+
+**CriticMarkup preserve-mode HTML escape.** The
+`transformCm(..., 'preserve', 'html')` path in
+[shared/criticMarkup.ts](../shared/criticMarkup.ts) was the only HTML
+emitter in the export pipeline that did *not* escape annotation text
+before wrapping it in raw `<ins>` / `<del>` / `<mark>` / `<aside>`
+tags. A co-author's `.md` containing `{++<script>...++}` would
+therefore execute script in the exported HTML — and "open a manuscript
+sent by a collaborator and export it" is the core medical-research
+workflow.
+
+The fix moves `escapeHtml` to [shared/escapeHtml.ts](../shared/escapeHtml.ts)
+(the export-side path becomes a re-export so the existing five
+`src/export/*.ts` call sites stay untouched) and applies it inside the
+preserve+html branch. Five regression tests cover the five annotation
+kinds with HTML metacharacters in the input.
+
+### Hardening roadmap
+
+[docs/v0.2-hardening.md](v0.2-hardening.md) — new — captures the full
+v0.2.x → v0.3.x hardening plan derived from the external review:
+
+- **P0 (this release)** — atomic write, CriticMarkup escape.
+- **P1 (v0.2.x patches)** — flip Electron `sandbox: true` (static
+  analysis showed the preload is *already* `contextBridge`-only, so
+  this is a one-PR change, not the multi-step project originally
+  scoped), path-scoped IPC validation, AI key plaintext-fallback
+  honesty UI, `bindToDocument` no longer writes the `.bib` file.
+- **P2 (continuous)** — opportunistic decomposition of
+  `App.tsx` (906 lines) and `electron/ipc.ts` (787 lines), one
+  feature-slice at a time.
+- **P3 (pre-public release)** — E2E launch stabilization, bundle-size
+  audit, real code signing + hardened runtime + signed updater.
+
+### Quality gates
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1261 / 1261** tests across 145 files (was 1250 / 144;
+  +11 tests for `writeFileAtomic` and CriticMarkup escape regressions)
+- `pnpm build`: clean (also verified once with `sandbox: true` flipped
+  on as part of the P1-1 discovery; flag reverted before commit)
+
+---
+
+## v0.1.14 — License migration: MIT → Apache 2.0 + CLA
 
 A legal-foundation release. No code behaviour changes. Switches the
 project from MIT to Apache 2.0 and adds an Individual Contributor

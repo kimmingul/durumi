@@ -137,6 +137,45 @@ describe('transformCm — preserve mode (HTML)', () => {
   });
 });
 
+describe('transformCm — preserve mode (HTML) escapes user input', () => {
+  // Annotation text is unescaped user content (often from a co-author's
+  // file). The preserve→HTML branch wraps it in raw <ins>/<del>/<mark>/
+  // <aside> tags that bypass markdown-it's tokenizer, so this is the one
+  // path that *must* escape on its own. Regressions here mean HTML export
+  // can execute script from a hostile manuscript.
+  it('insert escapes < > & " \' inside <ins>', () => {
+    expect(
+      transformCm('a {++ <b>x</b> & "y" ++} b', 'preserve', 'html'),
+    ).toBe('a <ins>&lt;b&gt;x&lt;/b&gt; &amp; &quot;y&quot;</ins> b');
+  });
+
+  it('delete escapes inside <del>', () => {
+    expect(transformCm('a {-- <script>z</script> --} b', 'preserve', 'html')).toBe(
+      'a <del>&lt;script&gt;z&lt;/script&gt;</del> b',
+    );
+  });
+
+  it('substitution escapes both halves', () => {
+    expect(
+      transformCm('a {~~ <i>old</i> ~> <b>new</b> ~~} b', 'preserve', 'html'),
+    ).toBe(
+      'a <del>&lt;i&gt;old&lt;/i&gt;</del><ins>&lt;b&gt;new&lt;/b&gt;</ins> b',
+    );
+  });
+
+  it('highlight escapes inside <mark>', () => {
+    expect(transformCm('a {== <em>m</em> ==} b', 'preserve', 'html')).toBe(
+      'a <mark class="cm-highlight">&lt;em&gt;m&lt;/em&gt;</mark> b',
+    );
+  });
+
+  it('comment escapes inside <aside>', () => {
+    expect(transformCm('a {>> <img src=x onerror=alert(1)> <<} b', 'preserve', 'html')).toBe(
+      'a <aside class="cm-comment">&lt;img src=x onerror=alert(1)&gt;</aside> b',
+    );
+  });
+});
+
 describe('transformCm — preserve mode (Pandoc)', () => {
   it('insert → [text]{.insertion}', () => {
     expect(transformCm('a {++ X ++} b', 'preserve', 'pandoc')).toBe(

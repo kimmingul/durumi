@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { type BibEntry, indexBibEntries, parseBibTeX } from '@shared/bibtex';
 import { formatEntry, serializeForAppend } from '@shared/bibtexWriter';
 import { makeCitationKey } from '@shared/citationKey';
+import { writeFileAtomic } from './fs';
 
 /**
  * Bibliography write paths. v0.1.6 keeps the `.bib` file as the single source
@@ -347,13 +348,10 @@ interface WriteOk { ok: true }
 interface WriteErr { ok: false; error: string }
 
 async function atomicWrite(filePath: string, content: string): Promise<WriteOk | WriteErr> {
-  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   try {
-    await fs.writeFile(tmp, content, 'utf8');
-    await fs.rename(tmp, filePath);
+    await writeFileAtomic(filePath, content);
     return { ok: true };
   } catch (err) {
-    await fs.unlink(tmp).catch(() => {});
     return { ok: false, error: (err as Error).message };
   }
 }

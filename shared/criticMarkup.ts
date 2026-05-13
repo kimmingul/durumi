@@ -25,6 +25,8 @@
  * text.
  */
 
+import { escapeHtml } from './escapeHtml';
+
 export type CmKind = 'insert' | 'delete' | 'substitution' | 'highlight' | 'comment';
 
 export interface CmAnnotation {
@@ -230,17 +232,22 @@ function renderCm(
   }
   // preserve mode
   if (target === 'html') {
+    // Annotation text is unescaped user input. We wrap it in raw HTML tags
+    // (<ins>, <del>, <mark>, <aside>) so the rest of the markdown-it pipeline
+    // does not see it as Markdown — which means *we* are responsible for
+    // escaping it. Without this, a `{++<script>...++}` in a third-party
+    // manuscript would survive into the exported HTML.
     switch (a.kind) {
       case 'insert':
-        return `<ins>${a.text}</ins>`;
+        return `<ins>${escapeHtml(a.text)}</ins>`;
       case 'delete':
-        return `<del>${a.text}</del>`;
+        return `<del>${escapeHtml(a.text)}</del>`;
       case 'substitution':
-        return `<del>${a.oldText ?? ''}</del><ins>${a.newText ?? ''}</ins>`;
+        return `<del>${escapeHtml(a.oldText ?? '')}</del><ins>${escapeHtml(a.newText ?? '')}</ins>`;
       case 'highlight':
-        return `<mark class="cm-highlight">${a.text}</mark>`;
+        return `<mark class="cm-highlight">${escapeHtml(a.text)}</mark>`;
       case 'comment':
-        return `<aside class="cm-comment">${a.text}</aside>`;
+        return `<aside class="cm-comment">${escapeHtml(a.text)}</aside>`;
     }
   }
   // pandoc target

@@ -1,11 +1,16 @@
 import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { promises as fs } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
 import type { DiscardChoice, FilePickerOptions, FileResult, Preferences } from '@shared/ipc-contract';
 import { type MemoSidecar, parseSidecar } from '@shared/memoSidecar';
 import { addRecentFile, getPreferences, setPreferences } from './preferences';
-import { listDirectory, watchRoot, unwatchRoot, unwatchAllRoots, openFolderDialog } from './fs';
+import {
+  listDirectory,
+  watchRoot,
+  unwatchRoot,
+  unwatchAllRoots,
+  openFolderDialog,
+  writeFileAtomic,
+} from './fs';
 import { exportToPdf } from './pdf';
 import { getCustomCss } from './customCss';
 import { saveImage } from './images';
@@ -155,27 +160,11 @@ export async function readMemoSidecar(docPath: string): Promise<MemoSidecar | nu
   }
 }
 
-/**
- * Write the sidecar atomically: tmp file in the same directory, then rename.
- * The same-directory tmp guarantees the rename is atomic on POSIX.
- */
 export async function writeMemoSidecar(
   docPath: string,
   sidecar: MemoSidecar,
 ): Promise<void> {
-  const sidecarPath = memoSidecarPathFor(docPath);
-  const tmpPath = `${sidecarPath}.tmp-${process.pid}-${Date.now()}`;
-  const dir = dirname(sidecarPath);
-  await fs.mkdir(dir, { recursive: true });
-  const json = JSON.stringify(sidecar, null, 2);
-  await fs.writeFile(tmpPath, json, 'utf8');
-  try {
-    await fs.rename(tmpPath, sidecarPath);
-  } catch (err) {
-    // Best-effort cleanup on rename failure.
-    await fs.unlink(tmpPath).catch(() => {});
-    throw err;
-  }
+  await writeFileAtomic(memoSidecarPathFor(docPath), JSON.stringify(sidecar, null, 2));
 }
 
 export function registerIpcHandlers(): void {
@@ -202,7 +191,7 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('file:save', async (_e, path: string, content: string) => {
-    await fs.writeFile(path, content, 'utf8');
+    await writeFileAtomic(path, content);
     await addRecentFile(path);
     const prefs = await getPreferences();
     const owningRoot = findOwningRoot(path, prefs.workspaceFolders ?? []);
@@ -218,7 +207,7 @@ export function registerIpcHandlers(): void {
       filters: [{ name: 'Markdown', extensions: ['md'] }],
     });
     if (result.canceled || !result.filePath) return null;
-    await fs.writeFile(result.filePath, content, 'utf8');
+    await writeFileAtomic(result.filePath, content);
     await addRecentFile(result.filePath);
     const prefs = await getPreferences();
     const owningRoot = findOwningRoot(result.filePath, prefs.workspaceFolders ?? []);
@@ -242,7 +231,7 @@ export function registerIpcHandlers(): void {
     if (format === 'pdf') {
       await exportToPdf(html, result.filePath);
     } else {
-      await writeFile(result.filePath, html, 'utf8');
+      await writeFileAtomic(result.filePath, html);
     }
     return { path: result.filePath };
   });

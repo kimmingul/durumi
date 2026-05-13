@@ -1,8 +1,41 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, stat, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as pathLib from 'node:path';
 import { dialog, BrowserWindow } from 'electron';
 import type { DirEntry } from '../shared/ipc-contract';
+
+/**
+ * Atomic write: tmp file in the target's directory → fs.rename → cleanup
+ * tmp on failure. Same-directory tmp guarantees the rename is atomic on
+ * POSIX, so a crash mid-write leaves either the old file intact or the
+ * fully-written new file — never a truncated half.
+ *
+ * `mkdir({ recursive: true })` on the parent so callers don't need to
+ * pre-create directories (matches the previous `writeMemoSidecar`
+ * contract). Throws on any I/O error.
+ *
+ * Tmp filenames combine pid + ts + a process-local counter so two
+ * concurrent writes to the same target within a millisecond don't
+ * collide (which would otherwise cause one of them to ENOENT on rename).
+ */
+let atomicCounter = 0;
+
+export async function writeFileAtomic(
+  path: string,
+  content: string | Uint8Array,
+  encoding: BufferEncoding = 'utf8',
+): Promise<void> {
+  const seq = (atomicCounter = (atomicCounter + 1) >>> 0);
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}-${seq}`;
+  await mkdir(pathLib.dirname(path), { recursive: true });
+  await writeFile(tmp, content, typeof content === 'string' ? encoding : undefined);
+  try {
+    await rename(tmp, path);
+  } catch (err) {
+    await unlink(tmp).catch(() => {});
+    throw err;
+  }
+}
 
 const EXCLUDE_DIRS = new Set([
   'node_modules',
