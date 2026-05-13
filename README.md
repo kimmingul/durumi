@@ -666,3 +666,32 @@ shared/
 ├── aiCitationSuggest.ts             Suggestion prompt builder + JSON parser
 └── aiCost.ts                        Hardcoded price table for 14 models
 ```
+
+## License & contributing
+
+Durumi is licensed under the **Apache License 2.0** (see [`LICENSE`](LICENSE)).
+A copy of the NOTICE is in [`NOTICE`](NOTICE).
+
+**Why Apache 2.0?** Durumi switched from MIT to Apache 2.0 in v0.1.14 to:
+- Add an explicit patent grant (protects users from patent claims).
+- Make trademark expectations clear ("Durumi" is not granted by the license).
+- Pair cleanly with the future server-side codebase, which will be released
+  under **AGPL v3** so the planned paid sync / collaboration tier isn't
+  cloned and re-hosted by SaaS competitors. The desktop client stays freely
+  usable under Apache 2.0; the server-side code that powers sync will be
+  AGPL so anyone hosting it must publish their changes back.
+
+This is an **open-core** model. The maintainer (Min-Gul Kim) intends to fund
+continued development through a paid hosted-sync / real-time-collab tier on
+top of the open-source client.
+
+### Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev loop, architectural
+invariants, and quality gates.
+
+All contributors must accept the **Individual Contributor License Agreement**
+(see [`CLA.md`](CLA.md)). The quickest way is to add a `Signed-off-by:` line
+to each commit (`git commit -s`). The CLA grants the maintainer the right to
+re-license your contributions, which is what enables the open-core model
+above to keep working as the project grows.

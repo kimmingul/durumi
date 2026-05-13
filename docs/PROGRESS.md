@@ -1,6 +1,63 @@
 # Durumi — Progress
 
-## v0.1.13 (current) — Mode rename: Document / Live / Source
+## v0.1.14 (current) — License migration: MIT → Apache 2.0 + CLA
+
+A legal-foundation release. No code behaviour changes. Switches the
+project from MIT to Apache 2.0 and adds an Individual Contributor
+License Agreement to support a sustainable open-core business model
+(see "Why" below).
+
+### What changed
+- `LICENSE` — full Apache License, Version 2.0 text, copyright
+  `2026 Min-Gul Kim`.
+- `NOTICE` — Apache-style notice file. Required to include in
+  derivative works per Apache §4(d).
+- `package.json` — `"license": "MIT"` → `"Apache-2.0"`.
+- `CLA.md` — new Individual Contributor License Agreement. Modeled on
+  Apache's iCLA with a key addition: contributors grant the maintainer
+  the right to **re-license contributions** (including under proprietary
+  terms). This is what makes the open-core model viable — it lets
+  Durumi offer a paid commercial license to enterprise customers
+  alongside the Apache-licensed open release.
+- `CONTRIBUTING.md` — new contributor guide explaining the CLA, the
+  dev loop, the six architectural invariants, and the PR checklist.
+- `README.md` — new "License & contributing" section explaining why
+  Apache 2.0 + the open-core plan.
+
+### Why
+The original MIT license is *permissive* — anyone can take Durumi's
+source, fork it, and sell a competing hosted sync / collaboration
+service. With the planned freemium business model (local app + AI
+mode free with bring-your-own API key; paid sync + paid real-time
+collaboration), MIT leaves the paid tier defenceless against
+SaaS-style competitors copying the client code.
+
+Apache 2.0 + the upcoming AGPL-v3 server is the chosen split:
+- **Desktop client** (current code) — Apache 2.0. Free, open, easy to
+  audit, friendly to enterprise adoption. The desktop client's "moat"
+  is brand and UX, not the source code itself.
+- **Sync / collaboration server** (future code) — AGPL v3. Anyone who
+  hosts the server in a SaaS fashion must publish their hosting code
+  under the AGPL — which closes the AWS-style "hosted Durumi" loophole.
+
+The CLA's re-licensing clause enables a future commercial license
+track (think MongoDB, Elastic, GitLab) for customers who can't use
+AGPL internally.
+
+### Trademark (deferred)
+Trademark registration for "Durumi" (KIPO + USPTO) is deferred until
+the project has either a v1.0 milestone or a measurable user base —
+whichever comes first. Trademark is the real protection against
+"renamed Durumi clone" products; license is the protection against
+"copy-pasted Durumi service."
+
+### Quality gates
+- typecheck / lint / build clean (no code changes)
+- 1250 vitest tests across 144 files (unchanged from v0.1.13)
+
+---
+
+## v0.1.13 — Mode rename: Document / Live / Source
 
 Naming polish only — no behavioural change. The three modes get
 user-friendly Durumi-native names that don't borrow from other
