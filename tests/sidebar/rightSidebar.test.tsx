@@ -12,7 +12,7 @@ import { useAiUsageStore } from '../../src/store/aiUsageStore';
 interface ApiMock {
   prefsGet: ReturnType<typeof vi.fn>;
   prefsSet: ReturnType<typeof vi.fn>;
-  aiHasKey: ReturnType<typeof vi.fn>;
+  aiKeyStatus: ReturnType<typeof vi.fn>;
   bibliographySearchCrossref: ReturnType<typeof vi.fn>;
   bibliographySearchPubmed: ReturnType<typeof vi.fn>;
   bibliographySearchKoreamed: ReturnType<typeof vi.fn>;
@@ -42,7 +42,7 @@ function installApiMock(): ApiMock {
       },
     }),
     prefsSet: vi.fn().mockResolvedValue(undefined),
-    aiHasKey: vi.fn().mockResolvedValue(true),
+    aiKeyStatus: vi.fn().mockResolvedValue('encrypted'),
     bibliographySearchCrossref: vi.fn().mockResolvedValue({ ok: true, hits: [] }),
     bibliographySearchPubmed: vi.fn().mockResolvedValue({ ok: true, hits: [] }),
     bibliographySearchKoreamed: vi.fn().mockResolvedValue({ ok: true, hits: [] }),

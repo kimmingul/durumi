@@ -6,7 +6,7 @@ import { useAiUsageStore } from '../../src/store/aiUsageStore';
 
 interface ApiMock {
   prefsGet: ReturnType<typeof vi.fn>;
-  aiHasKey: ReturnType<typeof vi.fn>;
+  aiKeyStatus: ReturnType<typeof vi.fn>;
 }
 
 function installApiMock(opts: { hasKey?: boolean } = {}): ApiMock {
@@ -22,7 +22,9 @@ function installApiMock(opts: { hasKey?: boolean } = {}): ApiMock {
         ghostTextEnabled: false,
       },
     }),
-    aiHasKey: vi.fn().mockResolvedValue(opts.hasKey ?? true),
+    aiKeyStatus: vi
+      .fn()
+      .mockResolvedValue((opts.hasKey ?? true) ? 'encrypted' : 'none'),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).api = api;

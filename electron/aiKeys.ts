@@ -1,11 +1,23 @@
 import { safeStorage } from 'electron';
+import type { AiKeyStatus } from '@shared/ipc-contract';
 
-// Wrapper around Electron's safeStorage so an unsupported platform doesn't
-// crash the renderer. safeStorage is OS-keychain-backed when available
-// (macOS Keychain, Windows DPAPI, kwallet/libsecret on Linux); on systems
-// without a keychain it falls back to a per-OS-user fixed key. We never
-// fall back to plaintext: an opaque sentinel + decrypt-fail-returns-empty
-// keeps the threat model honest.
+export type { AiKeyStatus };
+
+// Wrapper around Electron's safeStorage. The OS-keychain backends —
+// macOS Keychain, Windows DPAPI, kwallet/libsecret on Linux — are
+// preferred whenever available. On systems where none of those work
+// (notably Linux without a configured secret service), `safeStorage`
+// reports `isEncryptionAvailable() === false`. We honor that signal
+// honestly:
+//
+//   - encrypt() writes a `plain:` prefix so the value is recoverable.
+//   - the renderer is told via `aiKeyStatus()` whether a stored key is
+//     plaintext, so it can render a "not encrypted" indicator and ask
+//     the user to confirm a plaintext save up front (`isEncryptionAvailable()`).
+//
+// The reason we don't refuse to store on missing-keychain systems: that
+// would gut the AI features on Linux for users who never configured a
+// keyring. Better to be loud about plaintext than silently broken.
 
 const PLAINTEXT_PREFIX = 'plain:';
 const ENCRYPTED_PREFIX = 'enc:';
@@ -13,6 +25,29 @@ const ENCRYPTED_PREFIX = 'enc:';
 export interface KeyVault {
   encrypt(plain: string): string;
   decrypt(stored: string): string;
+}
+
+/**
+ * Classify a stored value without decrypting it. Empty values are 'none';
+ * anything carrying our explicit prefixes is reported with that exact
+ * provenance. Legacy / unprefixed values are reported as 'plaintext' so
+ * the UI shows the unlocked indicator (they will be re-encrypted on the
+ * next save if a keychain is available).
+ */
+export function keyStatusOf(stored: string | null | undefined): AiKeyStatus {
+  if (!stored) return 'none';
+  if (stored.startsWith(ENCRYPTED_PREFIX)) return 'encrypted';
+  if (stored.startsWith(PLAINTEXT_PREFIX)) return 'plaintext';
+  return 'plaintext';
+}
+
+/**
+ * Whether the underlying OS has a keychain we can use. Renderer reads this
+ * before showing the API-key input so it can warn the user up front when a
+ * save would be plaintext.
+ */
+export function isEncryptionAvailable(): boolean {
+  return safeStorage.isEncryptionAvailable();
 }
 
 export function makeKeyVault(): KeyVault {
@@ -23,9 +58,6 @@ export function makeKeyVault(): KeyVault {
         const buf = safeStorage.encryptString(plain);
         return ENCRYPTED_PREFIX + buf.toString('base64');
       }
-      // No encryption backend; explicitly mark as plaintext so future
-      // reads can detect and refuse. We still store, because the
-      // alternative is "user thinks they saved their key but didn't".
       return PLAINTEXT_PREFIX + plain;
     },
 

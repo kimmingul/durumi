@@ -16,7 +16,7 @@ import {
   type StyleSpec,
 } from '../styles/journalPresets';
 import { applyStyleSet } from '../styles/applyStyles';
-import type { Preferences } from '@shared/ipc-contract';
+import type { AiKeyStatus, Preferences } from '@shared/ipc-contract';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -820,16 +820,23 @@ function AiSection({ prefs, update }: AiSectionProps) {
   };
   const [anthropicInput, setAnthropicInput] = useState('');
   const [openaiInput, setOpenaiInput] = useState('');
-  const [hasAnthropicKey, setHasAnthropicKey] = useState(false);
-  const [hasOpenaiKey, setHasOpenaiKey] = useState(false);
+  const [anthropicKeyStatus, setAnthropicKeyStatus] = useState<AiKeyStatus>('none');
+  const [openaiKeyStatus, setOpenaiKeyStatus] = useState<AiKeyStatus>('none');
+  // `null` while the renderer is still asking the main process; treated as
+  // "encryption available" by the UI so the warning doesn't flash on every
+  // settings open before the answer arrives.
+  const [encryptionAvailable, setEncryptionAvailable] = useState<boolean | null>(null);
   const [status, setStatus] = useState<AiVerifyState>({ state: 'idle' });
 
-  // Refresh "is a key actually saved" indicator. The plaintext is never
-  // sent to the renderer; we just ask whether decrypt() returns non-empty.
+  // Refresh how each provider's key is stored. Plaintext is never sent to
+  // the renderer; the status enum says encrypted vs plaintext vs none.
   useEffect(() => {
-    if (typeof window.api?.aiHasKey === 'function') {
-      void window.api.aiHasKey('anthropic').then(setHasAnthropicKey);
-      void window.api.aiHasKey('openai-compatible').then(setHasOpenaiKey);
+    if (typeof window.api?.aiKeyStatus === 'function') {
+      void window.api.aiKeyStatus('anthropic').then(setAnthropicKeyStatus);
+      void window.api.aiKeyStatus('openai-compatible').then(setOpenaiKeyStatus);
+    }
+    if (typeof window.api?.aiEncryptionAvailable === 'function') {
+      void window.api.aiEncryptionAvailable().then(setEncryptionAvailable);
     }
   }, [ai.anthropicKey, ai.openaiKey]);
 
@@ -838,13 +845,13 @@ function AiSection({ prefs, update }: AiSectionProps) {
     const r = await window.api.aiSetApiKey('anthropic', anthropicInput);
     if (r.ok) {
       setAnthropicInput('');
-      setHasAnthropicKey(true);
+      setAnthropicKeyStatus(r.status);
       setStatus({ state: 'idle' });
     }
   }
   async function clearAnthropicKey() {
     await window.api.aiSetApiKey('anthropic', '');
-    setHasAnthropicKey(false);
+    setAnthropicKeyStatus('none');
     setStatus({ state: 'idle' });
   }
   async function saveOpenaiKey() {
@@ -852,15 +859,51 @@ function AiSection({ prefs, update }: AiSectionProps) {
     const r = await window.api.aiSetApiKey('openai-compatible', openaiInput);
     if (r.ok) {
       setOpenaiInput('');
-      setHasOpenaiKey(true);
+      setOpenaiKeyStatus(r.status);
       setStatus({ state: 'idle' });
     }
   }
   async function clearOpenaiKey() {
     await window.api.aiSetApiKey('openai-compatible', '');
-    setHasOpenaiKey(false);
+    setOpenaiKeyStatus('none');
     setStatus({ state: 'idle' });
   }
+
+  const hasAnthropicKey = anthropicKeyStatus !== 'none';
+  const hasOpenaiKey = openaiKeyStatus !== 'none';
+  const willStorePlaintext = encryptionAvailable === false;
+  const saveLabel = willStorePlaintext
+    ? t('settings.ai.key.savePlaintext')
+    : t('settings.ai.key.save');
+
+  function KeyStatusBadge({ keyStatus, testId }: { keyStatus: AiKeyStatus; testId: string }) {
+    if (keyStatus === 'none') return null;
+    const isEncrypted = keyStatus === 'encrypted';
+    return (
+      <p
+        data-testid={testId}
+        style={{
+          margin: '4px 0 0',
+          fontSize: 12,
+          color: isEncrypted
+            ? 'var(--cm-ok-fg, #1f6a3a)'
+            : 'var(--cm-warn-fg, #8a5a17)',
+        }}
+      >
+        {isEncrypted ? '🔒 ' : '🔓 '}
+        {t(isEncrypted ? 'settings.ai.key.encrypted' : 'settings.ai.key.plaintext')}
+      </p>
+    );
+  }
+
+  const plaintextWarning = willStorePlaintext ? (
+    <p
+      data-testid="ai-plaintext-warning"
+      style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--cm-warn-fg, #8a5a17)' }}
+    >
+      ⚠️ {t('settings.ai.key.noKeychain')}
+    </p>
+  ) : null;
 
   async function verify() {
     setStatus({ state: 'verifying' });
@@ -898,6 +941,7 @@ function AiSection({ prefs, update }: AiSectionProps) {
       {ai.provider === 'anthropic' ? (
         <>
           <Field label={t('settings.ai.anthropic.key')}>
+            {plaintextWarning}
             <div style={pathRowStyle}>
               <input
                 type="password"
@@ -913,7 +957,7 @@ function AiSection({ prefs, update }: AiSectionProps) {
                 disabled={!anthropicInput}
                 style={baseButton}
                 data-testid="ai-anthropic-save"
-              >{t('settings.ai.key.save')}</button>
+              >{saveLabel}</button>
               {hasAnthropicKey && (
                 <button
                   type="button"
@@ -923,6 +967,7 @@ function AiSection({ prefs, update }: AiSectionProps) {
                 >{t('settings.clear')}</button>
               )}
             </div>
+            <KeyStatusBadge keyStatus={anthropicKeyStatus} testId="ai-anthropic-key-status" />
           </Field>
           <Field label={t('settings.ai.model')}>
             <select
@@ -950,6 +995,7 @@ function AiSection({ prefs, update }: AiSectionProps) {
             />
           </Field>
           <Field label={t('settings.ai.openai.key')}>
+            {plaintextWarning}
             <div style={pathRowStyle}>
               <input
                 type="password"
@@ -965,7 +1011,7 @@ function AiSection({ prefs, update }: AiSectionProps) {
                 disabled={!openaiInput}
                 style={baseButton}
                 data-testid="ai-openai-save"
-              >{t('settings.ai.key.save')}</button>
+              >{saveLabel}</button>
               {hasOpenaiKey && (
                 <button
                   type="button"
@@ -974,6 +1020,7 @@ function AiSection({ prefs, update }: AiSectionProps) {
                 >{t('settings.clear')}</button>
               )}
             </div>
+            <KeyStatusBadge keyStatus={openaiKeyStatus} testId="ai-openai-key-status" />
           </Field>
           <Field label={t('settings.ai.model')}>
             <input

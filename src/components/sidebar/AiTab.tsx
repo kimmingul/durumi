@@ -48,7 +48,7 @@ export function AiTab(props: AiTabProps) {
       const model = p === 'anthropic'
         ? prefs.ai?.anthropicModel ?? '—'
         : prefs.ai?.openaiModel ?? '—';
-      const hasKey = await window.api.aiHasKey(p);
+      const hasKey = (await window.api.aiKeyStatus(p)) !== 'none';
       if (!cancelled) setProvider({ provider: p, model, hasKey });
     }
     void loadProvider();

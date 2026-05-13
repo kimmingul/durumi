@@ -14,6 +14,18 @@ export interface Macro {
 
 export type DiscardChoice = 'save' | 'discard' | 'cancel';
 
+/**
+ * How an API key is stored in preferences.
+ *
+ * - `none` — empty / not configured.
+ * - `encrypted` — OS keychain (macOS Keychain, Windows DPAPI,
+ *   kwallet/libsecret on Linux). The plaintext never reaches disk.
+ * - `plaintext` — fallback when no OS keychain is available
+ *   (typical for headless Linux). The renderer should warn the user
+ *   before saving and show an "unlocked" indicator for stored keys.
+ */
+export type AiKeyStatus = 'none' | 'encrypted' | 'plaintext';
+
 /** Card grouping modes for the memo chat panel (v0.1.4). */
 export type MemoGroupBy = 'line' | 'tag' | 'author' | 'status';
 
@@ -573,14 +585,28 @@ export interface IpcApi {
   >;
   /**
    * v0.1.8 — write a plaintext API key. Main encrypts via safeStorage and
-   * persists the encrypted blob into preferences.json.
+   * persists the encrypted blob into preferences.json. v0.2.x: the `status`
+   * field tells the renderer what kind of storage actually happened — on
+   * systems without an OS keychain the value lands as `plaintext`, and the
+   * UI should reflect that with an "unlocked" indicator.
    */
   aiSetApiKey: (
     provider: 'anthropic' | 'openai-compatible',
     plainKey: string,
-  ) => Promise<{ ok: true } | { ok: false; error: string }>;
-  /** Tell the renderer whether the active provider has any key configured. */
-  aiHasKey: (provider: 'anthropic' | 'openai-compatible') => Promise<boolean>;
+  ) => Promise<{ ok: true; status: AiKeyStatus } | { ok: false; error: string }>;
+  /**
+   * Report how the active provider's key is stored — none, encrypted via
+   * the OS keychain, or plaintext fallback. Plaintext fallback is honest
+   * about the lack of OS-keychain encryption so the UI can warn the user.
+   */
+  aiKeyStatus: (provider: 'anthropic' | 'openai-compatible') => Promise<AiKeyStatus>;
+  /**
+   * Whether the main process can encrypt a new key via the OS keychain.
+   * Renderer reads this before showing the API-key input so the save
+   * button can be labelled "Save (plaintext)" up front on systems where
+   * no keychain is configured. Idempotent and cheap.
+   */
+  aiEncryptionAvailable: () => Promise<boolean>;
   /** Probe the active provider with a tiny request to verify auth + reach. */
   aiVerify: () => Promise<AiVerifyResult>;
   /**

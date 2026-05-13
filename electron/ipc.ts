@@ -36,7 +36,7 @@ import { extractDoiFromFile } from './referenceImport';
 import { extractPdfText } from './pdfText';
 import { extname } from 'node:path';
 import { aiChat as aiChatCall, aiVerify as aiVerifyCall, type AiMessage } from './aiClient';
-import { makeKeyVault } from './aiKeys';
+import { isEncryptionAvailable, keyStatusOf, makeKeyVault } from './aiKeys';
 import { parseBibTeX } from '@shared/bibtex';
 import { parseRis } from '@shared/ris';
 import { extname } from 'node:path';
@@ -578,7 +578,7 @@ export function registerIpcHandlers(): void {
         } else {
           await setPreferences({ ai: { ...prefs.ai, openaiKey: encrypted } });
         }
-        return { ok: true as const };
+        return { ok: true as const, status: keyStatusOf(encrypted) };
       } catch (err) {
         return { ok: false as const, error: (err as Error).message };
       }
@@ -586,16 +586,20 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
-    'ai:hasKey',
+    'ai:keyStatus',
     async (_e, provider: 'anthropic' | 'openai-compatible') => {
       const prefs = await getPreferences();
       const stored =
         provider === 'anthropic' ? prefs.ai?.anthropicKey : prefs.ai?.openaiKey;
-      if (!stored) return false;
-      const decrypted = vault.decrypt(stored);
-      return decrypted.length > 0;
+      // Empty / decrypt-fail is reported as 'none'; otherwise the
+      // storage-prefix tells us encrypted vs plaintext.
+      if (!stored) return 'none' as const;
+      if (vault.decrypt(stored).length === 0) return 'none' as const;
+      return keyStatusOf(stored);
     },
   );
+
+  ipcMain.handle('ai:encryptionAvailable', async () => isEncryptionAvailable());
 
   ipcMain.handle('ai:verify', async () => {
     const prefs = await getPreferences();
