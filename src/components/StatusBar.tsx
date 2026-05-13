@@ -23,9 +23,9 @@ function formatNumber(n: number): string {
 }
 
 const MODES: ReadonlyArray<{ mode: EditMode; labelKey: string; icon: string; titleKey: string }> = [
-  { mode: 'wysiwyg', labelKey: 'status.editMode.wysiwyg', icon: 'W', titleKey: 'status.editMode.wysiwyg.title' },
-  { mode: 'typora', labelKey: 'status.editMode.typora', icon: 'T', titleKey: 'status.editMode.typora.title' },
-  { mode: 'markdown', labelKey: 'status.editMode.markdown', icon: 'M', titleKey: 'status.editMode.markdown.title' },
+  { mode: 'wysiwyg', labelKey: 'status.editMode.wysiwyg', icon: 'D', titleKey: 'status.editMode.wysiwyg.title' },
+  { mode: 'typora', labelKey: 'status.editMode.typora', icon: 'L', titleKey: 'status.editMode.typora.title' },
+  { mode: 'markdown', labelKey: 'status.editMode.markdown', icon: 'S', titleKey: 'status.editMode.markdown.title' },
 ];
 
 export function StatusBar() {

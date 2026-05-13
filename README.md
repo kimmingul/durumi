@@ -4,25 +4,26 @@
 
 A cross-platform markdown editor (macOS + Windows 11) that grows from a Typora-style live-preview editor into an end-to-end manuscript studio for medical researchers. The crane (학, 鶴) is also a homophone for *learning* (學) — the brand carries the dual meaning of scholarship and the origami crane folded for someone's healing.
 
-**Current version: v0.1.12.** Highlights since v0.1.8.3:
+**Current version: v0.1.13.** Highlights since v0.1.8.3:
 
-- **v0.1.12 — WYSIWYG strict-literal mode**: typing markdown markers in WYSIWYG mode auto-escapes them so `#`, `*`, `[` etc. stay literal characters; toolbar / shortcuts are the only path to real formatting. Active-line invariant relaxed so WYSIWYG renders the same on every line regardless of the caret position.
-- **v0.1.11 — Three-mode editor**: WYSIWYG (default, Word-like) / Typora-style / Markdown source, switchable via status-bar segmented control or `Cmd+Shift+1/2/3`. WYSIWYG ships with a formatting toolbar and six journal-flavoured style presets (Durumi default / Classic manuscript / Nature / Lancet / JKMS / Comfortable draft).
+- **v0.1.13 — Mode rename**: the three modes get user-friendly Durumi-native names instead of borrowed product names. `WYSIWYG → Document / 문서`, `Typora-style → Live / 라이브`, `Markdown source → Source / 소스`. Status-bar icons become D / L / S. Internal `prefs.editor.defaultMode` keys (`wysiwyg | typora | markdown`) stay unchanged for back-compat.
+- **v0.1.12 — Document mode strict-literal**: typing markdown markers in Document mode auto-escapes them so `#`, `*`, `[` etc. stay literal characters; toolbar / shortcuts are the only path to real formatting. Active-line invariant relaxed so Document mode renders the same on every line regardless of the caret position.
+- **v0.1.11 — Three-mode editor**: Document (default, Word-like) / Live (the v0.1.0~v0.1.10 live-preview behaviour) / Source (plain markdown). Switch via the status-bar D/L/S segmented control or `Cmd+Shift+1/2/3`. Document mode ships with a formatting toolbar and six journal-flavoured style presets (Durumi default / Classic manuscript / Nature / Lancet / JKMS / Comfortable draft).
 - **v0.1.10 — Reference workflow refinements**: 검토 menu split into 검토 / 참고문헌 / AI 작성 도우미 top-level menus; smart-merge of adjacent `[@a; @b]` citations; DOI dedup with row highlight; Crossref abstract auto-saved to `reference/<key>.md` on add; 8-option sort dropdown in the references sidebar.
 - **v0.1.9 — Reference docs**: comprehensive `docs/reference-management.md` user guide.
 - **v0.1.8.4** — Right sidebar split (References + AI moved out of the left sidebar into a dedicated right pane with independent visibility / width).
 
 ## Features
 
-### Three edit modes (v0.1.11)
+### Three edit modes (v0.1.11, renamed in v0.1.13)
 
-The editor wears three faces. Switch via status-bar W/T/M segmented control, the View → Edit Mode submenu, or keyboard:
+The editor wears three faces. Switch via status-bar D/L/S segmented control, the View → Edit Mode submenu, or keyboard:
 
-- **WYSIWYG** *(default, `Cmd/Ctrl + Shift + 1`)* — MS Word-style. Markdown markers never visible. Formatting via toolbar (Style / Inline / List / Insert / Review groups) or shortcuts. Typing `#`, `*`, `[`, `<` auto-escapes so the characters stay literal — toolbar and `Cmd+B` / `Cmd+1` etc. are the only path to real formatting. v0.1.12 narrows the v0.1.0 active-line invariant so widgets (image, math, mermaid, table, taskList, HR, citation pill, footnote pill, frontMatter) render on every line, including the one the caret is on.
-- **Typora-style** *(`Cmd/Ctrl + Shift + 2`)* — the v0.1.0~v0.1.10 default. Markdown rendered on inactive lines; raw source shown on the active line so you can edit markers.
-- **Markdown source** *(`Cmd/Ctrl + Shift + 3`)* — plain markdown with syntax highlighting. Live-preview decorations off entirely.
+- **Document / 문서** *(default, `Cmd/Ctrl + Shift + 1`)* — MS Word-style. Markdown markers never visible. Formatting via toolbar (Style / Inline / List / Insert / Review groups) or shortcuts. Typing `#`, `*`, `[`, `<` auto-escapes so the characters stay literal — toolbar and `Cmd+B` / `Cmd+1` etc. are the only path to real formatting. v0.1.12 narrows the v0.1.0 active-line invariant so widgets (image, math, mermaid, table, taskList, HR, citation pill, footnote pill, frontMatter) render on every line, including the one the caret is on.
+- **Live / 라이브** *(`Cmd/Ctrl + Shift + 2`)* — the v0.1.0~v0.1.10 live-preview default. Markdown rendered on inactive lines; raw source shown on the active line so you can edit markers.
+- **Source / 소스** *(`Cmd/Ctrl + Shift + 3`)* — plain markdown with syntax highlighting. Live-preview decorations off entirely.
 
-`Cmd/Ctrl + /` toggles between Markdown and the previously-used mode. Default mode persists in `prefs.editor.defaultMode`.
+`Cmd/Ctrl + /` toggles between Source and the previously-used mode. Default mode persists in `prefs.editor.defaultMode` (internal values stay `wysiwyg | typora | markdown` for back-compat).
 
 See [docs/editor-modes.md](docs/editor-modes.md) for the full user guide, FAQ, and IME-safety notes.
 
@@ -43,7 +44,7 @@ Styles apply live through 50 CSS custom properties on `:root` — the editor and
 
 ### Live preview — Markdown coverage
 
-Built on CodeMirror 6 + `@lezer/markdown` + GFM. v0.1.0~v0.1.11 enforced "no `Decoration.replace` on the active line" to protect IME composition; v0.1.12 narrows this to **Typora mode only** — WYSIWYG renders uniformly across active and inactive lines (CodeMirror 6's composition handling is trusted; punctuation markers don't carry IME composition targets anyway).
+Built on CodeMirror 6 + `@lezer/markdown` + GFM. v0.1.0~v0.1.11 enforced "no `Decoration.replace` on the active line" to protect IME composition; v0.1.12 narrows this to **Live mode only** — Document mode renders uniformly across active and inactive lines (CodeMirror 6's composition handling is trusted; punctuation markers don't carry IME composition targets anyway).
 
 - Headings — ATX `#` … `######` and Setext `===` / `---`
 - Emphasis — `*em*`, `_em_`, `**strong**`, `__strong__`, `***both***`
@@ -224,9 +225,9 @@ The left and right sidebars are independent — each has its own visibility togg
 
 Drag-handle resize on both; persisted state (visibility, active tab, width, all open workspace folders).
 
-### WYSIWYG formatting toolbar (v0.1.11)
+### Document-mode formatting toolbar (v0.1.11)
 
-Visible only in WYSIWYG mode — a 36px toolbar above the editor, five button groups:
+Visible only in Document mode — a 36px toolbar above the editor, five button groups:
 
 | Group | Buttons |
 |:--|:--|
@@ -313,8 +314,8 @@ Beyond the live search + local library shipped in v0.1.6/v0.1.7, v0.1.10 added:
 
 ## Documentation
 
-- **[docs/editor-modes.md](docs/editor-modes.md)** — 3-mode editor (WYSIWYG / Typora / Markdown) user guide: switching, IME safety, style presets, FAQ
-- **[docs/wysiwyg-test.md](docs/wysiwyg-test.md)** — comprehensive WYSIWYG regression-test fixture covering every widget + IME composition scenarios
+- **[docs/editor-modes.md](docs/editor-modes.md)** — 3-mode editor (Document / Live / Source) user guide: switching, IME safety, style presets, FAQ
+- **[docs/document-mode-test.md](docs/document-mode-test.md)** — comprehensive Document-mode regression-test fixture covering every widget + IME composition scenarios
 - **[docs/reference-management.md](docs/reference-management.md)** — 참고문헌 관리 가이드 (Korean): add flow, local PDF/MD library, smart-merge, sort options, key rename, AI suggestion, shortcuts (v0.1.10)
 - **[docs/durumi-markdown-reference.md](docs/durumi-markdown-reference.md)** — comprehensive Korean markdown reference (Typora 1.13 baseline + Durumi extensions: citations, memos, manuscript metadata, KaTeX coverage, export pipeline, shortcut tables)
 - **[docs/typora-spec.md](docs/typora-spec.md)** — Typora 1.13 parity spec (Phases A/B/C, deliberate non-goals, references)
@@ -323,8 +324,9 @@ Beyond the live search + local library shipped in v0.1.6/v0.1.7, v0.1.10 added:
 
 ## Recent additions
 
-- **v0.1.12** — WYSIWYG strict-literal escape filter; v0.1.0 active-line invariant narrowed so WYSIWYG renders uniformly across active/inactive lines; menu i18n consolidated into a single `shared/menuLabels.ts` source of truth
-- **v0.1.11** — Three-mode editor (WYSIWYG default / Typora / Markdown source); status-bar W/T/M segmented control + `Cmd+Shift+1/2/3`; WYSIWYG formatting toolbar; six journal-flavoured style presets with reset-to-default
+- **v0.1.13** — Mode rename: `WYSIWYG → Document / 문서`, `Typora-style → Live / 라이브`, `Markdown source → Source / 소스`. Status-bar segmented control letters: `W/T/M → D/L/S`. Internal prefs keys unchanged for back-compat.
+- **v0.1.12** — Document-mode strict-literal escape filter; v0.1.0 active-line invariant narrowed so Document mode renders uniformly across active/inactive lines; menu i18n consolidated into a single `shared/menuLabels.ts` source of truth
+- **v0.1.11** — Three-mode editor (Document default / Live / Source); status-bar D/L/S segmented control + `Cmd+Shift+1/2/3`; Document-mode formatting toolbar; six journal-flavoured style presets with reset-to-default
 - **v0.1.10** — Reference workflow refinements: split 검토 menu into 참고문헌 + AI 작성 도우미 top-level menus; smart-merge `[@a; @b]`; DOI dedup with sidebar row highlight; Crossref abstract auto-save on add; 8-option sort dropdown
 - **v0.1.9** — Comprehensive `docs/reference-management.md` user guide
 - **v0.1.8.4** — Left + right sidebar split (References + AI moved to a dedicated right pane with independent visibility / width)
@@ -393,8 +395,8 @@ pnpm dev
 
 ```bash
 pnpm build              # bundle main + preload + renderer
-pnpm make:mac           # produce dist-build/Durumi-0.1.12-*.dmg (run on macOS)
-pnpm make:win           # produce dist-build/Durumi Setup 0.1.12.exe (run on Windows 11)
+pnpm make:mac           # produce dist-build/Durumi-0.1.13-*.dmg (run on macOS)
+pnpm make:win           # produce dist-build/Durumi Setup 0.1.13.exe (run on Windows 11)
 ```
 
 See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, signing posture, auto-update setup).
@@ -404,7 +406,7 @@ See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, sig
 ```bash
 pnpm typecheck          # 0 errors expected
 pnpm lint               # 0 errors / 0 warnings expected
-pnpm test               # 1250 Vitest unit tests (v0.1.12)
+pnpm test               # 1250 Vitest unit tests (v0.1.13)
 pnpm test:e2e           # 16 Playwright Electron tests (run pnpm build first)
 ```
 
@@ -464,10 +466,10 @@ User-defined macros via `macros.json` extend / override these.
 ### Edit mode (v0.1.11)
 | Shortcut | Action |
 |---|---|
-| `Cmd/Ctrl + Shift + 1` | WYSIWYG mode |
-| `Cmd/Ctrl + Shift + 2` | Typora-style mode |
-| `Cmd/Ctrl + Shift + 3` | Markdown source mode |
-| `Cmd/Ctrl + /` | Toggle Markdown ↔ previous mode |
+| `Cmd/Ctrl + Shift + 1` | Document mode (문서) |
+| `Cmd/Ctrl + Shift + 2` | Live mode (라이브) |
+| `Cmd/Ctrl + Shift + 3` | Source mode (소스) |
+| `Cmd/Ctrl + /` | Toggle Source ↔ previous mode |
 
 ### View / sidebar
 | Shortcut | Action |
@@ -549,7 +551,7 @@ src/                         Renderer (React + CodeMirror 6)
 │   ├── jumpToLine.ts        Cursor + scrollIntoView helper
 │   ├── openSearch.ts        Search panel openers
 │   ├── viewModes.ts         Focus / Typewriter modes
-│   ├── editMode.ts          v0.1.11 — WYSIWYG / Typora / Markdown state
+│   ├── editMode.ts          v0.1.11 — Document / Live / Source state (internal ids: wysiwyg / typora / markdown)
 │   ├── wysiwygEscape.ts     v0.1.12 — strict-literal markdown escape filter
 │   └── theme.ts             CM6 theme via CSS variables
 ├── components/
@@ -560,7 +562,7 @@ src/                         Renderer (React + CodeMirror 6)
 │   │                        ReferencesTab, referenceSort.ts (v0.1.10)
 │   ├── MemoPanel.tsx        Right-side chat panel host
 │   ├── MemoCard.tsx         Per-memo card (header / textarea / replies)
-│   ├── EditorToolbar.tsx    v0.1.11 — WYSIWYG formatting toolbar
+│   ├── EditorToolbar.tsx    v0.1.11 — Document-mode formatting toolbar
 │   ├── QuickOpen.tsx        Cmd/Ctrl+P fuzzy file palette
 │   ├── PandocInstallDialog.tsx
 │   ├── SettingsDialog.tsx
@@ -603,13 +605,13 @@ build/
 ├── icon.svg                 Master logo (origami crane on 한지 paper)
 └── icon.png                 1024×1024 app icon (rendered from icon.svg)
 
-tests/                       Vitest unit tests (1250 in v0.1.12)
+tests/                       Vitest unit tests (1250 in v0.1.13)
 e2e/                         Playwright Electron tests (16)
 docs/
 ├── durumi-markdown-reference.md   Korean markdown reference (~1311 lines)
-├── editor-modes.md          3-mode editor guide (WYSIWYG/Typora/Markdown)
+├── editor-modes.md          3-mode editor guide (Document/Live/Source)
 ├── reference-management.md  Reference workflow user guide (v0.1.10)
-├── wysiwyg-test.md          WYSIWYG regression-test fixture
+├── document-mode-test.md    Document-mode regression-test fixture
 ├── typora-spec.md           Typora 1.13 parity spec
 ├── PROGRESS.md              Progress tracker + roadmap
 └── RELEASE.md               Signing + auto-update runbook

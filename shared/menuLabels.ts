@@ -82,9 +82,9 @@ export const menuLabels: Record<MenuLang, Record<string, string>> = {
     'menu.view.language.en': 'English',
     'menu.view.language.ko': '한국어',
     'menu.view.editMode': 'Edit Mode',
-    'menu.view.editMode.wysiwyg': 'WYSIWYG',
-    'menu.view.editMode.typora': 'Typora',
-    'menu.view.editMode.markdown': 'Markdown Source',
+    'menu.view.editMode.wysiwyg': 'Document',
+    'menu.view.editMode.typora': 'Live',
+    'menu.view.editMode.markdown': 'Source',
     'menu.view.toggleMemoPanel': 'Toggle Memo Panel',
 
     // Review (memo + change tracking + export toggles)
@@ -192,9 +192,9 @@ export const menuLabels: Record<MenuLang, Record<string, string>> = {
     'menu.view.language.en': 'English',
     'menu.view.language.ko': '한국어',
     'menu.view.editMode': '편집 모드',
-    'menu.view.editMode.wysiwyg': 'WYSIWYG',
-    'menu.view.editMode.typora': 'Typora',
-    'menu.view.editMode.markdown': '마크다운 소스',
+    'menu.view.editMode.wysiwyg': '문서',
+    'menu.view.editMode.typora': '라이브',
+    'menu.view.editMode.markdown': '소스',
     'menu.view.toggleMemoPanel': '메모 패널 토글',
 
     // Review

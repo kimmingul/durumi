@@ -1,6 +1,55 @@
 # Durumi — Progress
 
-## v0.1.12 (current) — WYSIWYG strict-literal mode
+## v0.1.13 (current) — Mode rename: Document / Live / Source
+
+Naming polish only — no behavioural change. The three modes get
+user-friendly Durumi-native names that don't borrow from other
+products:
+
+| Internal id (prefs) | v0.1.12 label | v0.1.13 label |
+|:--|:--|:--|
+| `wysiwyg` | WYSIWYG / WYSIWYG | **Document** / **문서** |
+| `typora` | Typora / Typora 스타일 | **Live** / **라이브** |
+| `markdown` | Markdown / 마크다운 | **Source** / **소스** |
+
+### What changed
+- `shared/menuLabels.ts` — `menu.view.editMode.*` labels updated for
+  both EN and KO. The internal `EditMode` type union stays
+  `'wysiwyg' | 'typora' | 'markdown'` so existing `preferences.json`
+  files keep working untouched.
+- `src/i18n/dict.ts` — `status.editMode.*` labels and tooltips
+  rewritten to match. Tooltips now describe each mode's role in plain
+  language ("Document mode — Word-style, no markdown markers" / "Live
+  mode — render on inactive lines, source on the active line" /
+  "Source mode — plain markdown text").
+- `src/components/StatusBar.tsx` — segmented-control icon letters
+  W/T/M → D/L/S. The shortcut hints in the tooltips remain
+  `Cmd+Shift+1/2/3`.
+- Docs (README, editor-modes.md, durumi-markdown-reference.md,
+  document-mode-test.md formerly wysiwyg-test.md) updated throughout.
+  Historical references to "WYSIWYG" / "Typora 스타일" / "Markdown
+  소스" are preserved with a one-line "v0.1.13에서 명칭 변경" note so
+  release-note context isn't lost.
+- `docs/wysiwyg-test.md` renamed to `docs/document-mode-test.md` so
+  the filename matches the new user-facing mode name.
+
+### What stays the same
+- Internal `EditMode` union values, `prefs.editor.defaultMode` storage,
+  test file names (`tests/editor/wysiwyg*.test.ts`), and shortcut
+  bindings (`Cmd+Shift+1/2/3`). This is a label-only release — code
+  paths and on-disk state are unchanged.
+- All v0.1.12 invariants (Document mode strict-literal escape filter,
+  relaxed active-line rule, menu i18n single source of truth).
+- 1250 vitest tests, all green.
+
+### Quality gates
+- typecheck / lint / build clean
+- 1250 vitest tests across 144 files (same count as v0.1.12 — no
+  behaviour change)
+
+---
+
+## v0.1.12 — WYSIWYG strict-literal mode
 
 A direct fix for a real surprise in v0.1.11: typing `#` in WYSIWYG mode
 was still triggering markdown heading parsing, so the line jumped to a
