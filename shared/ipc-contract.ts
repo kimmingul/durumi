@@ -399,10 +399,25 @@ export interface IpcApi {
    * Locate the `.bib` file we should write into for the active document.
    * Discovery order matches `bibliographyFind` for read symmetry. When
    * none exists, this creates `references.bib` next to the document.
+   *
+   * v0.2.x: renderer should prefer `bibliographyComputePath` for the
+   * document-open binding flow (no side effects). `ensureFile` is only
+   * needed when the renderer wants to materialise the file ahead of a
+   * write — `bibliographyAppendEntry`'s atomic rename already creates
+   * the file on first write, so most code paths don't need this.
    */
   bibliographyEnsureFile: (
     docPath: string | null,
   ) => Promise<{ ok: true; path: string; created: boolean } | { ok: false; error: string }>;
+  /**
+   * Pure path lookup — returns the same path `bibliographyEnsureFile`
+   * would resolve to, plus whether that file already exists on disk.
+   * Never writes. Use this in `bindToDocument` so opening a manuscript
+   * doesn't silently materialise a new `.bib` in the user's workspace.
+   */
+  bibliographyComputePath: (
+    docPath: string | null,
+  ) => Promise<{ ok: true; path: string; exists: boolean } | { ok: false; error: string }>;
   /**
    * Append an entry to the `.bib` file at `filePath`. The caller passes a
    * `BibEntry` whose `key` may be empty — main mints a unique key via

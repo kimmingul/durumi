@@ -29,7 +29,7 @@ import { searchInWorkspace, SearchOptions } from './search';
 import { indexWorkspace } from './fileIndex';
 import { findBibliographyFor } from './bibliography';
 import { resolveDOI, resolveORCID, searchCrossref, searchKoreaMed, searchPubMed } from './bibliographyFetch';
-import { appendEntry as appendBibEntry, ensureBibFile, removeEntry as removeBibEntry, renameEntryKey as renameBibEntryKey, upsertEntry as upsertBibEntry } from './bibliographyWrite';
+import { appendEntry as appendBibEntry, computeBibPath, ensureBibFile, removeEntry as removeBibEntry, renameEntryKey as renameBibEntryKey, upsertEntry as upsertBibEntry } from './bibliographyWrite';
 import { autoSaveAbstract, downloadReference } from './referenceDownload';
 import { referenceStatus, resolveFileField, scanReferenceDir } from './referenceFs';
 import { extractDoiFromFile } from './referenceImport';
@@ -333,6 +333,15 @@ export function registerIpcHandlers(): void {
       const r = await ensureBibFile(docPath);
       if ('error' in r) return { ok: false as const, error: r.error };
       return { ok: true as const, path: r.path, created: r.created };
+    },
+  );
+
+  ipcMain.handle(
+    'bibliography:computePath',
+    async (_e, docPath: string | null) => {
+      const r = await computeBibPath(docPath);
+      if ('error' in r) return { ok: false as const, error: r.error };
+      return { ok: true as const, path: r.path, exists: r.exists };
     },
   );
 

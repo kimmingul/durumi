@@ -85,6 +85,8 @@ const api: IpcApi = {
   bibliographyResolveDoi: (doi) => ipcRenderer.invoke('bibliography:resolveDoi', doi),
   bibliographyEnsureFile: (docPath) =>
     ipcRenderer.invoke('bibliography:ensureFile', docPath),
+  bibliographyComputePath: (docPath) =>
+    ipcRenderer.invoke('bibliography:computePath', docPath),
   bibliographyAppendEntry: (filePath, entry, opts) =>
     ipcRenderer.invoke('bibliography:appendEntry', filePath, entry, opts),
   bibliographyReadEntries: (filePath) =>

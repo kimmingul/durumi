@@ -19,6 +19,7 @@ interface ApiMock {
   bibliographyAppendEntry: ReturnType<typeof vi.fn>;
   bibliographyResolveDoi: ReturnType<typeof vi.fn>;
   bibliographyEnsureFile: ReturnType<typeof vi.fn>;
+  bibliographyComputePath: ReturnType<typeof vi.fn>;
   bibliographyReadEntries: ReturnType<typeof vi.fn>;
   bibliographyFind: ReturnType<typeof vi.fn>;
   referenceStatus: ReturnType<typeof vi.fn>;
@@ -53,6 +54,9 @@ function installApiMock(): ApiMock {
     bibliographyEnsureFile: vi
       .fn()
       .mockResolvedValue({ ok: true, path: '/p/references.bib', created: false }),
+    bibliographyComputePath: vi
+      .fn()
+      .mockResolvedValue({ ok: true, path: '/p/references.bib', exists: false }),
     bibliographyReadEntries: vi
       .fn()
       .mockResolvedValue({ ok: true, entries: [], warnings: [] }),

@@ -201,9 +201,8 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
       set({ filePath: null, exists: false, entries: [], loading: false });
       return;
     }
-    // Discover the existing .bib (read-only probe). Falls back to whatever
-    // ensureBibFile would create — useful so the UI can surface "will be
-    // created at <path>" before the first append.
+    // Workspace-aware discovery first: an existing .bib up to 32 levels
+    // above the document wins over the local default.
     const roots = (await window.api.prefsGet()).workspaceFolders ?? [];
     const found = await window.api.bibliographyFind(docPath, roots);
     if (found) {
@@ -217,13 +216,15 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
       void get().scanFileStatuses();
       return;
     }
-    // No file yet — record the would-be path so the UI can show it.
-    const ensured = await window.api.bibliographyEnsureFile(docPath);
-    if (ensured.ok) {
-      // ensureFile *created* the file on disk; immediately read it (empty).
+    // No existing file in scope — record the path *we'd* create on the
+    // first append without touching disk. The UI renders this as
+    // "Bibliography will be created at <path>"; the file materialises
+    // when `addEntry` runs its first atomic write.
+    const probe = await window.api.bibliographyComputePath(docPath);
+    if (probe.ok) {
       set({
-        filePath: ensured.path,
-        exists: true,
+        filePath: probe.path,
+        exists: probe.exists,
         entries: [],
         loading: false,
       });
@@ -389,6 +390,7 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
       added++;
       set((s) => ({
         entries: [...s.entries, { ...candidate, key: finalKey }],
+        exists: true,
       }));
     }
     void get().scanFileStatuses();
@@ -438,6 +440,7 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
 
     set((s) => ({
       entries: [...s.entries, { ...entryToWrite!, key: written.key }],
+      exists: true,
       fileStatus: {
         ...s.fileStatus,
         [written.key]: { exists: true, relPath, type: typeFromRelPath(relPath) },
@@ -611,6 +614,10 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
  * metadata if no file is already there.
  */
 async function afterEntryAdded(filePath: string, entry: BibEntry): Promise<void> {
+  // The .bib has just materialised on disk (or already existed). Flip the
+  // "exists" flag so the sidebar swaps the "will be created at <path>"
+  // placeholder for the live path line. Idempotent.
+  useBibliographyStore.setState({ exists: true });
   try {
     const prefs = await window.api.prefsGet();
     if (prefs.bibliography?.autoSaveAbstract) {

@@ -27,45 +27,71 @@ export interface EnsureFileResult {
   created: boolean;
 }
 
+export interface ComputeBibPathResult {
+  /** Absolute path of the target `.bib` (existing one, or the default we'd create). */
+  path: string;
+  /** True iff that file is already on disk. */
+  exists: boolean;
+}
+
 /**
- * Locate (or create) the `.bib` file we should write into. Track A's product
- * decision is "default = same folder as the active document"; the caller can
- * override `dir` to point elsewhere later.
+ * Pure path lookup. Probes the discovery order (`references.bib`,
+ * `references.bibtex`, `bibliography.bib`) and returns the first match. If
+ * none exist, returns the path `ensureBibFile` *would* create — but does
+ * NOT touch disk. The renderer uses this when binding to a document so
+ * the UI can render "Bibliography will be created at <path> on first
+ * reference" without surprising the user with a new file appearing in
+ * their workspace.
  */
-export async function ensureBibFile(
+export async function computeBibPath(
   docPath: string | null,
   dirOverride?: string | null,
-): Promise<EnsureFileResult | { error: string }> {
+): Promise<ComputeBibPathResult | { error: string }> {
   const dir = dirOverride && dirOverride.length > 0
     ? dirOverride
     : docPath
       ? dirname(docPath)
       : null;
-  if (!dir) {
-    return { error: 'no-document' };
-  }
+  if (!dir) return { error: 'no-document' };
   for (const name of PREFERRED_NAMES) {
     const candidate = join(dir, name);
     try {
       await fs.access(candidate);
-      return { path: candidate, created: false };
+      return { path: candidate, exists: true };
     } catch {
       // not present — keep probing
     }
   }
-  // None exist; create `references.bib` (UTF-8, empty).
-  const newPath = join(dir, 'references.bib');
+  return { path: join(dir, 'references.bib'), exists: false };
+}
+
+/**
+ * Locate (or create) the `.bib` file we should write into. Track A's product
+ * decision is "default = same folder as the active document"; the caller can
+ * override `dir` to point elsewhere later.
+ *
+ * v0.2.x: the renderer no longer calls this directly on document-open
+ * (that was a silent write-on-open side effect). It's reached only via
+ * `appendEntry`'s atomic write or an explicit user action.
+ */
+export async function ensureBibFile(
+  docPath: string | null,
+  dirOverride?: string | null,
+): Promise<EnsureFileResult | { error: string }> {
+  const probe = await computeBibPath(docPath, dirOverride);
+  if ('error' in probe) return probe;
+  if (probe.exists) return { path: probe.path, created: false };
   try {
     // `wx` flag = fail if exists. We just access-checked all three names so
     // we know it isn't there; this guards against TOCTOU on the rare race.
-    await fs.writeFile(newPath, '', { encoding: 'utf8', flag: 'wx' });
+    await fs.writeFile(probe.path, '', { encoding: 'utf8', flag: 'wx' });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-      return { path: newPath, created: false };
+      return { path: probe.path, created: false };
     }
     return { error: (err as Error).message };
   }
-  return { path: newPath, created: true };
+  return { path: probe.path, created: true };
 }
 
 export interface AppendResult {

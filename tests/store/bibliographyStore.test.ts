@@ -6,6 +6,7 @@ interface ApiMock {
   prefsGet: ReturnType<typeof vi.fn>;
   bibliographyFind: ReturnType<typeof vi.fn>;
   bibliographyEnsureFile: ReturnType<typeof vi.fn>;
+  bibliographyComputePath: ReturnType<typeof vi.fn>;
   bibliographyResolveDoi: ReturnType<typeof vi.fn>;
   bibliographyAppendEntry: ReturnType<typeof vi.fn>;
   bibliographyReadEntries: ReturnType<typeof vi.fn>;
@@ -22,6 +23,9 @@ function installApiMock(): ApiMock {
     prefsGet: vi.fn().mockResolvedValue({ workspaceFolders: [] }),
     bibliographyFind: vi.fn().mockResolvedValue(null),
     bibliographyEnsureFile: vi.fn().mockResolvedValue({ ok: false, error: 'no-document' }),
+    bibliographyComputePath: vi
+      .fn()
+      .mockResolvedValue({ ok: true, path: '/p/references.bib', exists: false }),
     bibliographyResolveDoi: vi.fn(),
     bibliographyAppendEntry: vi.fn(),
     bibliographyReadEntries: vi.fn().mockResolvedValue({ ok: true, entries: [], warnings: [] }),
@@ -87,19 +91,46 @@ describe('bibliographyStore', () => {
     expect(s.entries[0]?.key).toBe('old');
   });
 
-  it('falls back to ensureFile (creates) when discovery returns null', async () => {
+  it('falls back to computePath (no side effect) when discovery returns null', async () => {
+    // v0.2.x: opening a document must NOT create the .bib. It records the
+    // path we would write to and surfaces `exists: false` so the sidebar
+    // shows "will be created at <path>". The file materialises on the
+    // first appendEntry call, not on document-open.
     const api = installApiMock();
     api.bibliographyFind.mockResolvedValueOnce(null);
-    api.bibliographyEnsureFile.mockResolvedValueOnce({
+    api.bibliographyComputePath.mockResolvedValueOnce({
       ok: true,
       path: '/p/references.bib',
-      created: true,
+      exists: false,
     });
     await useBibliographyStore.getState().bindToDocument('/p/doc.md');
     const s = useBibliographyStore.getState();
     expect(s.filePath).toBe('/p/references.bib');
-    expect(s.exists).toBe(true);
+    expect(s.exists).toBe(false);
     expect(s.entries).toEqual([]);
+    // Critical regression guard: the old code path called ensureFile here
+    // and silently materialised the .bib on disk.
+    expect(api.bibliographyEnsureFile).not.toHaveBeenCalled();
+  });
+
+  it('flips exists to true after the first successful addEntry', async () => {
+    const api = installApiMock();
+    api.bibliographyFind.mockResolvedValueOnce(null);
+    api.bibliographyComputePath.mockResolvedValueOnce({
+      ok: true,
+      path: '/p/references.bib',
+      exists: false,
+    });
+    await useBibliographyStore.getState().bindToDocument('/p/doc.md');
+    expect(useBibliographyStore.getState().exists).toBe(false);
+
+    api.bibliographyAppendEntry.mockResolvedValueOnce({
+      ok: true,
+      key: 'smith2024x',
+      path: '/p/references.bib',
+    });
+    await useBibliographyStore.getState().addEntry(sampleEntry);
+    expect(useBibliographyStore.getState().exists).toBe(true);
   });
 
   it('addFromDoi resolves + appends + optimistically updates entries', async () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { appendEntry, ensureBibFile, removeEntry, renameEntryKey, upsertEntry } from '../../electron/bibliographyWrite';
+import { appendEntry, computeBibPath, ensureBibFile, removeEntry, renameEntryKey, upsertEntry } from '../../electron/bibliographyWrite';
 import { parseBibTeX } from '../../shared/bibtex';
 import type { BibEntry } from '../../shared/bibtex';
 
@@ -68,6 +68,39 @@ describe('ensureBibFile', () => {
 
   it('returns no-document error when called with null docPath', async () => {
     const r = await ensureBibFile(null);
+    expect('error' in r).toBe(true);
+  });
+});
+
+describe('computeBibPath', () => {
+  it('reports exists:true for an existing references.bib', async () => {
+    const docPath = join(dir, 'doc.md');
+    const bibPath = join(dir, 'references.bib');
+    await writeFile(docPath, '# x');
+    await writeFile(bibPath, '@article{a}');
+    const r = await computeBibPath(docPath);
+    expect('error' in r).toBe(false);
+    if (!('error' in r)) {
+      expect(r.path).toBe(bibPath);
+      expect(r.exists).toBe(true);
+    }
+  });
+
+  it('reports exists:false and a default path when nothing exists yet', async () => {
+    // This is the v0.2.x guarantee: a binding probe must not write to disk.
+    const docPath = join(dir, 'doc.md');
+    await writeFile(docPath, '# x');
+    const r = await computeBibPath(docPath);
+    if (!('error' in r)) {
+      expect(r.path).toBe(join(dir, 'references.bib'));
+      expect(r.exists).toBe(false);
+    }
+    // Side-effect guard: probing must NOT create the .bib.
+    await expect(readFile(join(dir, 'references.bib'))).rejects.toThrow();
+  });
+
+  it('returns no-document error when called with null docPath', async () => {
+    const r = await computeBibPath(null);
     expect('error' in r).toBe(true);
   });
 });
