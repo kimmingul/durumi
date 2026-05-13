@@ -1,6 +1,75 @@
 # Durumi — Progress
 
-## v0.2.0 (current) — Hardening: atomic markdown write + CriticMarkup XSS fix
+## v0.2.1 (current) — Hardening II: AI key honesty + no-write bibliography bind + path-scoped IPC guard
+
+Second hardening release. Lands three of the four P1 items from
+[docs/v0.2-hardening.md](v0.2-hardening.md). All are backend / IPC
+changes plus one small UI surface — no manual smoke-test gate, so
+the trio shipped together. The remaining P1 item (Electron
+`sandbox: true` flip) ships separately because it needs a manual
+DMG/EXE walk-through; that's the v0.2.2 release.
+
+### What changed
+
+**AI key plaintext fallback honesty (P1-3 → [`7a84633`](https://github.com/kimmingul/durumi/commit/7a84633)).**
+The old `aiHasKey()` boolean said *whether* a key was stored, never *how*.
+On Linux without an OS keyring `safeStorage.isEncryptionAvailable()` returns
+false and `aiKeys.ts` had long fallen back to a `plain:` prefix — silently.
+Now: a new IPC `aiKeyStatus()` returns
+`'none' | 'encrypted' | 'plaintext'` sourced from the storage prefix
+without decrypting; `aiEncryptionAvailable()` lets the renderer warn
+*before* a save. UX: a persistent warning paragraph + a `Save (plaintext)`
+button label on keyless systems, plus a per-key 🔒/🔓 badge below each
+provider's input. The misleading header comment in `aiKeys.ts` was
+rewritten to match the actual behaviour.
+
+**`bindToDocument` no longer creates the `.bib` (P1-4 → [`e1843cf`](https://github.com/kimmingul/durumi/commit/e1843cf)).**
+Opening a manuscript silently materialised `references.bib` in the user's
+folder. The store's `bindToDocument` fell back to `bibliographyEnsureFile`
+when no existing `.bib` was discovered, and that handler creates the file
+as a side effect — despite a comment claiming "record the would-be path."
+Now: a new pure helper `computeBibPath()` does the discovery probe and
+returns `{ path, exists }` without touching disk; the `.bib` materialises
+on the first `addEntry` call (whose atomic tmp+rename write already
+creates the file when missing). A regression-guard test asserts
+`bibliographyEnsureFile` is *not* called during a bind, so the old
+side-effect can't sneak back in.
+
+**Path-scoped IPC validation (P1-2 → [`4b86193`](https://github.com/kimmingul/durumi/commit/4b86193)).**
+A compromised renderer could previously call `file:openPath` /
+`file:save` / dozens of others with `/etc/passwd` or `~/.ssh/id_rsa`.
+New module `electron/pathGuard.ts` exposes
+`assertAllowedPath(p)` which throws unless `p` is inside a workspace
+folder, an exact match for a recent-files entry, or registered via
+`allowSessionPath()` after a main-side dialog. Applied at the handler
+boundary of every renderer-supplied path (~30 handlers across files,
+fs, bibliography, reference, memoSidecar, pandoc, git, search, image).
+Dialog handlers register their returns into the session allowlist.
+`prefs:set` is guarded so the renderer can't poison the allowlist
+itself by smuggling untrusted paths into `workspaceFolders` /
+`recentFiles`. Paths are `path.resolve()`'d before comparison so `..`
+traversal collapses; the prefix check uses `startsWith(root + sep)` so
+`/foo` doesn't accidentally allow `/foo-clone/file`. Symlink resolution
+via `fs.realpath` was intentionally skipped to keep the guard cheap.
+
+### Quality gates
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1286 / 1286** tests across 146 files (was 1261 / 145
+  in v0.2.0; +25 tests covering `keyStatusOf`, `computeBibPath`
+  side-effect guard, the `exists`-flip after first addEntry, and the
+  17-case pathGuard suite)
+
+### Auto-update
+v0.2.0 users will see the "Download v0.2.1" prompt within ~30s of
+opening the app. No behaviour change to legitimate workflows — the
+path guard only fires on paths the renderer shouldn't have been
+sending anyway. AI key UX gets a visible upgrade on Linux; on macOS
+and Windows the new 🔒 badge is purely informational.
+
+---
+
+## v0.2.0 — Hardening: atomic markdown write + CriticMarkup XSS fix
 
 First hardening release. Lands the two highest-priority items from the
 external review of v0.1.14 — both real data-integrity / trust bugs in
