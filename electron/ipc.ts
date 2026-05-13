@@ -37,6 +37,7 @@ import { extractPdfText } from './pdfText';
 import { extname } from 'node:path';
 import { aiChat as aiChatCall, aiVerify as aiVerifyCall, type AiMessage } from './aiClient';
 import { isEncryptionAvailable, keyStatusOf, makeKeyVault } from './aiKeys';
+import { allowSessionPath, assertAllowedPath, assertPrefsPatchAllowed } from './pathGuard';
 import { parseBibTeX } from '@shared/bibtex';
 import { parseRis } from '@shared/ris';
 import { extname } from 'node:path';
@@ -179,18 +180,21 @@ export function registerIpcHandlers(): void {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const path = result.filePaths[0]!;
+    allowSessionPath(path);
     const content = await fs.readFile(path, 'utf8');
     await addRecentFile(path);
     return { path, content };
   });
 
   ipcMain.handle('file:openPath', async (_e, path: string): Promise<FileResult> => {
+    await assertAllowedPath(path);
     const content = await fs.readFile(path, 'utf8');
     await addRecentFile(path);
     return { path, content };
   });
 
   ipcMain.handle('file:save', async (_e, path: string, content: string) => {
+    await assertAllowedPath(path);
     await writeFileAtomic(path, content);
     await addRecentFile(path);
     const prefs = await getPreferences();
@@ -207,6 +211,7 @@ export function registerIpcHandlers(): void {
       filters: [{ name: 'Markdown', extensions: ['md'] }],
     });
     if (result.canceled || !result.filePath) return null;
+    allowSessionPath(result.filePath);
     await writeFileAtomic(result.filePath, content);
     await addRecentFile(result.filePath);
     const prefs = await getPreferences();
@@ -228,6 +233,7 @@ export function registerIpcHandlers(): void {
       ],
     });
     if (result.canceled || !result.filePath) return null;
+    allowSessionPath(result.filePath);
     if (format === 'pdf') {
       await exportToPdf(html, result.filePath);
     } else {
@@ -253,7 +259,17 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('prefs:get', async (): Promise<Preferences> => getPreferences());
-  ipcMain.handle('prefs:set', async (_e, patch: Partial<Preferences>) => setPreferences(patch));
+  ipcMain.handle('prefs:set', async (_e, patch: Partial<Preferences>) => {
+    // Prevent a compromised renderer from smuggling untrusted paths into the
+    // path-guard allowlist by injecting them into preferences. Existing
+    // entries (loaded from prior sessions) pass through; new entries must
+    // have come through a dialog this session.
+    await assertPrefsPatchAllowed({
+      workspaceFolders: patch.workspaceFolders,
+      recentFiles: patch.recentFiles,
+    });
+    return setPreferences(patch);
+  });
 
   ipcMain.handle('window:setTitle', async (event, title: string) => {
     BrowserWindow.fromWebContents(event.sender)?.setTitle(title);
@@ -266,12 +282,26 @@ export function registerIpcHandlers(): void {
       buffer: Uint8Array,
       mimeType: string,
       contextFilePath: string | null,
-    ) => saveImage(buffer, mimeType, contextFilePath),
+    ) => {
+      // contextFilePath is the document next to which the asset will land
+      // (typically `<doc_dir>/assets/img-<ts>.<ext>`). Guard it so a
+      // compromised renderer can't write asset bytes outside trusted paths.
+      if (contextFilePath) await assertAllowedPath(contextFilePath);
+      return saveImage(buffer, mimeType, contextFilePath);
+    },
   );
 
-  ipcMain.handle('dialog:openFolder', async () => openFolderDialog());
-  ipcMain.handle('fs:listDirectory', async (_e, p: string) => listDirectory(p));
+  ipcMain.handle('dialog:openFolder', async () => {
+    const picked = await openFolderDialog();
+    if (picked) allowSessionPath(picked);
+    return picked;
+  });
+  ipcMain.handle('fs:listDirectory', async (_e, p: string) => {
+    await assertAllowedPath(p);
+    return listDirectory(p);
+  });
   ipcMain.handle('fs:watchRoot', async (_e, p: string) => {
+    await assertAllowedPath(p);
     await watchRoot(p, (changed) => {
       BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('fs:change', changed));
     });
@@ -282,39 +312,73 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('customCss:get', async () => getCustomCss());
   ipcMain.handle('macros:get', async () => getMacros());
 
-  ipcMain.handle('git:getStatus', async (_e, rootPath: string) => getRepoStatus(rootPath));
+  ipcMain.handle('git:getStatus', async (_e, rootPath: string) => {
+    await assertAllowedPath(rootPath);
+    return getRepoStatus(rootPath);
+  });
 
   ipcMain.handle(
     'search:workspace',
-    async (_e, rootPath: string, opts: SearchOptions) => searchInWorkspace(rootPath, opts),
+    async (_e, rootPath: string, opts: SearchOptions) => {
+      await assertAllowedPath(rootPath);
+      return searchInWorkspace(rootPath, opts);
+    },
   );
 
-  ipcMain.handle('files:index', async (_e, roots: string[]) => indexWorkspace(roots));
+  ipcMain.handle('files:index', async (_e, roots: string[]) => {
+    for (const r of roots) await assertAllowedPath(r);
+    return indexWorkspace(roots);
+  });
 
   ipcMain.handle(
     'bibliography:find',
-    async (_e, filePath: string | null, roots: string[]) =>
-      findBibliographyFor(filePath, roots),
+    async (_e, filePath: string | null, roots: string[]) => {
+      if (filePath) await assertAllowedPath(filePath);
+      for (const r of roots) await assertAllowedPath(r);
+      return findBibliographyFor(filePath, roots);
+    },
   );
 
-  ipcMain.handle('files:create', async (_e, path: string) => createFile(path));
-  ipcMain.handle('files:createFolder', async (_e, path: string) => createFolder(path));
-  ipcMain.handle('files:rename', async (_e, oldPath: string, newPath: string) =>
-    renameFile(oldPath, newPath),
-  );
-  ipcMain.handle('files:duplicate', async (_e, path: string) => duplicateFile(path));
-  ipcMain.handle('files:trash', async (_e, path: string) => moveToTrash(path));
-  ipcMain.handle('files:reveal', async (_e, path: string) => revealInFolder(path));
+  ipcMain.handle('files:create', async (_e, path: string) => {
+    await assertAllowedPath(path);
+    return createFile(path);
+  });
+  ipcMain.handle('files:createFolder', async (_e, path: string) => {
+    await assertAllowedPath(path);
+    return createFolder(path);
+  });
+  ipcMain.handle('files:rename', async (_e, oldPath: string, newPath: string) => {
+    await assertAllowedPath(oldPath);
+    await assertAllowedPath(newPath);
+    return renameFile(oldPath, newPath);
+  });
+  ipcMain.handle('files:duplicate', async (_e, path: string) => {
+    await assertAllowedPath(path);
+    return duplicateFile(path);
+  });
+  ipcMain.handle('files:trash', async (_e, path: string) => {
+    await assertAllowedPath(path);
+    return moveToTrash(path);
+  });
+  ipcMain.handle('files:reveal', async (_e, path: string) => {
+    await assertAllowedPath(path);
+    return revealInFolder(path);
+  });
 
   ipcMain.handle(
     'memoSidecar:read',
-    async (_e, docPath: string): Promise<MemoSidecar | null> => readMemoSidecar(docPath),
+    async (_e, docPath: string): Promise<MemoSidecar | null> => {
+      await assertAllowedPath(docPath);
+      return readMemoSidecar(docPath);
+    },
   );
 
   ipcMain.handle(
     'memoSidecar:write',
-    async (_e, docPath: string, sidecar: MemoSidecar): Promise<void> =>
-      writeMemoSidecar(docPath, sidecar),
+    async (_e, docPath: string, sidecar: MemoSidecar): Promise<void> => {
+      await assertAllowedPath(docPath);
+      return writeMemoSidecar(docPath, sidecar);
+    },
   );
 
   ipcMain.handle('bibliography:resolveDoi', async (_e, doi: string) => {
@@ -330,6 +394,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:ensureFile',
     async (_e, docPath: string | null) => {
+      if (docPath) await assertAllowedPath(docPath);
       const r = await ensureBibFile(docPath);
       if ('error' in r) return { ok: false as const, error: r.error };
       return { ok: true as const, path: r.path, created: r.created };
@@ -339,6 +404,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:computePath',
     async (_e, docPath: string | null) => {
+      if (docPath) await assertAllowedPath(docPath);
       const r = await computeBibPath(docPath);
       if ('error' in r) return { ok: false as const, error: r.error };
       return { ok: true as const, path: r.path, exists: r.exists };
@@ -348,6 +414,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:appendEntry',
     async (_e, filePath: string, entry: BibEntry, opts?: { force?: boolean }) => {
+      await assertAllowedPath(filePath);
       const r = await appendBibEntry(filePath, entry, { force: opts?.force });
       if (r.ok) return { ok: true as const, key: r.key, path: r.path };
       // v0.1.10: surface the dedup variants alongside their existingKey so
@@ -370,6 +437,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:readEntries',
     async (_e, filePath: string) => {
+      await assertAllowedPath(filePath);
       try {
         const source = await fs.readFile(filePath, 'utf8');
         const parsed = parseBibTeX(source);
@@ -432,6 +500,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:upsertEntry',
     async (_e, filePath: string, entry: BibEntry) => {
+      await assertAllowedPath(filePath);
       const r = await upsertBibEntry(filePath, entry);
       if (!r.ok) return { ok: false as const, error: r.error };
       return { ok: true as const, key: r.key, path: r.path };
@@ -441,6 +510,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:removeEntry',
     async (_e, filePath: string, key: string) => {
+      await assertAllowedPath(filePath);
       const r = await removeBibEntry(filePath, key);
       if (!r.ok) return { ok: false as const, error: r.error };
       return { ok: true as const, path: r.path };
@@ -450,6 +520,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:renameKey',
     async (_e, filePath: string, oldKey: string, newKey: string) => {
+      await assertAllowedPath(filePath);
       const r = await renameBibEntryKey(filePath, oldKey, newKey);
       if (!r.ok) return { ok: false as const, error: r.error };
       return { ok: true as const, path: r.path };
@@ -457,6 +528,7 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle('bibliography:importFile', async (_e, sourcePath: string) => {
+    await assertAllowedPath(sourcePath);
     let raw: string;
     try {
       raw = await fs.readFile(sourcePath, 'utf8');
@@ -479,6 +551,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'reference:download',
     async (_e, bibFilePath: string, entry: BibEntry) => {
+      await assertAllowedPath(bibFilePath);
       const prefs = await getPreferences();
       const r = await downloadReference(bibFilePath, entry, {
         email: prefs.bibliography?.email ?? null,
@@ -500,6 +573,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'bibliography:autoSaveAbstract',
     async (_e, bibFilePath: string, entry: BibEntry) => {
+      await assertAllowedPath(bibFilePath);
       const r = await autoSaveAbstract(bibFilePath, entry);
       if (!r.ok) return { ok: false as const, error: r.error };
       return {
@@ -512,8 +586,13 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle('reference:open', async (_e, bibFilePath: string, relPath: string) => {
+    await assertAllowedPath(bibFilePath);
     const abs = resolveFileField(bibFilePath, relPath);
     if (!abs) return { ok: false as const, error: 'empty path' };
+    // Catch `relPath` traversal that escapes the bib's directory tree
+    // (e.g. `../../etc/passwd`). The resolved absolute path must itself
+    // be inside an allowed root.
+    await assertAllowedPath(abs);
     const errMsg = await shell.openPath(abs);
     if (errMsg) return { ok: false as const, error: errMsg };
     return { ok: true as const };
@@ -521,11 +600,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'reference:status',
-    async (_e, bibFilePath: string, key: string, fileField?: string | null) =>
-      referenceStatus(bibFilePath, key, fileField ?? null),
+    async (_e, bibFilePath: string, key: string, fileField?: string | null) => {
+      await assertAllowedPath(bibFilePath);
+      return referenceStatus(bibFilePath, key, fileField ?? null);
+    },
   );
 
   ipcMain.handle('reference:scan', async (_e, bibFilePath: string) => {
+    await assertAllowedPath(bibFilePath);
     try {
       const files = await scanReferenceDir(bibFilePath);
       return { ok: true as const, files };
@@ -534,9 +616,10 @@ export function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('reference:extractDoi', async (_e, absPath: string) =>
-    extractDoiFromFile(absPath),
-  );
+  ipcMain.handle('reference:extractDoi', async (_e, absPath: string) => {
+    await assertAllowedPath(absPath);
+    return extractDoiFromFile(absPath);
+  });
 
   ipcMain.handle(
     'reference:extractText',
@@ -546,8 +629,11 @@ export function registerIpcHandlers(): void {
       relPath: string,
       options?: { maxPages?: number; maxChars?: number },
     ) => {
+      await assertAllowedPath(bibFilePath);
       const abs = resolveFileField(bibFilePath, relPath);
       if (!abs) return { ok: false as const, error: 'empty path' };
+      // Same traversal guard as `reference:open` (relPath could escape).
+      await assertAllowedPath(abs);
       const ext = extname(abs).toLowerCase();
       if (ext === '.md' || ext === '.markdown') {
         try {
@@ -685,7 +771,9 @@ export function registerIpcHandlers(): void {
       title: 'Select pandoc binary',
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    return result.filePaths[0]!;
+    const picked = result.filePaths[0]!;
+    allowSessionPath(picked);
+    return picked;
   });
 
   ipcMain.handle(
@@ -699,7 +787,9 @@ export function registerIpcHandlers(): void {
         filters: opts?.filters,
       });
       if (result.canceled || result.filePaths.length === 0) return null;
-      return result.filePaths[0]!;
+      const picked = result.filePaths[0]!;
+      allowSessionPath(picked);
+      return picked;
     },
   );
 
@@ -721,6 +811,7 @@ export function registerIpcHandlers(): void {
     });
     if (dialogResult.canceled || dialogResult.filePaths.length === 0) return null;
     const inputPath = dialogResult.filePaths[0]!;
+    allowSessionPath(inputPath);
     const prefs = await getPreferences();
     const r = await importViaPandoc({
       inputPath,
@@ -742,6 +833,7 @@ export function registerIpcHandlers(): void {
       suggestedName?: string,
       sourceFilePath?: string | null,
     ) => {
+      if (sourceFilePath) await assertAllowedPath(sourceFilePath);
       const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
       if (!win) return null;
       const ext = format === 'docx' ? 'docx' : 'tex';
@@ -751,6 +843,7 @@ export function registerIpcHandlers(): void {
         filters: [{ name: filterName, extensions: [ext] }],
       });
       if (dialogResult.canceled || !dialogResult.filePath) return null;
+      allowSessionPath(dialogResult.filePath);
       const prefs = await getPreferences();
       const extra: string[] = [];
       if (format === 'docx' && prefs.docxStyleReference) {
