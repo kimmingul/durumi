@@ -1,9 +1,32 @@
 import { syntaxTree } from '@codemirror/language';
-import { EditorState, Extension, Range, StateField } from '@codemirror/state';
-import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
-import { parseFrontMatter, frontMatterString } from '../../../shared/frontMatter';
+import { EditorState, Extension, Range, StateEffect, StateField } from '@codemirror/state';
+import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
 import { hasActiveLine, userActiveField } from './activeLine';
 import { isWysiwygMode } from '../editMode';
+
+// js-yaml (~105 KB) is dynamic-imported on first encounter with a front-matter
+// block. Until the parse module loads, the summary widget shows the generic
+// "Front matter" label; once cached, a `renderTick` rebuilds the StateField
+// and the widget displays the parsed summary. Mirrors the lazy-render pattern
+// used by `mermaid.ts` and `math.ts`.
+type FrontMatterModule = typeof import('../../../shared/frontMatter');
+let fmModulePromise: Promise<FrontMatterModule> | null = null;
+let fmModule: FrontMatterModule | null = null;
+const summaryCache = new Map<string, string>();
+const inflightSummaries = new Set<string>();
+
+function loadFrontMatterModule(): Promise<FrontMatterModule> {
+  if (!fmModulePromise) {
+    fmModulePromise = import('../../../shared/frontMatter').then((m) => {
+      fmModule = m;
+      return m;
+    });
+  }
+  return fmModulePromise;
+}
+
+const renderTick = StateEffect.define<number>();
+let tickCounter = 0;
 
 class FrontMatterSummaryWidget extends WidgetType {
   constructor(private readonly summary: string) {
@@ -23,12 +46,27 @@ class FrontMatterSummaryWidget extends WidgetType {
   }
 }
 
-function buildSummary(raw: string): string {
-  const fm = parseFrontMatter(raw);
+function getCachedSummary(raw: string): string {
+  // Try the cache first.
+  const hit = summaryCache.get(raw);
+  if (hit !== undefined) return hit;
+  // If js-yaml is already loaded, compute synchronously and cache.
+  if (fmModule) {
+    const summary = buildSummaryFromYaml(raw);
+    summaryCache.set(raw, summary);
+    return summary;
+  }
+  // Cold path: show a generic label until the parse module loads.
+  return 'Front matter';
+}
+
+function buildSummaryFromYaml(raw: string): string {
+  if (!fmModule) return 'Front matter';
+  const fm = fmModule.parseFrontMatter(raw);
   if (!fm.data) return 'Front matter';
-  const title = frontMatterString(fm, 'title');
-  const author = frontMatterString(fm, 'author');
-  const date = frontMatterString(fm, 'date');
+  const title = fmModule.frontMatterString(fm, 'title');
+  const author = fmModule.frontMatterString(fm, 'author');
+  const date = fmModule.frontMatterString(fm, 'date');
   const parts: string[] = [];
   if (title) parts.push(title);
   if (author) parts.push(author);
@@ -63,7 +101,7 @@ function buildDecorations(state: EditorState): DecorationSet {
         }
       } else {
         const raw = state.doc.sliceString(from, node.to);
-        const summary = buildSummary(raw);
+        const summary = getCachedSummary(raw);
         decos.push(
           Decoration.replace({
             widget: new FrontMatterSummaryWidget(summary),
@@ -82,14 +120,63 @@ const frontMatterField = StateField.define<DecorationSet>({
     return buildDecorations(state);
   },
   update(value, tr) {
-    if (tr.docChanged || tr.selection) return buildDecorations(tr.state);
+    let rebuild = tr.docChanged || tr.selection;
+    if (!rebuild) {
+      for (const e of tr.effects) {
+        if (e.is(renderTick)) {
+          rebuild = true;
+          break;
+        }
+      }
+    }
+    if (rebuild) return buildDecorations(tr.state);
     return value;
   },
   provide: (f) => EditorView.decorations.from(f),
 });
 
+const frontMatterLoader = ViewPlugin.fromClass(
+  class {
+    constructor(view: EditorView) {
+      this.scan(view);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged) this.scan(u.view);
+    }
+    scan(view: EditorView) {
+      // Walk the syntax tree for FrontMatter nodes; if any are present and the
+      // YAML module hasn't been loaded yet, kick off the load and dispatch a
+      // tick once it resolves so the summary widget can update with parsed
+      // data. Cheap: tree walk is O(top-level blocks).
+      const tree = syntaxTree(view.state);
+      let needsLoad = false;
+      const rawTexts: string[] = [];
+      tree.iterate({
+        enter(node) {
+          if (node.name !== 'FrontMatter') return;
+          const raw = view.state.doc.sliceString(node.from, node.to);
+          if (summaryCache.has(raw) || inflightSummaries.has(raw)) return;
+          needsLoad = true;
+          rawTexts.push(raw);
+        },
+      });
+      if (!needsLoad) return;
+      for (const r of rawTexts) inflightSummaries.add(r);
+      void loadFrontMatterModule().then(() => {
+        if ((view as unknown as { destroyed?: boolean }).destroyed) return;
+        // Pre-populate cache for the rawTexts we identified.
+        for (const r of rawTexts) {
+          summaryCache.set(r, buildSummaryFromYaml(r));
+          inflightSummaries.delete(r);
+        }
+        view.dispatch({ effects: renderTick.of(++tickCounter) });
+      });
+    }
+  },
+);
+
 export function frontMatterDecoration(): Extension {
-  return [userActiveField, frontMatterField];
+  return [userActiveField, frontMatterField, frontMatterLoader];
 }
 
 export const frontMatterTheme = EditorView.theme({

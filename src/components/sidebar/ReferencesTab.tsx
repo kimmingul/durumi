@@ -1,13 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage, t } from '../../i18n/t';
 import { useBibliographyStore, type OrphanFile } from '../../store/bibliographyStore';
-import { OrphanRegisterDialog } from '../OrphanRegisterDialog';
-import { EditEntryDialog } from '../EditEntryDialog';
-import { RenameKeyDialog } from '../RenameKeyDialog';
 import { usePreferences } from '../../hooks/usePreferences';
 import { sortReferences, type SortBy } from './referenceSort';
 import type { BibEntry } from '@shared/bibtex';
 import type { BibliographySearchHit } from '@shared/ipc-contract';
+
+// These three dialogs only mount when the user triggers their respective
+// reference-management actions (register an orphan, edit an entry, rename a
+// key). Lazy-load them to keep the eager sidebar bundle small — they bring in
+// no library deps, but their JSX + i18n footprint adds up.
+const OrphanRegisterDialog = lazy(() =>
+  import('../OrphanRegisterDialog').then((m) => ({ default: m.OrphanRegisterDialog })),
+);
+const EditEntryDialog = lazy(() =>
+  import('../EditEntryDialog').then((m) => ({ default: m.EditEntryDialog })),
+);
+const RenameKeyDialog = lazy(() =>
+  import('../RenameKeyDialog').then((m) => ({ default: m.RenameKeyDialog })),
+);
 
 const SORT_OPTIONS: ReadonlyArray<{ value: SortBy; labelKey: string }> = [
   { value: 'addedDesc', labelKey: 'references.sort.addedDesc' },
@@ -417,29 +428,37 @@ export function ReferencesTab({
         )}
       </section>
 
-      <OrphanRegisterDialog
-        open={manualEntryFor !== null}
-        orphan={manualEntryFor?.orphan ?? null}
-        initialDoi={manualEntryFor?.initialDoi ?? null}
-        onClose={() => setManualEntryFor(null)}
-        onConfirm={handleManualConfirm}
-      />
-      <EditEntryDialog
-        open={editingEntry !== null}
-        entry={editingEntry}
-        onClose={() => setEditingEntry(null)}
-        onSave={handleEditSave}
-      />
-      <RenameKeyDialog
-        open={renamingKey !== null}
-        oldKey={renamingKey ?? ''}
-        documentText={documentText}
-        onClose={() => setRenamingKey(null)}
-        onComplete={(oldKey, newKey) => {
-          setRenamingKey(null);
-          onCitationRenamed?.(oldKey, newKey);
-        }}
-      />
+      <Suspense fallback={null}>
+        {manualEntryFor !== null && (
+          <OrphanRegisterDialog
+            open={true}
+            orphan={manualEntryFor.orphan ?? null}
+            initialDoi={manualEntryFor.initialDoi ?? null}
+            onClose={() => setManualEntryFor(null)}
+            onConfirm={handleManualConfirm}
+          />
+        )}
+        {editingEntry !== null && (
+          <EditEntryDialog
+            open={true}
+            entry={editingEntry}
+            onClose={() => setEditingEntry(null)}
+            onSave={handleEditSave}
+          />
+        )}
+        {renamingKey !== null && (
+          <RenameKeyDialog
+            open={true}
+            oldKey={renamingKey}
+            documentText={documentText}
+            onClose={() => setRenamingKey(null)}
+            onComplete={(oldKey, newKey) => {
+              setRenamingKey(null);
+              onCitationRenamed?.(oldKey, newKey);
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

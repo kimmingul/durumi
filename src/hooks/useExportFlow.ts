@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useSidebarStore } from '../store/sidebarStore';
-import { renderHtml } from '../export/renderHtml';
 import { promoteComments, stripComments } from '@shared/comments';
 import { transformCm } from '@shared/criticMarkup';
 import { basenameOf, stripMarkdownExt } from '../utils/path';
@@ -67,6 +66,10 @@ export function useExportFlow(deps: {
       const prefs = await window.api.prefsGet();
       const includeComments = prefs.exportIncludeComments ?? false;
       const preserveAnnotations = prefs.exportPreserveAnnotations ?? false;
+      // Lazy: pulls in markdown-it, KaTeX renderToString path, mermaid
+      // preprocessor, code-highlight prefetch, etc. — none of which the
+      // editor itself needs on first paint.
+      const { renderHtml } = await import('../export/renderHtml');
       const html = await renderHtml(content, title, customCss, {
         bibliography,
         includeComments,

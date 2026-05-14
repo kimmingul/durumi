@@ -74,9 +74,20 @@ describe('FrontMatterExtension (lezer parser)', () => {
 });
 
 describe('frontMatterDecoration', () => {
-  it('replaces the YAML region with a summary widget when the caret is elsewhere', () => {
+  it('replaces the YAML region with a summary widget when the caret is elsewhere', async () => {
     const doc = '---\ntitle: Foo\nauthor: Min\n---\n# Body';
     const view = setup(doc, doc.length); // caret in body
+    // js-yaml is now dynamic-imported by the front-matter decoration so it
+    // doesn't bloat the renderer's eager bundle. The loader plugin kicks off
+    // the import on first scan and dispatches a render tick once parsing is
+    // available. Pre-load it here and trigger a state update so the summary
+    // widget upgrades from the cold-path "Front matter" label to the parsed
+    // title/author summary the assertions below expect.
+    await import('../../shared/frontMatter');
+    // Tick the editor so the loader plugin's idle path fires, plus give the
+    // microtask queue a turn so the deferred `renderTick` dispatch lands.
+    view.dispatch({});
+    await new Promise((r) => setTimeout(r, 0));
     const summary = view.dom.querySelector('.cm-md-frontmatter-summary');
     expect(summary).not.toBeNull();
     expect(summary?.textContent).toContain('Foo');

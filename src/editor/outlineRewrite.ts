@@ -15,7 +15,7 @@
  * the drag UI for them. The helpers here don't recognise setext, so a doc
  * containing them simply has no movable sections detected.
  */
-import { parseFrontMatter } from '../../shared/frontMatter';
+import { parseFrontMatterFenced } from '../../shared/frontMatterFenced';
 
 const ATX_HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_RE = /^(```|~~~)/;
@@ -30,7 +30,7 @@ interface AtxHeading {
  *  the front-matter region. The Outline UI shares the original parser; here
  *  we need an offset-aware list when computing section ranges. */
 function parseAtxHeadings(doc: string): AtxHeading[] {
-  const fm = parseFrontMatter(doc);
+  const fm = parseFrontMatterFenced(doc);
   const fmLines = fm.raw ? fm.raw.split('\n').length - (fm.raw.endsWith('\n') ? 1 : 0) : 0;
   const lines = doc.split('\n');
   const out: AtxHeading[] = [];
@@ -193,7 +193,7 @@ export function applyMove(
   }
 
   // Make sure we're not inserting above the front-matter region.
-  const fm = parseFrontMatter(doc);
+  const fm = parseFrontMatterFenced(doc);
   const fmLines = fm.raw ? fm.raw.split('\n').length - (fm.raw.endsWith('\n') ? 1 : 0) : 0;
   if (insertAt - 1 < fmLines) insertAt = fmLines + 1;
 

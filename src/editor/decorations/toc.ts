@@ -2,7 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { parseHeadings, buildOutlineTree, OutlineNode } from '../outline';
-import { parseFrontMatter } from '../../../shared/frontMatter';
+import { parseFrontMatterFenced } from '../../../shared/frontMatterFenced';
 import { hasActiveLine, userActiveField } from './activeLine';
 
 class TocWidget extends WidgetType {
@@ -72,7 +72,7 @@ function buildToc(state: EditorState): DecorationSet {
         return;
       }
       if (!headings) {
-        const fm = parseFrontMatter(state.doc.toString());
+        const fm = parseFrontMatterFenced(state.doc.toString());
         const body = fm.endOffset > 0 ? fm.body : state.doc.toString();
         headings = buildOutlineTree(parseHeadings(body));
       }

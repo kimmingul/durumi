@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { Suspense, lazy, useRef, useState } from 'react';
 import { MarkdownEditor } from './editor/MarkdownEditor';
 import { EditorToolbar } from './components/EditorToolbar';
 import { StatusBar } from './components/StatusBar';
@@ -6,15 +6,39 @@ import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { MemoPanel } from './components/MemoPanel';
 import { QuickOpen } from './components/QuickOpen';
-import { PandocInstallDialog } from './components/PandocInstallDialog';
-import { SettingsDialog } from './components/SettingsDialog';
-import { InsertCitationDialog } from './components/InsertCitationDialog';
-import { CitePalette } from './components/CitePalette';
-import { BulkDoiDialog } from './components/BulkDoiDialog';
-import { ImportReferencesDialog } from './components/ImportReferencesDialog';
-import { AiCommandPalette } from './components/AiCommandPalette';
-import { CitationSuggestPanel } from './components/CitationSuggestPanel';
-import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
+// Dialogs are lazy: they only mount when the user opens them, and the dialog
+// bundle (Settings panel alone is ~50 KB, plus the AI usage dashboard, the
+// citation/reference dialogs, the keyboard-shortcuts cheat sheet, and the
+// Pandoc install walkthrough) doesn't belong on the editor's first paint.
+const PandocInstallDialog = lazy(() =>
+  import('./components/PandocInstallDialog').then((m) => ({ default: m.PandocInstallDialog })),
+);
+const SettingsDialog = lazy(() =>
+  import('./components/SettingsDialog').then((m) => ({ default: m.SettingsDialog })),
+);
+const InsertCitationDialog = lazy(() =>
+  import('./components/InsertCitationDialog').then((m) => ({ default: m.InsertCitationDialog })),
+);
+const BulkDoiDialog = lazy(() =>
+  import('./components/BulkDoiDialog').then((m) => ({ default: m.BulkDoiDialog })),
+);
+const ImportReferencesDialog = lazy(() =>
+  import('./components/ImportReferencesDialog').then((m) => ({ default: m.ImportReferencesDialog })),
+);
+const KeyboardShortcutsDialog = lazy(() =>
+  import('./components/KeyboardShortcutsDialog').then((m) => ({ default: m.KeyboardShortcutsDialog })),
+);
+// AI palette + cite palette + citation suggestion + cite palette: these mount
+// only when the user invokes the feature. Keep them out of the eager bundle.
+const CitePalette = lazy(() =>
+  import('./components/CitePalette').then((m) => ({ default: m.CitePalette })),
+);
+const AiCommandPalette = lazy(() =>
+  import('./components/AiCommandPalette').then((m) => ({ default: m.AiCommandPalette })),
+);
+const CitationSuggestPanel = lazy(() =>
+  import('./components/CitationSuggestPanel').then((m) => ({ default: m.CitationSuggestPanel })),
+);
 import { currentParagraph } from './editor/paragraphContext';
 import { useAppStore } from './store/appStore';
 import { useMemoPanelStore } from './store/memoPanelStore';
@@ -163,84 +187,110 @@ export function App() {
         onClose={() => setQuickOpen(false)}
         onPick={(p) => fileCommands.doOpenPath(p)}
       />
-      <PandocInstallDialog
-        open={exportFlow.pandocInstallOp !== null}
-        onClose={() => exportFlow.setPandocInstallOp(null)}
-        onResolved={() => {
-          const op = exportFlow.pandocInstallOp;
-          exportFlow.setPandocInstallOp(null);
-          if (!op) return;
-          if (op.kind === 'export') {
-            void exportFlow.doPandocExport(op.format);
-          } else if (op.kind === 'import') {
-            void exportFlow.doPandocImportDocx();
-          }
-          // 'configure': nothing to retry — the user opened the install dialog
-          // from Settings just to get pandoc on the system.
-        }}
-      />
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onRequestPandocInstall={() => {
-          setSettingsOpen(false);
-          exportFlow.setPandocInstallOp({ kind: 'configure' });
-        }}
-      />
-      <InsertCitationDialog
-        open={citationFlow.citationDialogOpen}
-        onClose={() => citationFlow.setCitationDialogOpen(false)}
-        onInsert={citationFlow.insertCitationAtCaret}
-      />
-      <CitePalette
-        open={citationFlow.citePaletteOpen}
-        onClose={() => citationFlow.setCitePaletteOpen(false)}
-        onPick={(key) => citationFlow.insertCitationAtCaret(`[@${key}]`)}
-      />
-      <BulkDoiDialog
-        open={citationFlow.bulkDoiOpen}
-        onClose={() => citationFlow.setBulkDoiOpen(false)}
-      />
-      <KeyboardShortcutsDialog
-        open={shortcutsOpen}
-        onClose={() => setShortcutsOpen(false)}
-      />
-      <ImportReferencesDialog
-        open={citationFlow.importState.open}
-        entries={citationFlow.importState.entries}
-        warnings={citationFlow.importState.warnings}
-        format={citationFlow.importState.format}
-        sourcePath={citationFlow.importState.sourcePath}
-        onClose={citationFlow.closeImportDialog}
-      />
-      <AiCommandPalette
-        open={aiPalette.state.open}
-        selection={aiPalette.state.selection}
-        paragraph={aiPalette.state.paragraph}
-        hasKey={aiPalette.state.hasKey}
-        onClose={aiPalette.close}
-        onAccept={aiPalette.accept}
-      />
-      <CitationSuggestPanel
-        open={citationFlow.citeSuggestState.open}
-        paragraph={citationFlow.citeSuggestState.paragraph}
-        hasKey={citationFlow.citeSuggestState.hasKey}
-        onClose={citationFlow.closeCiteSuggest}
-        onAccept={(key) => {
-          const v = editorViewRef.current;
-          if (!v) return;
-          // Insert `[@key]` right after the paragraph (at insertAt).
-          // Putting it at paragraph end avoids guessing intra-sentence
-          // placement; the user can drag-cut it elsewhere if needed.
-          const insertion = ` [@${key}]`;
-          v.dispatch({
-            changes: { from: citationFlow.citeSuggestState.insertAt, insert: insertion },
-            selection: { anchor: citationFlow.citeSuggestState.insertAt + insertion.length },
-          });
-          v.focus();
-          citationFlow.closeCiteSuggest();
-        }}
-      />
+      {/*
+        All dialogs are React.lazy. We gate each lazy component on its `open`
+        flag so React doesn't even start the dynamic import for a dialog the
+        user hasn't summoned. A single Suspense with `null` fallback avoids
+        flashing a loader for what should be a near-instant chunk fetch.
+      */}
+      <Suspense fallback={null}>
+        {exportFlow.pandocInstallOp !== null && (
+          <PandocInstallDialog
+            open={true}
+            onClose={() => exportFlow.setPandocInstallOp(null)}
+            onResolved={() => {
+              const op = exportFlow.pandocInstallOp;
+              exportFlow.setPandocInstallOp(null);
+              if (!op) return;
+              if (op.kind === 'export') {
+                void exportFlow.doPandocExport(op.format);
+              } else if (op.kind === 'import') {
+                void exportFlow.doPandocImportDocx();
+              }
+              // 'configure': nothing to retry — the user opened the install dialog
+              // from Settings just to get pandoc on the system.
+            }}
+          />
+        )}
+        {settingsOpen && (
+          <SettingsDialog
+            open={true}
+            onClose={() => setSettingsOpen(false)}
+            onRequestPandocInstall={() => {
+              setSettingsOpen(false);
+              exportFlow.setPandocInstallOp({ kind: 'configure' });
+            }}
+          />
+        )}
+        {citationFlow.citationDialogOpen && (
+          <InsertCitationDialog
+            open={true}
+            onClose={() => citationFlow.setCitationDialogOpen(false)}
+            onInsert={citationFlow.insertCitationAtCaret}
+          />
+        )}
+        {citationFlow.citePaletteOpen && (
+          <CitePalette
+            open={true}
+            onClose={() => citationFlow.setCitePaletteOpen(false)}
+            onPick={(key) => citationFlow.insertCitationAtCaret(`[@${key}]`)}
+          />
+        )}
+        {citationFlow.bulkDoiOpen && (
+          <BulkDoiDialog
+            open={true}
+            onClose={() => citationFlow.setBulkDoiOpen(false)}
+          />
+        )}
+        {shortcutsOpen && (
+          <KeyboardShortcutsDialog
+            open={true}
+            onClose={() => setShortcutsOpen(false)}
+          />
+        )}
+        {citationFlow.importState.open && (
+          <ImportReferencesDialog
+            open={true}
+            entries={citationFlow.importState.entries}
+            warnings={citationFlow.importState.warnings}
+            format={citationFlow.importState.format}
+            sourcePath={citationFlow.importState.sourcePath}
+            onClose={citationFlow.closeImportDialog}
+          />
+        )}
+        {aiPalette.state.open && (
+          <AiCommandPalette
+            open={true}
+            selection={aiPalette.state.selection}
+            paragraph={aiPalette.state.paragraph}
+            hasKey={aiPalette.state.hasKey}
+            onClose={aiPalette.close}
+            onAccept={aiPalette.accept}
+          />
+        )}
+        {citationFlow.citeSuggestState.open && (
+          <CitationSuggestPanel
+            open={true}
+            paragraph={citationFlow.citeSuggestState.paragraph}
+            hasKey={citationFlow.citeSuggestState.hasKey}
+            onClose={citationFlow.closeCiteSuggest}
+            onAccept={(key) => {
+              const v = editorViewRef.current;
+              if (!v) return;
+              // Insert `[@key]` right after the paragraph (at insertAt).
+              // Putting it at paragraph end avoids guessing intra-sentence
+              // placement; the user can drag-cut it elsewhere if needed.
+              const insertion = ` [@${key}]`;
+              v.dispatch({
+                changes: { from: citationFlow.citeSuggestState.insertAt, insert: insertion },
+                selection: { anchor: citationFlow.citeSuggestState.insertAt + insertion.length },
+              });
+              v.focus();
+              citationFlow.closeCiteSuggest();
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

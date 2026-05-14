@@ -1,9 +1,25 @@
 import { EditorView, ViewPlugin, ViewUpdate, keymap } from '@codemirror/view';
 import { EditorSelection, Extension } from '@codemirror/state';
-import { search, get } from 'node-emoji';
 
 const TRIGGER_RE = /:([a-z0-9_+-]{2,})$/i;
 const MAX_SUGGESTIONS = 8;
+
+// node-emoji ships the full emojilib JSON (~300 KB). The user only needs it
+// when they type `:` followed by 2+ chars — so we dynamic-import on first
+// trigger and cache the module's `search` / `get` exports for subsequent
+// lookups. Until it loads, the autocomplete popup simply stays hidden.
+type EmojiModule = typeof import('node-emoji');
+let emojiModulePromise: Promise<EmojiModule> | null = null;
+let emojiModule: EmojiModule | null = null;
+function loadEmojiModule(): Promise<EmojiModule> {
+  if (!emojiModulePromise) {
+    emojiModulePromise = import('node-emoji').then((m) => {
+      emojiModule = m;
+      return m;
+    });
+  }
+  return emojiModulePromise;
+}
 
 interface Suggestion {
   name: string;
@@ -62,10 +78,13 @@ class EmojiPopup {
 
 function findSuggestions(query: string): Suggestion[] {
   if (query.length === 0) return [];
-  const exact = get(query);
+  // node-emoji hasn't finished loading yet — show no suggestions for this
+  // keystroke. The next keystroke after the load resolves will succeed.
+  if (!emojiModule) return [];
+  const exact = emojiModule.get(query);
   const out: Suggestion[] = [];
   if (exact) out.push({ name: query, emoji: exact });
-  const fuzzy = search(query);
+  const fuzzy = emojiModule.search(query);
   for (const r of fuzzy) {
     if (out.length >= MAX_SUGGESTIONS) break;
     if (r.name === query) continue;
@@ -85,6 +104,11 @@ function detectActive(view: EditorView): ActiveState | null {
   const queryWithColon = m[0];
   const query = m[1];
   const from = head - queryWithColon.length;
+  // Kick off the lazy module load on the first `:query` we see. The popup
+  // will start producing suggestions on the next keystroke.
+  if (!emojiModule) {
+    void loadEmojiModule();
+  }
   const suggestions = findSuggestions(query);
   if (suggestions.length === 0) return null;
   return { from, to: head, query, selectedIdx: 0, suggestions };
