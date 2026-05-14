@@ -51,9 +51,14 @@ describe('tableDecoration', () => {
     view.destroy();
   });
 
-  it('leaves the active row raw, replaces the other two', () => {
+  it('Phase 3.1.1 deviation: renders all rows as widgets even when the caret is inside the table', () => {
+    // INVARIANT-DEVIATION: pre-v0.2.4 behaviour kept the caret row raw so
+    // the user could edit the markdown source. v0.2.4 makes the cells
+    // contentEditable so the widget IS the editing surface — the active
+    // line no longer suppresses the row's widget. See `table.ts` JSDoc
+    // and CONTRIBUTING.md #11.
     const view = makeView(DOC, 3);
-    expect(rows(view).length).toBe(2);
+    expect(rows(view).length).toBe(3);
     view.destroy();
   });
 

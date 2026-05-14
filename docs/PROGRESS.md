@@ -1,6 +1,85 @@
 # Durumi — Progress
 
-## v0.2.3 (current) — Maintenance: v0.2.x hardening band closeout
+## v0.2.4 (current) — Phase 3.1.1: in-place table cell editing
+
+First slice of the v0.3 table-editing roadmap. Markdown tables in
+Document (WYSIWYG) mode are no longer collapsed back to source when
+the caret enters their range — instead each cell becomes a
+`contentEditable` surface that the user clicks and types into
+directly. Inline syntax inside cells still renders as **literal**
+text (rendering `**bold**` as bold lands in Phase 3.1.2). No
+breaking changes; existing tables in saved documents continue to
+work because the canonical markdown source is unchanged.
+
+### What changed
+
+**In-place table cell editing.** Each row of a GFM table is rendered
+as a single block widget with cells exposed as `<div
+contentEditable>`. Click into a cell, type, click out — the
+markdown source updates as `| <typed-text> |`. Pipes typed in the
+cell text are escaped as `\|` so the row keeps its column count.
+
+**Korean-IME-safe input.** Every cell tracks
+`data-composing="true"` between `compositionstart` and
+`compositionend`. The `input` listener bails while composing; only
+`compositionend` triggers a single sync. This mirrors invariant #1
+(IME-safe marker hide) at the cell scope. Mid-composition Tab
+flushes the in-progress text before navigating.
+
+**Cell-to-cell navigation.** Tab moves to the next cell, Shift+Tab
+to the previous, Enter to the same column on the next row, Arrow
+Up/Down to the same column above/below. Tab in the very last cell
+of the table is a no-op (Phase 3.2 will add the
+"insert row on Tab-overflow" behaviour).
+
+**Active-line invariant deviation, table-only.** Documented as
+invariant #11 in `CONTRIBUTING.md`. Tables are unique because they
+have no inline markers to hide (the `|` chars are structural, not
+punctuation markers); collapsing back to raw markdown when the
+caret enters the row would defeat the entire feature. This
+deviation must not be copied to other constructs (math, mermaid,
+images, etc.) without separate design review.
+
+### Files
+
+- New `src/editor/markdownExt/tableEdit.ts` — pure helpers
+  (`cellTextToMarkdown`, `markdownToCellText`, `findCellRange`,
+  `findCellPipeSpan`, `replaceCellText`) for round-tripping cell
+  text into the markdown source. Pipe-escape aware so embedded `|`
+  characters survive both directions. Programmatic dispatches use
+  `userEvent: 'input.cellEdit'` so the WYSIWYG strict-literal
+  filter ignores them.
+- New `src/editor/keymap/tableNavigation.ts` — DOM-level
+  `navigateNextCell` / `navigatePrevCell` / `navigateNextRow` /
+  `navigatePrevRow` invoked from the cell's `keydown` handler
+  (CodeMirror keymap can't reach focus inside a contentEditable
+  widget, so these are pure DOM walks via `data-*` attrs).
+- Rewrite `src/editor/decorations/table.ts` — table widget now
+  renders contentEditable cells with `compositionstart` /
+  `compositionend` / `input` / `keydown` listeners,
+  `ignoreEvent() => true` (so CM's mousedown / Cmd+A etc. don't
+  reach inside the widget), and an `updateDOM` path that preserves
+  focus + caret across the post-sync rebuild.
+- `tests/editor/tableEdit.test.ts` — 26 new vitest cases covering
+  cell-text round-trips (with pipes, backslashes, Korean), cell
+  range lookup with the delimiter row skipped, and the integration
+  with `EditorView` (pipe escape, Korean text, out-of-range guards,
+  wysiwyg-filter bypass).
+- `e2e/table-cell-edit.spec.ts` — 11 new Playwright Electron cases
+  covering click-to-edit, Tab / Shift+Tab / Arrow Up/Down / Enter
+  navigation, empty-cell typing, pipe-char escape, Korean text via
+  `keyboard.type`, an explicit `compositionstart` /
+  `compositionend` cycle (the IME guard at the DOM event level),
+  and the mid-text Tab commit.
+- `CONTRIBUTING.md` — new invariant #11 documenting the
+  active-line deviation for tables.
+
+### Test count
+
+- vitest: 1323 → 1349 (+26)
+- Playwright e2e: 51 → 62 (+11)
+
+## v0.2.3 — Maintenance: v0.2.x hardening band closeout
 
 Closing release for the v0.2.x hardening band. No new user-facing
 features and no breaking changes — purely **internal quality

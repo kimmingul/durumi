@@ -130,6 +130,30 @@ deeper rationale on items 8–10.
     `app.whenReady()` before any window is shown so cold starts can
     reach a recent doc's assets.
 
+### v0.2.4 phase-3.1.1 invariant
+
+11. **Tables override the active-line invariant.** Phase 3.1.1
+    (v0.2.4) makes table cells `contentEditable` so the user clicks
+    directly into a cell to edit. To support that, the table widget
+    intentionally renders even when the caret is on a row's source
+    line — the widget IS the editing surface. This is the ONE
+    deviation from invariant #1 currently allowed. Tables are unique
+    because they have no inline markers to hide (the `|` chars are
+    structural, not punctuation markers); collapsing back to source
+    would defeat the feature.
+
+    Do NOT copy this pattern to other constructs (math, mermaid,
+    images, blockquotes, etc.) without a separate design discussion.
+    Phase 3.1.2 will render `**bold**` and friends as literal text
+    inside cells (still no inline-mark replacement). Phase 3.2 adds
+    hover row/col controls; Phase 3.3 adds line styling. None of
+    those phases lift this exemption for other widget kinds.
+
+    IME safety inside cells: every `input` listener guards on
+    `data-composing="true"` before syncing; composition starts/ends
+    on the cell drive the sync, not raw `input` events. This is the
+    cell-scoped analogue of invariant #1's IME-safe marker hide.
+
 See `memory/durumi_project.md` for details and rationale.
 
 ## Commit style
