@@ -95,6 +95,41 @@ contribution:
    back to `mark + display:none + side widget` rather than removing the
    widget.
 
+### v0.2.x security invariants
+
+These four invariants were added in the v0.2.x hardening cycle. Each
+one captures a non-obvious failure mode found and fixed in production.
+See [`docs/image-rendering.md`](docs/image-rendering.md) §6 for the
+deeper rationale on items 8–10.
+
+7. **Electron sandbox stays on.** `webPreferences.sandbox: true` in
+   `electron/main.ts`. The preload uses `contextBridge` only — no
+   `require()`, no `node:*`, no `Buffer`, no `process`. Re-introducing
+   any of those in preload breaks the sandbox contract. The renderer
+   is similarly Node-free (no `node:*` imports, no `Buffer` use).
+8. **`durumi-asset://` URL shape is `durumi-asset://x/?p=<encoded-abs-path>`.**
+   Path lives in the query string, NOT the pathname. The single
+   source of truth for the shape is
+   `shared/assetProtocol.ts::assetUrlFor`. Encoding the path in the
+   pathname triggers Chromium's standard-scheme URL parser to
+   normalise `%2F` → `/`, corrupting absolute paths. Changing the
+   shape requires re-testing on a production DMG/EXE; this gotcha
+   does not surface in vitest.
+9. **CSP `img-src` includes `durumi-asset:`.** `index.html`'s meta CSP
+   gates every `<img>` load before the request reaches main. Any
+   future asset-type media must extend the matching CSP directive
+   (`media-src` for video/audio, `frame-src` for iframes, `connect-src`
+   for `fetch()`). Forgetting this is a silent failure with no
+   main-side log entry.
+10. **Path guard `allowSessionPath(p)` registers `dirname(p)` as a
+    session-trusted tree.** Required so sibling assets (e.g.
+    `<doc_dir>/assets/img-*.png`) are reachable after opening a `.md`.
+    Tightening this back to exact-match would silently break image
+    rendering. Symmetrically,
+    `bootstrapSessionTreesFromRecents()` must run inside
+    `app.whenReady()` before any window is shown so cold starts can
+    reach a recent doc's assets.
+
 See `memory/durumi_project.md` for details and rationale.
 
 ## Commit style

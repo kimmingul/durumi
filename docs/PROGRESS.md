@@ -8,6 +8,11 @@ was surfaced during the sandbox smoke test. See
 [docs/v0.2-hardening.md](v0.2-hardening.md) for the full P1 ledger;
 this release completes the P1 cycle.
 
+> *See [docs/image-rendering.md](image-rendering.md) for the full case
+> study of the image-render fix — diagnostic process, architectural
+> rationale, the four root causes that had to fall, and the invariants
+> future maintainers must keep intact.*
+
 ### Electron `sandbox: true` (P1-1 → [`f38c4a2`](https://github.com/kimmingul/durumi/commit/f38c4a2))
 
 Static analysis during v0.2.0 had already shown that the preload was
