@@ -167,6 +167,18 @@ body {
   background: var(--bg);
   overflow-x: auto;
   white-space: nowrap;
+  position: relative;
+}
+/* When hovered (i.e. the Phase 3.2 action overlay is mounted) bump the
+ * cell into its own stacking context above the editor content so the
+ * absolutely-positioned action buttons that overflow the cell rect can
+ * be hit-tested correctly. Without this the `.cm-content` div is the
+ * top stacking layer and intercepts pointer events. We also need
+ * `overflow: visible` so buttons positioned outside the cell rect are
+ * not clipped. */
+.cm-table-cell:hover {
+  z-index: 50;
+  overflow: visible;
 }
 .cm-table-row-header .cm-table-cell {
   font-weight: 600;
@@ -178,6 +190,92 @@ body {
   border: 0;
   border-bottom: 2px solid var(--border);
   background: transparent;
+}
+
+/* --------------------------------------------------------------------
+ * Phase 3.2 — floating cell-action toolbar (row/column add/delete).
+ *
+ * Anchor: an absolutely-positioned overlay placed by the table widget
+ * with its left/top inline-set to the hovered cell's offset. The
+ * overlay itself is `pointer-events: none` so it never blocks the
+ * underlying cell's hover detection; only the action buttons opt back
+ * into pointer events. The overlay is part of the cell's hover group:
+ * leaving the cell and entering the overlay does NOT count as
+ * mouseleave (handled in JS by treating the overlay's parent as a
+ * single hit zone).
+ * ------------------------------------------------------------------ */
+.cm-table-cell-actions-anchor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 50;
+}
+.cm-table-cell-actions {
+  position: relative;
+  pointer-events: none;
+  width: 100%;
+  height: 100%;
+  z-index: 50;
+}
+.cm-table-action-btn {
+  pointer-events: auto;
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  z-index: 51;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--bg, #ffffff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.18));
+  border-radius: 4px;
+  color: var(--fg, #2a2a2a);
+  cursor: pointer;
+  opacity: 0.92;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: background 90ms ease, opacity 90ms ease;
+}
+.cm-table-action-btn:hover {
+  background: var(--code-bg, rgba(0, 0, 0, 0.06));
+  opacity: 1;
+}
+.cm-table-action-btn-disabled,
+.cm-table-action-btn[disabled] {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+/* +↑ row above — anchored to the top-left edge, slightly above the cell. */
+.cm-table-action-row-above {
+  top: -10px;
+  left: -10px;
+}
+/* +↓ row below — bottom-left edge. */
+.cm-table-action-row-below {
+  bottom: -10px;
+  left: -10px;
+}
+/* +← col left — middle-left, slightly outside the cell. */
+.cm-table-action-col-left {
+  top: 50%;
+  left: -16px;
+  transform: translateY(-50%);
+}
+/* +→ col right — middle-right. */
+.cm-table-action-col-right {
+  top: 50%;
+  right: -16px;
+  transform: translateY(-50%);
+}
+/* 🗑 row — top-right. */
+.cm-table-action-row-delete {
+  top: -10px;
+  right: -10px;
+}
+/* 🗑 col — bottom-right. */
+.cm-table-action-col-delete {
+  bottom: -10px;
+  right: -10px;
 }
 .cm-sidebar {
   flex-shrink: 0;

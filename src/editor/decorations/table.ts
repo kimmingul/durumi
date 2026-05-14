@@ -3,11 +3,18 @@ import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/v
 import { EditorState, Extension, RangeSetBuilder, StateField } from '@codemirror/state';
 import { replaceCellText, markdownToCellText } from '../markdownExt/tableEdit';
 import {
+  addTableRow,
+  addTableColumn,
+  removeTableRow,
+  removeTableColumn,
+} from '../markdownExt/tableTransform';
+import {
   navigateNextCell,
   navigatePrevCell,
   navigateNextRow,
   navigatePrevRow,
 } from '../keymap/tableNavigation';
+import { t } from '../../i18n/t';
 
 /**
  * Phase 3.1.1 — in-place contentEditable table-cell editing (v0.2.4).
@@ -140,6 +147,325 @@ export function focusCell(cell: HTMLElement, caretAtEnd: boolean): void {
   sel.addRange(range);
 }
 
+/* --------------------------------------------------------------------
+ * Phase 3.2 — floating cell-action toolbar.
+ *
+ * On `mouseenter` of a cell (after a small ~150ms delay) we attach an
+ * overlay element with six action buttons. The overlay is a child of
+ * the cell itself so it shares the cell's hover scope — moving the
+ * mouse from the cell into a button does NOT fire `mouseleave` on the
+ * cell.
+ *
+ * Button clicks transform the table source via the helpers in
+ * `tableTransform.ts`, dispatch a CM transaction, and queue a focus
+ * target so the rebuilt widget restores the caret to a sensible cell.
+ * ------------------------------------------------------------------ */
+
+type CellAction =
+  | 'rowAbove'
+  | 'rowBelow'
+  | 'colLeft'
+  | 'colRight'
+  | 'rowDelete'
+  | 'colDelete';
+
+const HOVER_DELAY_MS = 150;
+
+function makeSvg(paths: string[]): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2.2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of paths) {
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', d);
+    svg.appendChild(p);
+  }
+  return svg;
+}
+
+const ACTION_ICONS: Record<CellAction, () => SVGSVGElement> = {
+  rowAbove: () => makeSvg(['M12 4v10', 'M8 8l4-4 4 4', 'M4 18h16']),
+  rowBelow: () => makeSvg(['M4 6h16', 'M12 10v10', 'M8 16l4 4 4-4']),
+  colLeft: () => makeSvg(['M18 4v16', 'M10 12H4', 'M8 8l-4 4 4 4']),
+  colRight: () => makeSvg(['M6 4v16', 'M14 12h6', 'M16 8l4 4-4 4']),
+  rowDelete: () => makeSvg(['M3 6h18', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6']),
+  colDelete: () => makeSvg(['M3 6h18', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6']),
+};
+
+const ACTION_TESTID: Record<CellAction, string> = {
+  rowAbove: 'table-action-row-above',
+  rowBelow: 'table-action-row-below',
+  colLeft: 'table-action-col-left',
+  colRight: 'table-action-col-right',
+  rowDelete: 'table-action-row-delete',
+  colDelete: 'table-action-col-delete',
+};
+
+const ACTION_I18N: Record<CellAction, string> = {
+  rowAbove: 'table.action.rowAbove',
+  rowBelow: 'table.action.rowBelow',
+  colLeft: 'table.action.colLeft',
+  colRight: 'table.action.colRight',
+  rowDelete: 'table.action.rowDelete',
+  colDelete: 'table.action.colDelete',
+};
+
+const ACTION_CLASS: Record<CellAction, string> = {
+  rowAbove: 'cm-table-action-row-above',
+  rowBelow: 'cm-table-action-row-below',
+  colLeft: 'cm-table-action-col-left',
+  colRight: 'cm-table-action-col-right',
+  rowDelete: 'cm-table-action-row-delete',
+  colDelete: 'cm-table-action-col-delete',
+};
+
+interface CellActionContext {
+  view: EditorView;
+  tableFrom: number;
+  row: number;
+  col: number;
+}
+
+function dispatchCellAction(ctx: CellActionContext, action: CellAction): void {
+  const info = lookupTableByFrom(ctx.view.state, ctx.tableFrom);
+  if (!info) return;
+  const src = ctx.view.state.sliceDoc(info.from, info.to);
+  // Count rows + cols from the live info.
+  const bodyCount = info.rowLines.filter((r) => r.kind === 'body').length;
+  const colCount = info.alignment.length || (info.rowLines.find((r) => r.kind === 'header')?.cells.length ?? 1);
+  let next: string | null = null;
+  let focusRow = ctx.row;
+  let focusCol = ctx.col;
+  switch (action) {
+    case 'rowAbove': {
+      if (ctx.row === 0) return;
+      next = addTableRow(src, ctx.row, 'above');
+      focusRow = ctx.row;
+      break;
+    }
+    case 'rowBelow': {
+      next = addTableRow(src, ctx.row, 'below');
+      focusRow = ctx.row + 1;
+      break;
+    }
+    case 'colLeft': {
+      next = addTableColumn(src, ctx.col, 'left');
+      focusCol = ctx.col;
+      break;
+    }
+    case 'colRight': {
+      next = addTableColumn(src, ctx.col, 'right');
+      focusCol = ctx.col + 1;
+      break;
+    }
+    case 'rowDelete': {
+      if (ctx.row === 0) return;
+      if (bodyCount <= 0) return;
+      next = removeTableRow(src, ctx.row);
+      // Focus the row above the deleted one (or stay at row 1 if deleting
+      // the first body row — that becomes the new row 1).
+      if (bodyCount === 1) {
+        // Deleted the last body row — focus the header.
+        focusRow = 0;
+      } else {
+        focusRow = Math.max(1, ctx.row - 1);
+        // If we deleted row 1 of a multi-body table, focus stays on the
+        // (new) row 1 (formerly row 2). Use min/max to clamp.
+        if (ctx.row === 1) focusRow = 1;
+        // If we deleted the last body row, focus the new last row.
+        if (ctx.row === bodyCount) focusRow = bodyCount - 1;
+      }
+      break;
+    }
+    case 'colDelete': {
+      if (colCount <= 1) return;
+      next = removeTableColumn(src, ctx.col);
+      focusCol = Math.max(0, ctx.col - 1);
+      if (ctx.col === 0) focusCol = 0;
+      if (ctx.col >= colCount - 1) focusCol = colCount - 2;
+      break;
+    }
+  }
+  if (next === null || next === src) return;
+  queueFocus(ctx.tableFrom, focusRow, focusCol, false);
+  ctx.view.dispatch({
+    changes: { from: info.from, to: info.to, insert: next },
+    userEvent: 'input.tableTransform',
+  });
+}
+
+/**
+ * Phase 3.2: when Tab is pressed in the very last cell of the table
+ * (no more cells to navigate to), insert a new body row below and
+ * move focus to its first cell. Uses the markdown-source transform so
+ * the new row appears canonical (same column count, proper padding).
+ */
+function addRowOnTabOverflow(cell: HTMLElement, view: EditorView): void {
+  const tableFromStr = cell.dataset.tableFrom;
+  const rowStr = cell.dataset.row;
+  if (tableFromStr === undefined || rowStr === undefined) return;
+  const tableFrom = Number(tableFromStr);
+  const row = Number(rowStr);
+  const info = lookupTableByFrom(view.state, tableFrom);
+  if (!info) return;
+  const src = view.state.sliceDoc(info.from, info.to);
+  const next = addTableRow(src, row, 'below');
+  if (next === src) return;
+  // The new row becomes row+1; focus its first cell.
+  queueFocus(tableFrom, row + 1, 0, false);
+  view.dispatch({
+    changes: { from: info.from, to: info.to, insert: next },
+    userEvent: 'input.tableTransform',
+  });
+}
+
+function getCellHoverContext(cell: HTMLElement): { tableFrom: number; row: number; col: number } | null {
+  const tableFromStr = cell.dataset.tableFrom;
+  const row = cell.dataset.row;
+  const col = cell.dataset.col;
+  if (tableFromStr === undefined || row === undefined || col === undefined) return null;
+  return {
+    tableFrom: Number(tableFromStr),
+    row: Number(row),
+    col: Number(col),
+  };
+}
+
+function buildActionButton(
+  action: CellAction,
+  ctx: CellActionContext,
+  enabled: boolean,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.dataset.testid = ACTION_TESTID[action];
+  btn.setAttribute('data-testid', ACTION_TESTID[action]);
+  const label = t(ACTION_I18N[action]);
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  btn.disabled = !enabled;
+  btn.className =
+    'cm-table-action-btn ' + ACTION_CLASS[action] + (enabled ? '' : ' cm-table-action-btn-disabled');
+  btn.appendChild(ACTION_ICONS[action]());
+  // Prevent blur on mousedown so focus state survives the click handler.
+  btn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+  });
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!enabled) return;
+    dispatchCellAction(ctx, action);
+  });
+  return btn;
+}
+
+function attachCellHoverOverlay(cell: HTMLElement, view: EditorView): void {
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  let overlay: HTMLDivElement | null = null;
+  // Track which areas the mouse is currently over so we can keep the
+  // overlay visible while moving from cell to a button that lives
+  // *outside* the cell's bounding rect (e.g. col-left, which is at
+  // `left: -16px`). Without this, the cell `mouseleave` would fire as
+  // soon as the cursor crosses the cell edge into the button, and the
+  // overlay would disappear before the click landed.
+  let inCell = false;
+  let inOverlay = false;
+
+  const clearShowTimer = (): void => {
+    if (showTimer !== null) {
+      clearTimeout(showTimer);
+      showTimer = null;
+    }
+  };
+  const clearHideTimer = (): void => {
+    if (hideTimer !== null) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  };
+
+  const removeOverlay = (): void => {
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    overlay = null;
+  };
+
+  const scheduleHide = (): void => {
+    clearHideTimer();
+    hideTimer = setTimeout(() => {
+      if (!inCell && !inOverlay) removeOverlay();
+    }, 80);
+  };
+
+  const showOverlay = (): void => {
+    if (overlay) return;
+    const ctx = getCellHoverContext(cell);
+    if (!ctx) return;
+    const info = lookupTableByFrom(view.state, ctx.tableFrom);
+    if (!info) return;
+    const bodyCount = info.rowLines.filter((r) => r.kind === 'body').length;
+    const colCount =
+      info.alignment.length || (info.rowLines.find((r) => r.kind === 'header')?.cells.length ?? 1);
+    const fullCtx: CellActionContext = { view, ...ctx };
+    const canRemoveRow = ctx.row > 0 && bodyCount > 0;
+    const canRemoveCol = colCount > 1;
+    const canAddRowAbove = ctx.row > 0;
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-table-cell-actions-anchor';
+    wrap.style.position = 'absolute';
+    wrap.style.inset = '0';
+    wrap.style.pointerEvents = 'none';
+    const grp = document.createElement('div');
+    grp.className = 'cm-table-cell-actions';
+    grp.setAttribute('role', 'group');
+    grp.setAttribute('aria-label', 'Table cell actions');
+    grp.appendChild(buildActionButton('rowAbove', fullCtx, canAddRowAbove));
+    grp.appendChild(buildActionButton('rowBelow', fullCtx, true));
+    grp.appendChild(buildActionButton('colLeft', fullCtx, true));
+    grp.appendChild(buildActionButton('colRight', fullCtx, true));
+    grp.appendChild(buildActionButton('rowDelete', fullCtx, canRemoveRow));
+    grp.appendChild(buildActionButton('colDelete', fullCtx, canRemoveCol));
+    // Track hover on the overlay so a button positioned outside the
+    // cell rect doesn't trigger a leave + reappear flicker.
+    grp.addEventListener('mouseenter', () => {
+      inOverlay = true;
+      clearHideTimer();
+    });
+    grp.addEventListener('mouseleave', () => {
+      inOverlay = false;
+      scheduleHide();
+    });
+    wrap.appendChild(grp);
+    overlay = wrap;
+    const prevPos = cell.style.position;
+    if (!prevPos) cell.style.position = 'relative';
+    cell.appendChild(wrap);
+  };
+
+  cell.addEventListener('mouseenter', () => {
+    inCell = true;
+    clearHideTimer();
+    if (overlay) return;
+    if (showTimer === null) {
+      showTimer = setTimeout(showOverlay, HOVER_DELAY_MS);
+    }
+  });
+  cell.addEventListener('mouseleave', () => {
+    inCell = false;
+    clearShowTimer();
+    scheduleHide();
+  });
+}
+
 class TableRowWidget extends WidgetType {
   constructor(
     readonly tableFrom: number,
@@ -202,10 +528,11 @@ class TableRowWidget extends WidgetType {
       const cell = existingCells[i];
       // Don't trample the cell the user is actively composing in.
       if (cell.dataset.composing === 'true') continue;
-      // Don't trample if textContent already matches the source — that
-      // covers the common "we just synced this cell" case.
-      if (cell.textContent !== this.cells[i]) {
-        cell.textContent = this.cells[i];
+      // Read the cell's *text-only* content (ignoring the action-overlay
+      // child) so we don't churn DOM on a no-op patch.
+      const textNow = cellTextOnly(cell);
+      if (textNow !== this.cells[i]) {
+        setCellText(cell, this.cells[i]);
       }
       cell.dataset.row = String(this.row);
       cell.dataset.col = String(i);
@@ -229,6 +556,41 @@ class TableRowWidget extends WidgetType {
   }
 }
 
+/**
+ * Read the user-visible text of a cell, ignoring any structural child
+ * elements such as the hover-action overlay (`.cm-table-cell-actions-anchor`).
+ *
+ * We can't just use `cell.textContent` because that would include the
+ * empty text of the overlay's invisible svg children — and conversely
+ * we can't assume the cell only has a single text node, because the
+ * Phase 3.2 overlay adds a sibling div.
+ */
+function cellTextOnly(cell: HTMLElement): string {
+  let s = '';
+  for (let n = cell.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === Node.TEXT_NODE) s += (n as Text).data;
+  }
+  return s;
+}
+
+/**
+ * Replace the cell's text content while preserving the action-overlay
+ * child (if any). This swaps only the leading text node(s) and leaves
+ * structural children untouched.
+ */
+function setCellText(cell: HTMLElement, text: string): void {
+  // Remove all existing text nodes.
+  const toRemove: Node[] = [];
+  for (let n = cell.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === Node.TEXT_NODE) toRemove.push(n);
+  }
+  for (const n of toRemove) cell.removeChild(n);
+  // Prepend the new text node so it stays before any structural overlay.
+  if (text.length > 0) {
+    cell.insertBefore(document.createTextNode(text), cell.firstChild);
+  }
+}
+
 function buildCellElement(
   text: string,
   col: number,
@@ -247,9 +609,10 @@ function buildCellElement(
   c.dataset.tableFrom = String(tableFrom);
   if (alignment && alignment !== 'default') c.style.textAlign = alignment;
   // Phase 3.1.1 displays cell content as LITERAL text. Inline-syntax
-  // rendering (`**bold**` → bold) lands in Phase 3.1.2. Using textContent
-  // avoids any HTML injection surface.
-  c.textContent = text;
+  // rendering (`**bold**` → bold) lands in Phase 3.1.2. We use a
+  // text-only setter (vs `textContent =`) so we don't clobber the
+  // Phase 3.2 hover-action overlay when it's attached as a sibling.
+  setCellText(c, text);
 
   c.addEventListener('compositionstart', () => {
     c.dataset.composing = 'true';
@@ -275,6 +638,8 @@ function buildCellElement(
     const safe = text.replace(/\r?\n/g, ' ');
     document.execCommand('insertText', false, safe);
   });
+  // Phase 3.2 — hover-triggered floating action overlay.
+  attachCellHoverOverlay(c, view);
   return c;
 }
 
@@ -290,7 +655,9 @@ function syncCell(view: EditorView, cell: HTMLElement): void {
   // grown / shrunk since the widget was rendered.
   const info = lookupTableByFrom(view.state, tableFrom);
   if (!info) return;
-  const cellText = cell.textContent ?? '';
+  // Use the text-only reader so the Phase 3.2 overlay (if mounted)
+  // doesn't contribute to the cell's logical text.
+  const cellText = cellTextOnly(cell);
   // Queue focus restoration in case the widget rebuilds (it usually does
   // because the source changed). If updateDOM patches in place, the queued
   // focus is consumed harmlessly with caretAtEnd matching the current
@@ -331,7 +698,7 @@ function handleCellKeydown(ev: KeyboardEvent, cell: HTMLElement, view: EditorVie
       delete cell.dataset.composing;
       syncCell(view, cell);
       if (ev.shiftKey) navigatePrevCell(cell, view);
-      else navigateNextCell(cell, view);
+      else if (!navigateNextCell(cell, view)) addRowOnTabOverflow(cell, view);
     }
     return;
   }
@@ -339,8 +706,13 @@ function handleCellKeydown(ev: KeyboardEvent, cell: HTMLElement, view: EditorVie
     ev.preventDefault();
     // Ensure any pending text is flushed before we move focus.
     syncCell(view, cell);
-    if (ev.shiftKey) navigatePrevCell(cell, view);
-    else navigateNextCell(cell, view);
+    if (ev.shiftKey) {
+      navigatePrevCell(cell, view);
+    } else {
+      // Phase 3.2: Tab on the very last cell of the table adds a new
+      // body row below and moves focus to its first cell (Typora-style).
+      if (!navigateNextCell(cell, view)) addRowOnTabOverflow(cell, view);
+    }
     return;
   }
   if (ev.key === 'Enter') {

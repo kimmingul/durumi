@@ -1,6 +1,108 @@
 # Durumi — Progress
 
-## v0.2.4 (current) — Phase 3.1.1: in-place table cell editing
+## v0.2.5 (current) — Phase 3.2: table row/column add/delete
+
+Second slice of the v0.3 table-editing roadmap. Tables now grow and
+shrink in place from inside the WYSIWYG widget — hover any cell and a
+small floating toolbar appears with six buttons that add a row above
+or below, add a column to the left or right, or delete the current
+row/column. Tab on the last cell of the last row now adds a fresh
+body row below and parks the caret in its first cell (Typora-style).
+Markdown alignment markers in the delimiter row are preserved across
+every transform; column add defaults to left/no-alignment.
+
+### What changed
+
+**Floating action overlay.** When the cursor lingers on a cell for
+~150ms a small overlay mounts with six action buttons positioned at
+the cell's edges:
+
+  - `+↑ row above`, `+↓ row below`, `+← col left`, `+→ col right`
+  - `🗑 row`, `🗑 col` (disabled when only one row or column remains)
+
+Buttons share the cell's hover scope so moving from the cell into a
+button that overhangs the cell rect does not trigger a leave + reappear
+flicker. Each button has an `aria-label` driven by the `table.action.*`
+i18n keys (EN + KO) and a `data-testid` for e2e coverage. Edge guards
+disable destructive buttons rather than letting the user end up with
+an invalid 0-column or 0-row table; the header row is also protected
+from deletion (markdown tables require a header).
+
+**Markdown-source transforms (pure helpers).** A new
+`src/editor/markdownExt/tableTransform.ts` exports four pure functions
+operating on the markdown slice that the Lezer `Table` node spans —
+`addTableRow`, `addTableColumn`, `removeTableRow`, `removeTableColumn`.
+They handle pipe-bordered and pipeless rows, preserve trailing-newline
+behaviour and CRLF/LF line endings, and keep the delimiter row's
+alignment markers (`:---`, `:---:`, `---:`) consistent under every
+operation. Helpers are unit-tested with simple string fixtures —
+no CodeMirror dependency.
+
+**Tab-overflow = add row.** In Phase 3.1.1, Tab on the very last cell
+was a no-op. Phase 3.2 makes it insert a new body row below and
+position the caret in the first cell of that row (consistent with
+Typora). The handler routes through the same markdown-source
+transform path so the new row is canonical and the focus restore
+queue places the caret deterministically after the StateField rebuild.
+
+**Cell-text reader / writer hardening.** The widget's cell-text patch
+path now uses `cellTextOnly()` and `setCellText()` helpers so the
+hover-action overlay (a sibling DOM child of the cell) survives a
+post-sync rebuild without being clobbered by a `textContent = …`
+assignment. This was a latent risk introduced by the overlay; the
+helpers make the cell DOM model explicit: leading text nodes are
+content, structural children (the overlay anchor) are not.
+
+### Files
+
+- New `src/editor/markdownExt/tableTransform.ts` — pure markdown
+  transforms (`addTableRow`, `addTableColumn`, `removeTableRow`,
+  `removeTableColumn`) with header invariant + alignment preservation
+  + edge guards.
+- New `src/components/TableCellActions.tsx` — React component
+  declaring the six-action UI surface (icons, i18n labels, testid
+  attrs). The runtime overlay is built in plain DOM by `table.ts` for
+  parity with the rest of the decorations module, but this React
+  component is the canonical typed definition + test fixture surface.
+- New `tests/editor/tableTransform.test.ts` — **28** vitest cases
+  covering row add above/below, column add left/right/end, row delete
+  first/last/middle, column delete first/last/middle, refuse-the-only
+  guards on row 0 / single-column tables, alignment preservation
+  through column add and delete, and trailing-newline preservation.
+- New `e2e/table-row-col.spec.ts` — **10** Playwright Electron cases
+  covering hover overlay appearance, click on each of the six action
+  buttons, Tab-on-last-cell adds row, alignment preservation across
+  delete, and disabled-state for the only-remaining-column case.
+- Update `src/editor/decorations/table.ts` — mount the floating
+  overlay on cell `mouseenter` (150ms delay), tear down on
+  `mouseleave` (80ms grace), dispatch transforms via the new helpers,
+  route Tab-overflow to `addTableRow`, replace `textContent =` with
+  the new `cellTextOnly` / `setCellText` helpers that preserve the
+  overlay sibling.
+- Update `src/styles/global.css` — overlay anchor + button styling
+  (~20×20px, `z-index: 50`+, `position: relative` on cells so they
+  establish a stacking context above the editor `.cm-content`,
+  `overflow: visible` on hover so buttons overhanging the cell rect
+  are not clipped or hit-test-occluded).
+- Update `src/i18n/dict.ts` — 6 new keys × 2 languages
+  (`table.action.rowAbove` etc.).
+- Update `src/editor/keymap/tableNavigation.ts` — header comment
+  updated to reflect Phase 3.2 semantics.
+
+### Test count
+
+- vitest: 1349 → 1377 (+28)
+- Playwright e2e: 62 → 72 (+10)
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1377 / 1377** vitest across 151 files
+- `pnpm test:e2e`: **72 / 72** Playwright Electron tests
+- `pnpm build`: clean
+
+## v0.2.4 — Phase 3.1.1: in-place table cell editing
 
 First slice of the v0.3 table-editing roadmap. Markdown tables in
 Document (WYSIWYG) mode are no longer collapsed back to source when

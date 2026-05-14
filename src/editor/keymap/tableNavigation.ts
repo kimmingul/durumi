@@ -1,4 +1,4 @@
-// Phase 3.1.1 — DOM-level navigation between contentEditable table cells.
+// Phase 3.1.1 / 3.2 — DOM-level navigation between contentEditable table cells.
 //
 // These helpers run inside the cell `keydown` handler (see
 // `decorations/table.ts::handleCellKeydown`). They are NOT CodeMirror
@@ -9,9 +9,11 @@
 // Each helper returns `true` if it navigated (caller should preventDefault)
 // or `false` if there was nowhere to go (caller may let the event bubble).
 //
-// Scope discipline: Phase 3.1.1 explicitly does NOT add rows on Tab in the
-// last cell. That belongs to Phase 3.2. Tab in the last cell is a no-op
-// here.
+// Phase 3.2: Tab in the LAST cell of the table now adds a new body row
+// below and moves focus to its first cell (Typora-style). The transform
+// is dispatched via `addTableRow` so the markdown source is updated
+// canonically; the queued focus restore then moves the caret into the
+// new row when the widget rebuilds.
 
 import type { EditorView } from '@codemirror/view';
 
