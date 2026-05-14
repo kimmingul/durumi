@@ -1,6 +1,143 @@
 # Durumi — Progress
 
-## v0.2.2 (current) — Hardening III: Electron sandbox + image-render fix
+## v0.2.3 (current) — Maintenance: v0.2.x hardening band closeout
+
+Closing release for the v0.2.x hardening band. No new user-facing
+features and no breaking changes — purely **internal quality
+improvements** (refactors, e2e stabilization, bundle perf, signing
+runbook, image-rendering case study). Auto-updater serves it
+transparently to v0.2.2 users. See
+[docs/v0.2-hardening.md](v0.2-hardening.md) for the full P0–P3 ledger;
+this release completes the band by landing P2 + P3 items previously
+deferred.
+
+### What changed
+
+**P2-1 — `src/App.tsx` decomposition ([`fd66ff1`](https://github.com/kimmingul/durumi/commit/fd66ff1)).**
+Extracted 12 hooks (`useFileMenuCommands`, `useExportFlow`,
+`useAiPalette`, `useCitationInsertFlow`, `useWorkspaceMenu`,
+`useMenuCommandRouter`, `useAppChromeEffects`, `usePreferencesInit`,
+`useCustomCss`, `useAppCloseGuard`, `useMemoEvents`,
+`usePickAndInsertImage`) into `src/hooks/`. App.tsx **906 → 246
+lines**; what remains is pure orchestration. Pure refactor, no
+behaviour change.
+
+**P2-2 — `electron/ipc.ts` decomposition ([`45830b2`](https://github.com/kimmingul/durumi/commit/45830b2)).**
+Split a single 889-line monolith into 10 per-domain modules under
+`electron/ipc/`: `files`, `preferences`, `search`, `bibliography`,
+`bibliographyFetch`, `reference`, `ai`, `pandoc`, `shell`, plus a
+`_shared.ts` for cross-domain helpers. The barrel `electron/ipc.ts`
+is now 39 lines and just wires the `KeyVault` + calls each domain's
+`register*Handlers`. **No file > 200 lines**. All
+`assertAllowedPath` / `allowSessionPath` / `assertPrefsPatchAllowed`
+calls preserved verbatim.
+
+**P3-1 — e2e suite stabilized ([`c9df4d0`](https://github.com/kimmingul/durumi/commit/c9df4d0)).**
+**9 pre-existing test failures → 0**. Root-caused as two clusters:
+
+  - **WYSIWYG strict-literal mode** (7 tests) — v0.1.13 made WYSIWYG
+    the default edit mode and that mode escapes user typing (`# X` →
+    `\# X`), but the e2e specs were written assuming legacy Typora
+    behaviour. Fixed by a new `setTyporaMode(app, page)` helper called
+    at the top of each affected spec.
+  - **Path-guard + persisted state pollution** (2 tests) — workspace
+    specs inject `fs.mkdtempSync` paths via `prefs:set`, which the
+    v0.2.1 path guard rejected as un-dialogued. Added a `DURUMI_E2E=1`
+    env bypass in `electron/pathGuard.ts` that accepts paths under
+    `os.tmpdir()` only when the env var is set; the `test:e2e` script
+    forwards it. Production builds never set this, and the renderer
+    can't influence main-process env.
+
+**16 / 16 e2e tests now pass.**
+
+**P3-2 — renderer main chunk shrunk ([`af29940`](https://github.com/kimmingul/durumi/commit/af29940)).**
+Main chunk **3.06 MB → 1.74 MB (-43%, -1.3 MB)**. Lazy boundaries
+added behind dynamic `import()` or `React.lazy`:
+
+  - **KaTeX** — split to its own ~481 KB chunk, loads on first math
+    expression or export
+  - **`renderHtml` cluster** (markdown-it + plugins + bibliography
+    pipeline) — loads only on export
+  - **markdown-it for table cells** — same chunk as renderHtml
+  - **node-emoji + emojilib** — loads on first `:query` trigger
+  - **js-yaml front-matter parser** — split via a new
+    `shared/frontMatterFenced.ts` so the synchronous fence-only
+    callers don't drag in the full YAML parser
+  - **12 top-level dialogs** (`SettingsDialog`,
+    `PandocInstallDialog`, `InsertCitationDialog`, `BulkDoiDialog`,
+    `ImportReferencesDialog`, `KeyboardShortcutsDialog`,
+    `CitePalette`, `AiCommandPalette`, `CitationSuggestPanel`,
+    `OrphanRegisterDialog`, `EditEntryDialog`, `RenameKeyDialog`)
+    → `React.lazy` + open-gated render with `Suspense fallback={null}`
+
+The remaining ~1.7 MB is essentially mandatory editor core
+(CodeMirror + Lezer + React shell). Stretch target of ≤ 1.5 MB
+would require re-architecting CodeMirror loading; out of scope.
+
+**P3-3 — signing runbook + dormant config templates
+([`4b9a42a`](https://github.com/kimmingul/durumi/commit/4b9a42a)).**
+Two new subsections in `docs/RELEASE.md` ("Path to real macOS
+signing" with 8 numbered steps, "Path to real Windows signing" with
+6 steps + OV/EV tradeoff table) plus an "Ongoing cost" footer
+(~$300/yr for the dual-platform path). Commented templates in
+`electron-builder.yml` and `.github/workflows/release.yml` show
+exactly which lines to uncomment once GitHub Secrets are in place.
+New dormant `build/entitlements.mac.plist` for hardened-runtime
+notarization. **Current ad-hoc signing config unchanged** — the
+runbook activates with cert acquisition, not with this release.
+
+**Image-rendering case study ([`3fe4a39`](https://github.com/kimmingul/durumi/commit/3fe4a39)).**
+The v0.2.2 image-render fix involved four independent root causes
+that had to fall before pasted images would render. The new
+**773-line [docs/image-rendering.md](image-rendering.md)** is a
+full case study: how the bug manifested, why it had been silently
+broken since v0.1.2, the architectural rationale for the chosen
+fix (`durumi-asset://` custom protocol vs. the rejected
+alternatives), each root cause with its fix and verification, the
+diagnostic process and the "instrument main, NOT just renderer"
+lesson, 6 forward-looking invariants, and a 5-step verification
+walkthrough for future debugging. Also updated `CONTRIBUTING.md`
+with the 4 new v0.2.x security invariants (sandbox lock,
+`durumi-asset://` URL shape, CSP whitelist, path-guard
+`sessionAllowedTrees`) — contributor invariant list now totals 10.
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1308 / 1308** vitest across 147 files (baseline
+  preserved across the refactors)
+- `pnpm test:e2e`: **16 / 16** Playwright Electron tests (was 7 / 16
+  in v0.2.2)
+- `pnpm build`: clean, **main chunk 1.74 MB** (was 3.06 MB)
+
+### v0.2.x hardening band — done
+
+This release closes the band. Final ledger:
+
+| Priority | Items | Status |
+|:--|:--|:--|
+| **P0** Data integrity / trust | atomic write, CriticMarkup escape | ✅ v0.2.0 |
+| **P1** Security posture | atomic build, sandbox, path guard, AI key honesty, bind side-effect | ✅ v0.2.1 + v0.2.2 |
+| **P2** Maintainability | App.tsx + ipc.ts decomposition | ✅ v0.2.3 |
+| **P3** Release gates | e2e stabilization, bundle perf, signing runbook | ✅ v0.2.3 |
+
+Next priority: P3 cert acquisition (Apple Developer ID + Windows
+OV cert) — that's a $300/yr user task, not a code task. Once secrets
+are wired up, uncomment the marked lines and the next tagged release
+ships signed.
+
+### Auto-update
+
+v0.2.2 users see the "Download v0.2.3" prompt within ~30s of opening
+the app. Restart when ready. No code-level behaviour change for
+legitimate workflows; the only user-visible improvement is faster
+first-paint from the bundle shrink (cold launch on Apple Silicon
+typically reads ~1.3 MB less from the .asar).
+
+---
+
+## v0.2.2 — Hardening III: Electron sandbox + image-render fix
 
 Final P1 hardening release. Flips `webPreferences.sandbox` to true on
 the BrowserWindow and fixes a long-standing image-rendering bug that
