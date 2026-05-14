@@ -31,10 +31,6 @@ describe('resolveImageSrc — pass-through cases', () => {
     expect(resolveImageSrc(data, '/doc.md')).toBe(data);
   });
 
-  it('passes file:// URLs untouched (caller already resolved)', () => {
-    expect(resolveImageSrc('file:///abs/path.png', '/doc.md')).toBe('file:///abs/path.png');
-  });
-
   it('passes already-wrapped durumi-asset:// URLs untouched', () => {
     const u = assetUrlFor('/Users/x/y.png');
     expect(resolveImageSrc(u, null)).toBe(u);
@@ -106,5 +102,35 @@ describe('resolveImageSrc — relative paths against docPath', () => {
     const malicious = '../../../etc/passwd';
     const out = resolveImageSrc(malicious, '/Users/min/manuscript.md');
     expect(out.startsWith(`${ASSET_SCHEME}://x/?p=`)).toBe(true);
+  });
+});
+
+describe('resolveImageSrc — file: URLs are funnelled through the path guard', () => {
+  // v0.2.x hardening: a markdown image whose URL starts with `file://` is
+  // NOT trusted to render directly. We convert it to `durumi-asset://x/?p=…`
+  // so the main-side handler's `assertAllowedPath` is the only thing that
+  // can read the bytes off disk. This closes the renderer-side direct-read
+  // hole left behind by the v0.1.x `file:` allowlist entry.
+
+  it('converts file:///abs/path/x.png to a durumi-asset URL with the absolute path', () => {
+    const out = resolveImageSrc('file:///abs/path/x.png', null);
+    expect(out.startsWith(`${ASSET_SCHEME}://x/?p=`)).toBe(true);
+    expect(new URL(out).searchParams.get('p')).toBe('/abs/path/x.png');
+  });
+
+  it('decodes percent-encoded path segments (spaces, unicode)', () => {
+    const out = resolveImageSrc('file:///Users/min/with%20space/%ED%95%9C%EA%B8%80.png', null);
+    expect(new URL(out).searchParams.get('p')).toBe('/Users/min/with space/한글.png');
+  });
+
+  it('round-trips a file: URL through assetUrlFor unchanged', () => {
+    expect(resolveImageSrc('file:///abs/path/x.png', '/doc.md')).toBe(
+      assetUrlFor('/abs/path/x.png'),
+    );
+  });
+
+  it('handles uppercase FILE: scheme', () => {
+    const out = resolveImageSrc('FILE:///abs/x.png', null);
+    expect(new URL(out).searchParams.get('p')).toBe('/abs/x.png');
   });
 });

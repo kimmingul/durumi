@@ -306,6 +306,17 @@ export interface IpcApi {
     mimeType: string,
     contextFilePath: string | null,
   ) => Promise<{ relPath: string } | { error: 'no-file' }>;
+  /**
+   * v0.2.x — single-shot "pick an image off disk and stash it next to
+   * the active document" flow. Replaces the v0.1.x renderer round-trip
+   * (`dialogPickFile` → `fetch('file://…')` → `saveImage`) which read
+   * raw bytes from disk in the renderer and bypassed the path guard.
+   * Main owns the dialog, the disk read, and the `saveImage` write, so
+   * the renderer never touches `file://`.
+   */
+  imagePickAndSave: (
+    contextFilePath: string | null,
+  ) => Promise<{ ok: true; relPath: string } | { ok: false; error: string }>;
   macrosGet: () => Promise<Macro[]>;
   onMacrosChanged: (cb: (macros: Macro[]) => void) => () => void;
   onAppRequestClose: (decide: () => boolean | Promise<boolean>) => () => void;

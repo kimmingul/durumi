@@ -41,6 +41,8 @@ const api: IpcApi = {
   },
   saveImage: (buffer, mimeType, contextFilePath) =>
     ipcRenderer.invoke('image:save', buffer, mimeType, contextFilePath),
+  imagePickAndSave: (contextFilePath) =>
+    ipcRenderer.invoke('image:pickAndSave', contextFilePath),
   macrosGet: () => ipcRenderer.invoke('macros:get'),
   onMacrosChanged: (cb) => {
     const handler = (_: unknown, m: Macro[]) => cb(m);
