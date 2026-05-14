@@ -3,6 +3,8 @@ import type { Extension } from '@codemirror/state';
 import type { SyntaxNodeRef } from '@lezer/common';
 import { decorationPlugin } from './framework';
 import { shouldHideMarker } from './activeLine';
+import { currentDocPath, setDocPath } from '../docPath';
+import { resolveImageSrc } from '../../utils/resolveImageSrc';
 
 /**
  * Renders Markdown image syntax `![alt](src)` and `![alt](src "title")` as an
@@ -15,14 +17,32 @@ import { shouldHideMarker } from './activeLine';
  * them.
  */
 class ImageWidget extends WidgetType {
-  constructor(private alt: string, private src: string) { super(); }
-  eq(other: ImageWidget) { return other.alt === this.alt && other.src === this.src; }
+  constructor(
+    private alt: string,
+    private src: string,
+    /** Pre-resolved URL (durumi-asset:// for workspace paths). */
+    private resolved: string,
+  ) { super(); }
+  eq(other: ImageWidget) {
+    return other.alt === this.alt && other.src === this.src && other.resolved === this.resolved;
+  }
   toDOM() {
     const img = document.createElement('img');
     img.className = 'cm-md-image';
     img.alt = this.alt;
-    img.src = this.src;
+    img.dataset.mdSrc = this.src;
+    img.dataset.resolvedSrc = this.resolved;
+    img.src = this.resolved;
     img.loading = 'lazy';
+    img.addEventListener('error', () => {
+      // Surface load failures in DevTools so a smoke-tester can diagnose
+      // CSP / protocol / path-guard issues without source-mode debugging.
+      // eslint-disable-next-line no-console
+      console.error(
+        '[durumi] image load failed',
+        { src: this.src, resolved: this.resolved },
+      );
+    });
     return img;
   }
   ignoreEvent() { return false; }
@@ -61,14 +81,19 @@ function partsFromImage(node: SyntaxNodeRef, doc: string): ImageParts | null {
 export function imageDecoration(): Extension {
   return decorationPlugin({
     nodes: ['Image'],
+    // Re-resolve image URLs when the document file changes (open / save-as).
+    // Without this the cached durumi-asset:// URLs still point at the old
+    // doc's directory.
+    rebuildOn: [setDocPath],
     visit(builder, { from, to, lineActive, doc, node, view }) {
       if (!shouldHideMarker(view.state, lineActive)) return;
       const parts = partsFromImage(node, doc);
       if (!parts) return;
+      const resolved = resolveImageSrc(parts.src, currentDocPath(view.state));
       builder.add(
         from,
         to,
-        Decoration.replace({ widget: new ImageWidget(parts.alt, parts.src), block: false }),
+        Decoration.replace({ widget: new ImageWidget(parts.alt, parts.src, resolved), block: false }),
       );
     },
   });

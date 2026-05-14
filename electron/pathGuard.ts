@@ -1,4 +1,4 @@
-import { resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { getPreferences } from './preferences';
 
 /**
@@ -16,12 +16,22 @@ import { getPreferences } from './preferences';
  *      `dialog:pickFile`). Populated by the dialog handlers themselves.
  *      Cleared when the app process exits.
  *
- *   2. **Workspace folders** — `prefs.workspaceFolders`. The renderer can
+ *   2. **Session-trusted directory trees** — when a dialog (or any other
+ *      legitimate flow) hands us a file path, the file's parent directory
+ *      is registered here so the editor can also load sibling assets
+ *      (e.g. `assets/img-*.png` written by the image-paste flow). The
+ *      semantics mirror workspace folders: any descendant path is
+ *      trusted, normalised via `path.resolve` so `..` traversal collapses.
+ *      Bootstrapped at startup from `dirname` of every recent file in
+ *      preferences, so reopening a recent doc reaches its assets even on
+ *      a cold start.
+ *
+ *   3. **Workspace folders** — `prefs.workspaceFolders`. The renderer can
  *      only *add* a folder here by going through `dialog:openFolder`, and
  *      `prefs:set` is guarded so it refuses to add a workspace folder
  *      that didn't come through a dialog this session.
  *
- *   3. **Recent files** — `prefs.recentFiles`. Same logic as above:
+ *   4. **Recent files** — `prefs.recentFiles`. Same logic as above:
  *      `prefs:set` won't accept a `recentFiles` entry the session
  *      didn't see come from a dialog.
  *
@@ -34,6 +44,7 @@ import { getPreferences } from './preferences';
  */
 
 const sessionAllowed = new Set<string>();
+const sessionAllowedTrees = new Set<string>();
 
 export class PathNotAllowedError extends Error {
   readonly code = 'path-not-allowed' as const;
@@ -45,16 +56,34 @@ export class PathNotAllowedError extends Error {
 
 /**
  * Register a path as trusted for the rest of this session. Called by
- * every IPC dialog handler immediately after the dialog resolves.
+ * every IPC dialog handler immediately after the dialog resolves. Also
+ * registers the parent directory as a session-trusted tree so sibling
+ * assets (e.g. `<doc_dir>/assets/img-*.png` from the image-paste flow)
+ * are reachable without a separate trust step.
  */
 export function allowSessionPath(absPath: string): void {
   if (!absPath) return;
-  sessionAllowed.add(resolve(absPath));
+  const r = resolve(absPath);
+  sessionAllowed.add(r);
+  const parent = dirname(r);
+  if (parent && parent !== r) sessionAllowedTrees.add(parent);
+}
+
+/**
+ * Register a directory as a session-trusted tree. Any descendant path
+ * passes `isAllowedPath`. Use for folders the user explicitly picked
+ * (e.g. `dialog:openFolder` even when not adding it to workspaceFolders)
+ * or to bootstrap recent-file ancestors at startup.
+ */
+export function allowSessionTree(absDir: string): void {
+  if (!absDir) return;
+  sessionAllowedTrees.add(resolve(absDir));
 }
 
 /** Test-only: reset session state. */
 export function _resetSessionForTests(): void {
   sessionAllowed.clear();
+  sessionAllowedTrees.clear();
 }
 
 /** Test seam — lets unit tests inject a deterministic prefs source. */
@@ -86,6 +115,9 @@ export async function isAllowedPath(targetPath: string): Promise<boolean> {
   if (!targetPath) return false;
   const target = resolve(targetPath);
   if (sessionAllowed.has(target)) return true;
+  for (const tree of sessionAllowedTrees) {
+    if (isInside(target, tree)) return true;
+  }
   const prefs = await prefsReader();
   for (const root of prefs.workspaceFolders ?? []) {
     if (isInside(target, root)) return true;
@@ -94,6 +126,22 @@ export async function isAllowedPath(targetPath: string): Promise<boolean> {
     if (resolve(recent) === target) return true;
   }
   return false;
+}
+
+/**
+ * One-shot at app start: register the parent directory of every recent
+ * file as a session-trusted tree. Reopening a recent doc then "just
+ * works" for its sibling assets without requiring the user to add the
+ * folder as a workspace.
+ *
+ * Idempotent — safe to call multiple times.
+ */
+export async function bootstrapSessionTreesFromRecents(): Promise<void> {
+  const prefs = await prefsReader();
+  for (const rf of prefs.recentFiles ?? []) {
+    const parent = dirname(resolve(rf));
+    if (parent) sessionAllowedTrees.add(parent);
+  }
 }
 
 /** Throws PathNotAllowedError if the path is outside the trust scope. */

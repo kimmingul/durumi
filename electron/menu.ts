@@ -227,9 +227,8 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
         { role: 'zoomIn' },
         { role: 'zoomOut' },
         { role: 'resetZoom' },
-        ...(process.env.NODE_ENV === 'development'
-          ? [{ type: 'separator' as const }, { role: 'toggleDevTools' as const }]
-          : []),
+        { type: 'separator' as const },
+        { role: 'toggleDevTools' as const },
         { type: 'separator' },
         { label: tr('menu.view.toggleSidebar'), accelerator: 'CommandOrControl+\\', click: () => send('toggleSidebar') },
         { label: tr('menu.view.toggleRightSidebar'), accelerator: 'CommandOrControl+Shift+\\', click: () => send('toggleRightSidebar') },

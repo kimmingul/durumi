@@ -11,8 +11,10 @@ import {
   _resetSessionForTests,
   _setPrefsReaderForTests,
   allowSessionPath,
+  allowSessionTree,
   assertAllowedPath,
   assertPrefsPatchAllowed,
+  bootstrapSessionTreesFromRecents,
   isAllowedPath,
   type PrefsLike,
 } from '../../electron/pathGuard';
@@ -77,9 +79,11 @@ describe('isAllowedPath — recent files', () => {
     expect(await isAllowedPath('/Users/min/Documents/old.md')).toBe(true);
   });
 
-  it('does not allow other files in the same dir as a recent-files entry', async () => {
-    // Recent files are *exact-match* trust, not directory trust. Listing
-    // /Users/min/Documents because old.md is recent would over-share.
+  it('does not allow other files in the same dir as a recent-files entry (pre-bootstrap)', async () => {
+    // Recent-files trust is exact-match by default; the dir-tree expansion
+    // only kicks in after `bootstrapSessionTreesFromRecents()` runs at app
+    // startup. Without it, listing /Users/min/Documents/other.md because
+    // old.md is recent would over-share.
     setPrefs({ recentFiles: ['/Users/min/Documents/old.md'] });
     expect(await isAllowedPath('/Users/min/Documents/other.md')).toBe(false);
   });
@@ -94,6 +98,47 @@ describe('isAllowedPath — session allowlist', () => {
   it('normalises before comparing — session entries match resolved paths', async () => {
     allowSessionPath('/Users/min/Downloads/from-dialog.md');
     expect(await isAllowedPath('/Users/min/Downloads/./from-dialog.md')).toBe(true);
+  });
+});
+
+describe('isAllowedPath — session-trusted directory trees', () => {
+  it('allowSessionPath implicitly trusts the file\'s parent dir for descendants', async () => {
+    // The image-paste flow writes to `<doc_dir>/assets/img-*.png`. Once the
+    // doc is dialog-picked we want sibling assets to load through the
+    // durumi-asset:// protocol without each being registered separately.
+    allowSessionPath('/Users/min/Documents/manuscript.md');
+    expect(await isAllowedPath('/Users/min/Documents/assets/img-1.png')).toBe(true);
+    expect(await isAllowedPath('/Users/min/Documents/figs/fig.png')).toBe(true);
+  });
+
+  it('does not trust paths outside the file\'s parent', async () => {
+    allowSessionPath('/Users/min/Documents/manuscript.md');
+    expect(await isAllowedPath('/Users/min/Pictures/wallpaper.png')).toBe(false);
+    expect(await isAllowedPath('/etc/passwd')).toBe(false);
+  });
+
+  it('allowSessionTree directly trusts a directory and its descendants', async () => {
+    allowSessionTree('/Users/min/explicit-tree');
+    expect(await isAllowedPath('/Users/min/explicit-tree/a.txt')).toBe(true);
+    expect(await isAllowedPath('/Users/min/explicit-tree/sub/b.txt')).toBe(true);
+    expect(await isAllowedPath('/Users/min/other')).toBe(false);
+  });
+
+  it('rejects prefix-sibling escapes from session trees', async () => {
+    // /Users/min/foo as a session tree must NOT allow /Users/min/foo-clone.
+    allowSessionTree('/Users/min/foo');
+    expect(await isAllowedPath('/Users/min/foo-clone/x')).toBe(false);
+  });
+
+  it('bootstrapSessionTreesFromRecents adds recent-file dirnames', async () => {
+    setPrefs({ recentFiles: ['/Users/min/Documents/old.md'] });
+    await bootstrapSessionTreesFromRecents();
+    // Sibling asset of a recent file now passes the guard — the user
+    // re-opening a recent doc sees its assets without re-adding the
+    // folder as a workspace.
+    expect(await isAllowedPath('/Users/min/Documents/assets/legacy.png')).toBe(true);
+    // The recent file itself still passes via exact-match too.
+    expect(await isAllowedPath('/Users/min/Documents/old.md')).toBe(true);
   });
 });
 

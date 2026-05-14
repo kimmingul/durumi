@@ -1,6 +1,6 @@
 import { syntaxTree } from '@codemirror/language';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
-import { EditorState, Extension, RangeSetBuilder } from '@codemirror/state';
+import { EditorState, Extension, RangeSetBuilder, StateEffectType } from '@codemirror/state';
 import type { SyntaxNodeRef } from '@lezer/common';
 import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
 
@@ -17,6 +17,14 @@ export interface VisitArgs {
 export interface NodeVisitor {
   nodes: string[];
   visit: (builder: RangeSetBuilder<Decoration>, args: VisitArgs) => void;
+  /**
+   * Extra StateEffect types that should force a decoration rebuild beyond
+   * the default docChanged / viewportChanged / selectionSet triggers. Use
+   * this when a visitor reads from a StateField whose value can change
+   * independently of the document — e.g. the image widget reads docPath
+   * and must re-resolve its URLs when the active file changes.
+   */
+  rebuildOn?: StateEffectType<unknown>[];
 }
 
 function rangeTouchesActiveLine(state: EditorState, from: number, to: number): boolean {
@@ -35,6 +43,17 @@ export function decorationPlugin(visitor: NodeVisitor): Extension {
       update(update: ViewUpdate) {
         if (update.docChanged || update.viewportChanged || update.selectionSet) {
           this.decorations = build(update.view, visitor);
+          return;
+        }
+        if (visitor.rebuildOn && visitor.rebuildOn.length > 0) {
+          for (const tr of update.transactions) {
+            for (const eff of tr.effects) {
+              if (visitor.rebuildOn.some((t) => eff.is(t))) {
+                this.decorations = build(update.view, visitor);
+                return;
+              }
+            }
+          }
         }
       }
     },

@@ -9,6 +9,13 @@ import { getCustomCss, watchCustomCss } from './customCss';
 import { getMacros, watchMacros } from './macros';
 import { attachCloseGuard } from './closeGuard';
 import { attachContextMenu } from './contextMenu';
+import { registerAssetProtocolHandler, registerAssetProtocolSchemes } from './assetProtocol';
+import { bootstrapSessionTreesFromRecents } from './pathGuard';
+
+// Privileges (`standard`, `secure`, `supportFetchAPI`, `stream`) must be
+// declared BEFORE app.whenReady() resolves. The actual request handler
+// hooks after whenReady — see below.
+registerAssetProtocolSchemes();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,7 +39,11 @@ async function createWindow(prefsOverride?: Awaited<ReturnType<typeof getPrefere
       preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // Renderer cannot reach Node APIs. The preload bridge uses only
+      // contextBridge + ipcRenderer (verified sandbox-clean in v0.2-hardening
+      // P1-1 discovery). Local asset reads go through the durumi-asset://
+      // custom protocol, not direct file:// access.
+      sandbox: true,
     },
   });
 
@@ -74,8 +85,13 @@ function broadcast<T>(channel: string, payload: T): void {
 const onNewWindow = () => { void createWindow(); };
 
 void app.whenReady().then(async () => {
+  registerAssetProtocolHandler();
   registerIpcHandlers();
   const initialPrefs = await getPreferences();
+  // Pre-populate the path-guard's session-trusted directory trees from
+  // recent-file dirnames so reopening a recent doc finds its sibling
+  // assets through durumi-asset:// even on a cold start.
+  await bootstrapSessionTreesFromRecents();
   buildMenu(initialPrefs, onNewWindow);
   onPreferencesChanged((prefs) => buildMenu(prefs, onNewWindow));
 

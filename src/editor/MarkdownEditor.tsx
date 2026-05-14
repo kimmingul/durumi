@@ -29,6 +29,7 @@ import { citationHoverTooltip } from './decorations/citationHover';
 import { defaultGhostTextRefs, ghostTextExtension } from './ai/ghostText';
 import type { Macro } from '@shared/ipc-contract';
 import { EditMode, editModeStateExtension, setEditMode } from './editMode';
+import { docPathStateExtension, setDocPath } from './docPath';
 import { wysiwygEscapeFilter } from './wysiwygEscape';
 
 export interface MarkdownEditorProps {
@@ -65,6 +66,11 @@ export function MarkdownEditor({
 
   useEffect(() => {
     filePathRef.current = filePath;
+    // Threads the doc path into the editor's StateField so widgets that
+    // need to resolve workspace-relative paths (image src today, future
+    // PDF embed) can read it at decoration-build time.
+    const view = viewRef.current;
+    if (view) view.dispatch({ effects: setDocPath.of(filePath) });
   }, [filePath]);
 
   useEffect(() => {
@@ -92,6 +98,7 @@ export function MarkdownEditor({
           ],
         }),
         editModeStateExtension(),
+        docPathStateExtension(),
         editModeCompartmentRef.current.of(decorationsForMode(initialEditModeRef.current)),
         wysiwygEscapeFilter(),
         citationAutocomplete(),
@@ -120,6 +127,10 @@ export function MarkdownEditor({
 
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    // Seed the docPath field with the prop value so widgets created on
+    // the first paint (e.g. an image already in the initial document)
+    // resolve correctly. Subsequent changes go through the filePath effect.
+    if (filePath !== null) view.dispatch({ effects: setDocPath.of(filePath) });
     onReady?.(view);
     return () => {
       view.destroy();

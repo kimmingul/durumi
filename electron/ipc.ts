@@ -189,6 +189,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:openPath', async (_e, path: string): Promise<FileResult> => {
     await assertAllowedPath(path);
     const content = await fs.readFile(path, 'utf8');
+    // Trust the opened file's directory tree for the rest of the session
+    // so sibling assets (e.g. `<doc_dir>/assets/img-*.png`) reach the
+    // renderer through the durumi-asset:// protocol. Calling
+    // allowSessionPath on an already-trusted path is idempotent.
+    allowSessionPath(path);
     await addRecentFile(path);
     return { path, content };
   });
@@ -196,6 +201,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:save', async (_e, path: string, content: string) => {
     await assertAllowedPath(path);
     await writeFileAtomic(path, content);
+    // Same dir-trust idempotency as file:openPath.
+    allowSessionPath(path);
     await addRecentFile(path);
     const prefs = await getPreferences();
     const owningRoot = findOwningRoot(path, prefs.workspaceFolders ?? []);
