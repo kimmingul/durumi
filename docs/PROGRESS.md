@@ -1,6 +1,101 @@
 # Durumi — Progress
 
-## v0.2.1 (current) — Hardening II: AI key honesty + no-write bibliography bind + path-scoped IPC guard
+## v0.2.2 (current) — Hardening III: Electron sandbox + image-render fix
+
+Final P1 hardening release. Flips `webPreferences.sandbox` to true on
+the BrowserWindow and fixes a long-standing image-rendering bug that
+was surfaced during the sandbox smoke test. See
+[docs/v0.2-hardening.md](v0.2-hardening.md) for the full P1 ledger;
+this release completes the P1 cycle.
+
+### Electron `sandbox: true` (P1-1 → [`f38c4a2`](https://github.com/kimmingul/durumi/commit/f38c4a2))
+
+Static analysis during v0.2.0 had already shown that the preload was
+`contextBridge`-only and the renderer was Node-free, so the flip is a
+one-line config change in `electron/main.ts`. Combined with
+`contextIsolation: true`, `nodeIntegration: false`, and the v0.2.1
+path-scoped IPC guard, the renderer is now defence-in-depth isolated
+from the filesystem: even an XSS-compromised renderer can't reach
+`/etc/passwd` through any IPC, and the OS-level sandbox blocks
+out-of-process escape attempts on top.
+
+### Image-render fix
+
+The smoke test surfaced a bug that had been present since v0.1.2: the
+editor's image widget set `<img src>` to the raw markdown URL (a
+relative path like `assets/img-*.png`), which the browser resolved
+against the *renderer's* URL (`file:///…/out/renderer/`), not the
+document's directory. Images saved to `<doc_dir>/assets/` silently
+404'd. Three separate root causes had to fall before images rendered:
+
+1. **No path resolution at the widget**. The widget had no knowledge
+   of the active document's directory, so it couldn't build a
+   correct URL. Fixed with a `docPath` StateField threaded through
+   the editor by `MarkdownEditor`, plus a `resolveImageSrc` helper
+   that joins relative paths against `dirname(docPath)` and wraps
+   them in a custom `durumi-asset://` URL. The custom scheme is
+   handled in main with the same path-guard allowlist as the IPC
+   layer.
+
+2. **Path guard rejected the asset**. `assets/` lives next to the
+   `.md` file but the v0.2.1 path guard only trusted the *exact*
+   dialog-returned `.md` path. Extended in `electron/pathGuard.ts`:
+   `allowSessionPath(p)` now also registers `dirname(p)` as a
+   session-trusted tree, and `bootstrapSessionTreesFromRecents()`
+   pre-populates recent-file dirnames at `app.whenReady()` so
+   reopening a recent doc finds its assets without re-adding the
+   folder as a workspace.
+
+3. **CSP blocked the custom scheme**. Even with the URL built and
+   the path-guard trusting the asset, the renderer's
+   `Content-Security-Policy` meta tag did not whitelist
+   `durumi-asset:` in `img-src` — Electron enforces the meta CSP on
+   `<img>` loads regardless of scheme privileges. Fixed by adding
+   `durumi-asset:` to the `img-src` directive in `index.html`.
+
+4. **URL pathname normalisation** (subtler). The first attempt
+   encoded the absolute path in the URL *pathname*
+   (`durumi-asset:///%2FUsers%2F…`). Chromium's standard-scheme URL
+   parser silently normalises `%2F` inside the pathname back to a
+   literal `/`, corrupting the absolute path before the handler
+   could decode it. Fixed by moving the absolute path into the URL
+   *query string* (`durumi-asset://x/?p=…`); query-string
+   percent-encoding round-trips unchanged through the parser.
+
+### Other improvements bundled here
+
+- **Toggle Developer Tools in View menu** is now always visible
+  (previously gated on `NODE_ENV=development`). Matches VS Code /
+  Slack / Discord; lets power users self-diagnose without a rebuild.
+- **Image-load failure surfacing**: the widget's `<img>` has an
+  `onerror` handler that logs the resolved URL to the renderer
+  console, plus `data-md-src` / `data-resolved-src` attributes for
+  DevTools inspection. The protocol handler appends a one-line
+  diagnostic to `<userData>/asset-protocol.log` for **non-200**
+  responses (success path is silent so the log doesn't grow).
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1308 / 1308** tests across 147 files (was 1286 / 146
+  in v0.2.1; +22 covering `resolveImageSrc` URL classification and
+  `pathGuard` session-tree behavior)
+- `pnpm build`: clean
+- Visual smoke verified on macOS arm64 DMG: image paste/drop renders
+  in Document and Live modes, Recent Files still works, app starts
+  cleanly under `sandbox: true`
+
+### Auto-update
+
+v0.2.1 users will see the "Download v0.2.2" prompt within ~30s of
+opening the app. No code-level behaviour change for legitimate
+workflows. The image-render fix is purely additive; an existing doc
+that previously had broken images now renders them correctly.
+
+---
+
+## v0.2.1 — Hardening II: AI key honesty + no-write bibliography bind + path-scoped IPC guard
 
 Second hardening release. Lands three of the four P1 items from
 [docs/v0.2-hardening.md](v0.2-hardening.md). All are backend / IPC
