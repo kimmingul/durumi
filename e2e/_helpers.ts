@@ -28,3 +28,46 @@ export async function setTyporaMode(app: ElectronApplication, page: Page): Promi
   // the editor compartment before the test proceeds with typing.
   await page.waitForTimeout(150);
 }
+
+/**
+ * Switch the editor to Markdown (source) mode.
+ *
+ * Used by toolbar tests to verify the toolbar is NOT mounted outside of
+ * Document/WYSIWYG mode. Mirrors `setTyporaMode` but targets `markdown`.
+ */
+export async function setMarkdownMode(app: ElectronApplication, page: Page): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w?.webContents.send('menu:command', { type: 'setEditMode', mode: 'markdown' });
+  });
+  await page.waitForTimeout(150);
+}
+
+/**
+ * Read the live CodeMirror document via the EditorView attached to the DOM.
+ *
+ * The toolbar tests need to assert raw source (e.g. `**hello**`) — `cm-content`
+ * innerText shows the rendered preview which hides the markers. We reach the
+ * `EditorView` instance through the CodeMirror 6 internal `cmTile` link that
+ * `EditorView.findFromDOM` itself walks: `.cm-editor` → `cmTile.root.view`.
+ *
+ * Falls back to `.cm-content` innerText when the cmTile traversal is null
+ * (e.g. a renderer that swapped out the view between the page.evaluate and
+ * the DOM query) — that fallback is lossy but keeps tests from hanging.
+ */
+export async function getEditorDoc(page: Page): Promise<string> {
+  return await page.evaluate(() => {
+    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    if (!root) return '';
+    // CM6 stashes its view on the .cm-content node via a `cmView` weakmap-ish
+    // chain that goes (dom).cmTile.root.view. The `cmTile` symbol is internal
+    // but stable enough for e2e since we pin a single CM6 version.
+    const content = root.querySelector('.cm-content') as HTMLElement | null;
+    const tileHolder = (content ?? root) as unknown as {
+      cmTile?: { root?: { view?: { state: { doc: { toString(): string } } } } };
+    };
+    const view = tileHolder.cmTile?.root?.view;
+    if (view) return view.state.doc.toString();
+    return content?.innerText ?? '';
+  });
+}
