@@ -1,4 +1,4 @@
-import { Suspense, lazy, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useRef, useState } from 'react';
 import { MarkdownEditor } from './editor/MarkdownEditor';
 import { EditorToolbar } from './components/EditorToolbar';
 import { StatusBar } from './components/StatusBar';
@@ -61,6 +61,16 @@ import { usePickAndInsertImage } from './hooks/usePickAndInsertImage';
 
 export function App() {
   const editorViewRef = useRef<EditorView | null>(null);
+  // Mirror the ref in React state so consumers that JSX-render against the
+  // EditorView (the toolbar's active-mark detection, sidebars, etc.) re-render
+  // when the editor mounts. Callbacks fetched from a ref still see the latest
+  // view without an extra render pass — the ref stays the source of truth for
+  // event handlers, and `editorView` is the source of truth for JSX.
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
+  const handleEditorReady = useCallback((v: EditorView) => {
+    editorViewRef.current = v;
+    setEditorView(v);
+  }, []);
   const filePath = useAppStore((s) => s.filePath);
   const content = useAppStore((s) => s.content);
   const setContent = useAppStore((s) => s.setContent);
@@ -83,7 +93,7 @@ export function App() {
   // OS-close intercept that prompts on dirty buffers.
   useAppCloseGuard();
   // Auto-focus the matching card when the caret lands on a memo's line.
-  useMemoCaretFocus(editorViewRef.current, content);
+  useMemoCaretFocus(editorView, content);
 
   // Feature slices — each owns a coherent slice of menu-command behaviour.
   const fileCommands = useFileMenuCommands();
@@ -112,7 +122,7 @@ export function App() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
         <Sidebar
           content={content}
-          view={editorViewRef.current}
+          view={editorView}
           onApplyOutlineMove={(newDoc) => setContent(newDoc)}
           onOpenFile={(p) => fileCommands.doOpenPath(p)}
           onOpenHit={async (absPath, line) => {
@@ -133,7 +143,7 @@ export function App() {
         />
         <div style={{ flex: 1, overflow: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <EditorToolbar
-            view={editorViewRef.current}
+            view={editorView}
             visible={editMode === 'wysiwyg'}
             onOpenCitePalette={() => citationFlow.setCitePaletteOpen(true)}
             onPickImage={pickAndInsertImage}
@@ -142,7 +152,7 @@ export function App() {
             <MarkdownEditor
               value={content}
               onChange={setContent}
-              onReady={(v) => { editorViewRef.current = v; }}
+              onReady={handleEditorReady}
               filePath={filePath}
               macros={macros}
               editMode={editMode}
@@ -150,14 +160,14 @@ export function App() {
           </div>
         </div>
         <MemoPanel
-          view={editorViewRef.current}
+          view={editorView}
           content={content}
           visible={parseComments(content).length > 0 && !memoPanelManuallyHidden}
           onClose={() => setMemoPanelManuallyHidden(true)}
         />
         <RightSidebar
           content={content}
-          view={editorViewRef.current}
+          view={editorView}
           onInsertCitation={(key) => citationFlow.insertCitationAtCaret(`[@${key}]`)}
           onCitationRenamed={citationFlow.migrateCitationsInDoc}
           onOpenAiPalette={() => { void aiPalette.open(); }}

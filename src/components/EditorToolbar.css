@@ -1,4 +1,4 @@
-/* Editor toolbar (v0.1.11 Phase 2) — visible only in WYSIWYG mode.
+/* Editor toolbar — visible only in Document mode.
  *
  * Visual density matches the existing .status-bar chrome: 36px tall, same
  * monospace counters font, same border tokens. Lives above MarkdownEditor
@@ -14,15 +14,22 @@
   background: var(--bg);
   font-size: 13px;
   color: var(--fg);
-  flex-wrap: wrap;
+  /* One-line layout: groups don't wrap; on narrow widths the toolbar scrolls
+   * horizontally instead. Cleaner than wrapping into a 72px-tall stack. */
+  flex-wrap: nowrap;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
+  white-space: nowrap;
 }
 
 .editor-toolbar-group {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  /* Don't let a flex parent compress groups: they should always show all
+   * their buttons at full width, with horizontal scroll if needed. */
+  flex-shrink: 0;
 }
 
 .editor-toolbar-sep {
@@ -50,6 +57,7 @@
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
   user-select: none;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .editor-toolbar-btn:hover:not(:disabled) {
@@ -70,6 +78,10 @@
 .editor-toolbar-btn-active {
   background: var(--active, rgba(64, 128, 255, 0.18));
   color: var(--fg);
+}
+
+.editor-toolbar-btn svg {
+  display: block;
 }
 
 .editor-toolbar-mono {
