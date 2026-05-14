@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for Durumi.
+
+  Wired in from electron-builder.yml's commented `mac.entitlements` /
+  `mac.entitlementsInherit` keys (see docs/RELEASE.md → "Path to real
+  macOS signing"). Until those lines are uncommented this file has no
+  effect — it sits dormant alongside the ad-hoc-signed build.
+
+  All three entries below are required for V8/Electron to run under
+  hardened runtime:
+    - allow-jit: V8 must allocate executable pages for JIT.
+    - allow-unsigned-executable-memory: V8 patches code pages at runtime.
+    - allow-dyld-environment-variables: Electron needs DYLD_* during
+      framework lookup; required for Squirrel auto-update spawn paths.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

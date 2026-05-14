@@ -35,6 +35,18 @@ jobs:
       - name: Build & publish (electron-builder, macOS)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Real-signing secrets (P3-3). Uncomment alongside the
+          # electron-builder.yml `mac:` template once the Apple Developer
+          # ID p12 + notarization credentials are added as repo secrets.
+          # See docs/RELEASE.md → "Path to real macOS signing" for the
+          # exact secret names and where each one comes from in
+          # developer.apple.com / appleid.apple.com.
+          #
+          # CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm exec electron-builder --mac --publish always
 
   release-win:
@@ -66,4 +78,12 @@ jobs:
       - name: Build & publish (electron-builder, Windows)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Real-signing secrets (P3-3). Uncomment alongside the
+          # electron-builder.yml `win:` template once a Windows OV or EV
+          # code-signing certificate is acquired and base64'd into the
+          # WIN_CSC_LINK secret. See docs/RELEASE.md → "Path to real
+          # Windows signing" for OV vs EV tradeoffs.
+          #
+          # CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: pnpm exec electron-builder --win --publish always

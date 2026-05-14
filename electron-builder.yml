@@ -18,12 +18,40 @@ mac:
   icon: build/icon.png
   hardenedRuntime: false
   identity: null  # ad-hoc signed (no Apple Developer ID); see docs/RELEASE.md
+  # ────────────────────────────────────────────────────────────────────
+  # Real-signing template (P3-3). Uncomment when GitHub Secrets
+  # MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD / APPLE_ID /
+  # APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are configured. See
+  # docs/RELEASE.md → "Path to real macOS signing".
+  #
+  # Step 1: delete the `identity: null` line above.
+  # Step 2: flip `hardenedRuntime: false` above to `true`.
+  # Step 3: uncomment the entitlements + notarize lines below.
+  #
+  # entitlements: build/entitlements.mac.plist
+  # entitlementsInherit: build/entitlements.mac.plist
+  # gatekeeperAssess: false  # default; kept explicit for review clarity
+  # notarize: true            # electron-builder will notarize using APPLE_* env vars
 win:
   target:
     - target: nsis
       arch: [x64]
   icon: build/icon.png
-  verifyUpdateCodeSignature: false  # we ship unsigned NSIS; re-enable in Phase D
+  verifyUpdateCodeSignature: false  # we ship unsigned NSIS; re-enable when signed
+  # ────────────────────────────────────────────────────────────────────
+  # Real-signing template (P3-3). Uncomment when GitHub Secrets
+  # WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are configured. See
+  # docs/RELEASE.md → "Path to real Windows signing".
+  #
+  # Step 1: flip `verifyUpdateCodeSignature: false` above to `true`.
+  # Step 2: electron-builder picks up CSC_LINK / CSC_KEY_PASSWORD from
+  #         env automatically (set in .github/workflows/release.yml).
+  # Step 3: (optional) uncomment signtoolOptions if you need a custom
+  #         signing hook (e.g. EV cert on a hardware token via
+  #         @electron/windows-sign).
+  #
+  # signtoolOptions:
+  #   sign: '@electron/windows-sign'
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
