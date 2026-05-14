@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
+import { setTyporaMode } from './_helpers';
 
 const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
@@ -16,6 +17,9 @@ async function shutdown(app: ElectronApplication) {
 
 test('mermaid fence renders to a block widget when cursor is outside', async () => {
   const { app, page } = await launch();
+  // Typed-markdown test: switch to Typora mode so the backticks aren't
+  // escaped to `\`` by the WYSIWYG filter (see e2e/_helpers.ts).
+  await setTyporaMode(app, page);
   await page.click('.cm-content');
   // Type a complete mermaid fence followed by a trailing newline so the
   // cursor lands outside the fence (active-block guard releases the

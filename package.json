@@ -27,7 +27,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "ELECTRON_RUN_AS_NODE= playwright test",
+    "test:e2e": "DURUMI_E2E=1 ELECTRON_RUN_AS_NODE= playwright test",
     "release:tag": "bash scripts/release.sh"
   },
   "dependencies": {

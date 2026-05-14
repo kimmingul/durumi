@@ -1,5 +1,22 @@
 import { dirname, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { getPreferences } from './preferences';
+
+/**
+ * Test-only escape hatch. When `DURUMI_E2E=1` is set in the environment
+ * (the Playwright `pnpm test:e2e` script forwards it), paths under the
+ * OS tmpdir are treated as session-trusted trees. This lets e2e specs
+ * inject ephemeral workspace folders (`fs.mkdtempSync(os.tmpdir(), …)`)
+ * via `prefs:set` without going through the file-dialog round trip —
+ * something Playwright cannot drive against Electron's native dialog.
+ *
+ * Production builds set `DURUMI_E2E` exactly nowhere; the flag is opt-in
+ * via the test script and the renderer cannot influence the main-process
+ * environment, so this does not widen the attack surface for shipped
+ * builds.
+ */
+const E2E_BYPASS_ENABLED = process.env.DURUMI_E2E === '1';
+const E2E_TMPDIR = E2E_BYPASS_ENABLED ? resolve(tmpdir()) : null;
 
 /**
  * Trust-scope guard for renderer-supplied paths.
@@ -114,6 +131,8 @@ function isInside(target: string, root: string): boolean {
 export async function isAllowedPath(targetPath: string): Promise<boolean> {
   if (!targetPath) return false;
   const target = resolve(targetPath);
+  // Test-only: accept any path under the OS tmpdir when DURUMI_E2E=1 is set.
+  if (E2E_TMPDIR && isInside(target, E2E_TMPDIR)) return true;
   if (sessionAllowed.has(target)) return true;
   for (const tree of sessionAllowedTrees) {
     if (isInside(target, tree)) return true;
@@ -169,12 +188,15 @@ export async function assertPrefsPatchAllowed(patch: {
     const r = resolve(wf);
     if (existingFolders.has(r)) continue;
     if (sessionAllowed.has(r)) continue;
+    // Test-only: tmpdir-rooted paths are accepted under DURUMI_E2E=1.
+    if (E2E_TMPDIR && isInside(r, E2E_TMPDIR)) continue;
     throw new PathNotAllowedError(wf);
   }
   for (const rf of patch.recentFiles ?? []) {
     const r = resolve(rf);
     if (existingRecents.has(r)) continue;
     if (sessionAllowed.has(r)) continue;
+    if (E2E_TMPDIR && isInside(r, E2E_TMPDIR)) continue;
     throw new PathNotAllowedError(rf);
   }
 }

@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication } from '@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { setTyporaMode } from './_helpers';
 
 const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
@@ -20,6 +21,9 @@ test('HTML export produces a valid file with rendered body', async () => {
   const { app, page } = await launch();
   const tmpFile = path.join(os.tmpdir(), `durumi-e2e-export-${Date.now()}.html`);
   try {
+    // Typed-markdown test: switch to Typora mode so the `#` heading marker
+    // isn't escaped to `\#` by the WYSIWYG filter (see e2e/_helpers.ts).
+    await setTyporaMode(app, page);
     await page.click('.cm-content');
     await page.keyboard.type('# Hello\n\nbody text');
     await app.evaluate(({ dialog }, p) => {

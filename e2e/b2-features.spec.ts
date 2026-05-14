@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication } from '@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { setTyporaMode } from './_helpers';
 
 const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
@@ -29,18 +30,24 @@ test('open folder + click file opens content', async () => {
   const { app, page } = await launch();
   const tmp = makeTempFolder();
   try {
+    // Pin sidebar.activeTab to 'files' so persisted state from a prior run
+    // (e.g. the Outline test that follows) doesn't hide the file tree.
     await page.evaluate(async (p: string) => {
-      await (
-        window as unknown as {
-          api: { prefsSet: (x: { workspaceFolders: string[] }) => Promise<void> };
-        }
-      ).api.prefsSet({ workspaceFolders: [p] });
+      const api = (window as unknown as {
+        api: {
+          prefsSet: (x: {
+            workspaceFolders: string[];
+            sidebar?: { visible: boolean; activeTab: 'files'; width: number };
+          }) => Promise<void>;
+        };
+      }).api;
+      await api.prefsSet({
+        workspaceFolders: [p],
+        sidebar: { visible: true, activeTab: 'files', width: 315 },
+      });
     }, tmp);
     await page.reload();
     await page.waitForSelector('.cm-content');
-    // Allow the App's prefsGet effect + Sidebar's useFolderTree fsListDirectory
-    // round-trip to render the tree rows before asserting count.
-    await page.waitForTimeout(300);
     await page.waitForSelector('.cm-tree-row-file', { timeout: 5000 });
     const rows = page.locator('.cm-tree-row-file');
     await expect(rows).toHaveCount(2);
@@ -59,6 +66,9 @@ test('open folder + click file opens content', async () => {
 test('outline tab shows headings and clicking jumps cursor', async () => {
   const { app, page } = await launch();
   try {
+    // Typed-markdown test: switch to Typora mode so `#` chars aren't escaped
+    // by the WYSIWYG strict-literal filter (see e2e/_helpers.ts).
+    await setTyporaMode(app, page);
     await page.click('.cm-content');
     await page.keyboard.type('# H1\n\n## H2\n\n### H3\n\nbody text\n');
     // useDocOutline has a 100ms debounce; wait it out before switching tabs.

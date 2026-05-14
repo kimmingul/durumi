@@ -1,5 +1,6 @@
 import { test, expect, _electron as electronApp } from '@playwright/test';
 import { join } from 'node:path';
+import { setTyporaMode } from './_helpers';
 
 test('app launches and shows window', async () => {
   const app = await electronApp.launch({
@@ -20,9 +21,15 @@ test('typing markdown applies live preview classes', async () => {
   });
   const win = await app.firstWindow();
   await win.waitForSelector('.cm-content');
+  // Typed-markdown test: switch to Typora mode so the `#` heading marker
+  // isn't escaped to `\#` by the WYSIWYG filter (see e2e/_helpers.ts).
+  await setTyporaMode(app, win);
   await win.click('.cm-content');
   await win.keyboard.type('# Heading\n\nbody');
-  await win.waitForTimeout(150);
+  // Wait for the live-preview class to land rather than racing a fixed
+  // timeout — the markdown parser is incremental and may not have applied
+  // decorations within 150ms on a cold CodeMirror under packaged Electron.
+  await win.waitForSelector('.cm-md-h1', { timeout: 5000 });
   const headingCount = await win.locator('.cm-md-h1').count();
   expect(headingCount).toBeGreaterThan(0);
   await app.evaluate(({ app: a }) => a.exit(0));

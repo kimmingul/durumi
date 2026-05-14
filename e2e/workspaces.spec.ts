@@ -29,17 +29,25 @@ test('multiple workspace roots render side-by-side in the sidebar', async () => 
   const a = makeFolder('a', ['alpha.md']);
   const b = makeFolder('b', ['beta.md', 'gamma.md']);
   try {
+    // The persisted preferences file is shared across e2e runs, so any test
+    // that left the sidebar pinned to Outline would block the file-tree
+    // assertions below. Explicitly force the Files tab to be active.
     await page.evaluate(async (paths: string[]) => {
-      await (
-        window as unknown as {
-          api: { prefsSet: (x: { workspaceFolders: string[] }) => Promise<void> };
-        }
-      ).api.prefsSet({ workspaceFolders: paths });
+      const api = (window as unknown as {
+        api: {
+          prefsSet: (x: {
+            workspaceFolders: string[];
+            sidebar?: { visible: boolean; activeTab: 'files'; width: number };
+          }) => Promise<void>;
+        };
+      }).api;
+      await api.prefsSet({
+        workspaceFolders: paths,
+        sidebar: { visible: true, activeTab: 'files', width: 315 },
+      });
     }, [a, b]);
     await page.reload();
     await page.waitForSelector('.cm-content');
-    // Wait for prefsGet effect + per-root listings to populate.
-    await page.waitForTimeout(400);
     await page.waitForSelector('.cm-tree-root-label', { timeout: 5000 });
 
     const labels = page.locator('.cm-tree-root-label');

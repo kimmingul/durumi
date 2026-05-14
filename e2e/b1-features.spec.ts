@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
+import { setTyporaMode } from './_helpers';
 
 const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
@@ -7,6 +8,17 @@ async function launch() {
   const app = await electron.launch({ args: [APP_ENTRY] });
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
+  return { app, page };
+}
+
+// Live-preview tests rely on markdown source being parsed verbatim. The
+// default WYSIWYG mode (v0.1.12+) escapes special chars on every keystroke
+// so `# heading` becomes `\# heading` and no decoration fires. Switching
+// to Typora mode for these tests mirrors how a user who wants raw markdown
+// typing would configure the app.
+async function launchTypora() {
+  const { app, page } = await launch();
+  await setTyporaMode(app, page);
   return { app, page };
 }
 
@@ -31,7 +43,7 @@ test('table insert + Tab adds row + click to render', async () => {
 });
 
 test('task list checkbox toggle', async () => {
-  const { app, page } = await launch();
+  const { app, page } = await launchTypora();
   await page.click('.cm-content');
   await page.keyboard.type('- [ ] todo\n');
   // Move caret away from line 1 so the checkbox widget renders on it.
@@ -50,7 +62,7 @@ test('task list checkbox toggle', async () => {
 });
 
 test('strikethrough markers hide on inactive line', async () => {
-  const { app, page } = await launch();
+  const { app, page } = await launchTypora();
   await page.click('.cm-content');
   await page.keyboard.type('~~strike~~\n');
   // After Enter, caret is on line 2 (empty); line 1 is inactive so its
@@ -63,7 +75,7 @@ test('strikethrough markers hide on inactive line', async () => {
 });
 
 test('typescript fenced block highlights keyword', async () => {
-  const { app, page } = await launch();
+  const { app, page } = await launchTypora();
   await page.click('.cm-content');
   await page.keyboard.type('```ts\nconst x = 1;\n```\n');
   // Lazy lang load may need a moment in packaged Electron, raise to 5s.
