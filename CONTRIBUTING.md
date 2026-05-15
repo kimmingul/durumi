@@ -144,15 +144,39 @@ deeper rationale on items 8–10.
 
     Do NOT copy this pattern to other constructs (math, mermaid,
     images, blockquotes, etc.) without a separate design discussion.
-    Phase 3.1.2 will render `**bold**` and friends as literal text
-    inside cells (still no inline-mark replacement). Phase 3.2 adds
-    hover row/col controls; Phase 3.3 adds line styling. None of
-    those phases lift this exemption for other widget kinds.
+    Phase 3.2 adds hover row/col controls; Phase 3.3 adds line
+    styling; Phase 3.1.2 adds inline-mark rendering inside cells.
+    None of those phases lift this exemption for other widget kinds.
 
     IME safety inside cells: every `input` listener guards on
     `data-composing="true"` before syncing; composition starts/ends
     on the cell drive the sync, not raw `input` events. This is the
     cell-scoped analogue of invariant #1's IME-safe marker hide.
+
+### v0.2.7 phase-3.1.2 invariant
+
+12. **Sub-active-cell pattern.** Phase 3.1.2 (v0.2.7) renders inline
+    marks (`**bold**`, `$x$`, `[@cite]`, etc.) as their styled DOM
+    inside a blurred table cell, and swaps back to raw markdown
+    source when that specific cell receives focus. This is the
+    cell-granular analogue of invariant #1's active-line marker
+    hide. The mode switch happens on the cell's own content (NOT
+    through `Decoration.replace`), so it stays IME-safe by
+    construction: composition can only fire on a focused (raw) cell,
+    and the rendered DOM never sees an active IME session.
+
+    The canonical cell text lives in `cell.dataset.cellText`. Reading
+    a rendered cell's text via `textContent` would strip the markers
+    (because `<strong>bold</strong>` contains only `bold`); the
+    dataset cache prevents that lossy path. Any future work that
+    edits cell text must go through `setCellText()` which updates
+    the cache and re-renders.
+
+    Do NOT extend the sub-active pattern to other widget kinds
+    without a separate design pass. Block-level widgets (math,
+    mermaid, code, images) don't have the same "inline syntax inside
+    a small text island" shape as cells; the right pattern for those
+    is the existing active-line collapse (invariant #1).
 
 See `memory/durumi_project.md` for details and rationale.
 

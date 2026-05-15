@@ -1,6 +1,133 @@
 # Durumi — Progress
 
-## v0.2.6 (current) — Phase 3.3: per-table line styling (dual-format)
+## v0.2.7 (current) — Phase 3.1.2: inline marks render inside table cells
+
+Final slice of the v0.3 table-editing roadmap. Table cells now render
+inline markdown syntax (`**bold**`, `*italic*`, `` `code` ``, `~~strike~~`,
+`^sup^`, `~sub~`, `$math$`, `[@cite]`, `[link](url)`) as the styled
+output — `<strong>`, `<em>`, KaTeX HTML, citation pills, etc. — instead
+of literal punctuation. Clicking into a cell swaps that one cell back
+to raw markdown text so editing stays source-honest, then the rendered
+form returns on blur. The markdown source in the EditorState remains
+the single canonical truth; the render is purely visual.
+
+### What changed
+
+**Sub-active-cell pattern.** Each cell tracks a `data-cell-mode`
+attribute that is `rendered` (the inline-marks DOM, default) or `raw`
+(a single text node holding the cell's markdown source). The mode
+flips on `focus` / `blur` of the contentEditable cell. This mirrors
+invariant #1's "active-line keeps raw markers" pattern but at cell
+granularity — and because the mode swap happens on the cell's own
+content (NOT through a `Decoration.replace`), it stays IME-safe by
+construction. The Phase 3.1.1 composition guards still apply when the
+cell is focused; rendered mode never interferes with IME because
+composition can only happen on a focused (raw) cell.
+
+**Inline marks supported.**
+
+  - Bold `**text**` / `__text__` → `<strong>`
+  - Italic `*text*` / `_text_` → `<em>` (intra-word `_` skipped to
+    avoid eating `snake_case`)
+  - Strike `~~text~~` → `<s>`
+  - Inline code `` `code` `` → `<code class="cm-md-inline-code">` (no
+    nested mark interpretation — the contents are verbatim)
+  - Superscript `^text^` → `<sup>` (Pandoc-style, no whitespace inside)
+  - Subscript `~text~` → `<sub>` (MultiMarkdown-style)
+  - Inline math `$tex$` → KaTeX render via the lazy loader from v0.2.3
+    (`src/editor/math/katexLoader.ts`). First sight shows the raw
+    `$tex$` placeholder; once the lazy chunk + cache fill, the cell
+    re-renders with the KaTeX HTML.
+  - Citation `[@key]`, `[-@key]`, `[@a; @b]` → styled `<sup
+    class="cm-md-citation">` pill showing the `@key` form. (Document-
+    level numbering happens at export time; inside a cell we don't
+    have document order, so we show the bare keys.)
+  - Link `[text](url)` → `<a class="cm-md-link" href="…">` — clicks
+    are suppressed so they fall through to cell-focus, matching the
+    active-line semantics. The link text may itself contain nested
+    inline marks.
+
+CriticMarkup (`{++ ++}`, `{-- --}`, …) is intentionally left as
+literal text inside cells — that's Phase 3.4 territory.
+
+**Hand-rolled inline tokenizer.** The renderer
+(`src/editor/markdownExt/inlineMarkdownRenderer.ts`, ~430 lines) is a
+small recursive descent over a single cell's text. It avoids the
+markdown-it lazy chunk (which would block first-render of every cell)
+and avoids running a second `@lezer/markdown` parser pass per cell —
+the grammar is small enough that direct tokenisation is the simplest
+fit. Atomic tokens (`code`, `$math$`, `[@cite]`, `[link]`) are scanned
+first; emphasis runs are parsed in a second pass over the remaining
+text segments. Backslash escapes (`\*`, `\$`, `\[`, …) are honoured
+and emitted as literal segments so the emphasis pass never sees the
+shielded marker.
+
+**Triple-marker heuristic.** Nested emphasis like `**bold *italic***`
+parses correctly via a "rule of three"-flavoured rule: when scanning
+for a `**` closer, advance past any extra `*` chars so the rightmost
+pair wins. The leftover `*` falls into the inner content and the
+recursive parse forms the nested `<em>` cleanly.
+
+### Files
+
+- New `src/editor/markdownExt/inlineMarkdownRenderer.ts` —
+  `renderInlineMarksToDom(source, ctx?)` returns a `DocumentFragment`
+  for a cell's text. Replaces the v0.2.4 markdown-it stub that was
+  left as an orphan for this phase to pick up.
+- Update `src/editor/decorations/table.ts` — `setCellText` now emits
+  the rendered inline-marks DOM (rendered mode) or a raw text node
+  (raw mode). New `enterRawMode` / `exitRawMode` swap on focus / blur.
+  The canonical cell text moves from "first text node in DOM" to
+  `cell.dataset.cellText` so the rendered DOM (which has stripped
+  markers from its text-node children) can't be misread back.
+  `focusCell` eagerly enters raw mode so programmatic focus restores
+  the caret inside a real text node.
+- New `tests/editor/inlineMarkdownRenderer.test.ts` — **35** vitest
+  cases covering atomic tokenisation (code, math, citation, link),
+  emphasis parsing (single, double, nested, intra-word `_` skip,
+  empty markers, whitespace-bounded rejection), DOM emission (each
+  mark type, link-text-with-nested-marks, math cache-miss
+  placeholder, Korean text passthrough), and escape handling
+  (`\*`, `\[`).
+- New `e2e/table-inline-marks.spec.ts` — **11** Playwright Electron
+  cases covering rendered-on-blur, raw-on-focus swap, re-render on
+  blur-back, every supported inline mark, Korean text round-trip
+  through focus/blur, type-after-focus extends the source markdown
+  past the closing marker, explicit composition events (IME) flush
+  only on `compositionend` even while the cell holds rich source
+  text like `**한글**`, and the source-canonical guarantee (rendered
+  DOM does NOT mutate the markdown).
+
+### Test count
+
+- vitest: 1425 → 1460 (+35)
+- Playwright e2e: 83 → 94 (+11)
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1460 / 1460** vitest across 154 files
+- `pnpm test:e2e`: **94 / 94** Playwright Electron tests
+- `pnpm build`: clean (no new lazy chunks; KaTeX path reuses the
+  existing v0.2.3 loader)
+
+### Source-of-truth invariants
+
+1. **Markdown source is canonical.** `cell.dataset.cellText` is the
+   DOM-side cache; the EditorState doc is the system-wide canonical
+   form. Rendered DOM never round-trips back to source — every
+   `input` event in raw mode goes through the existing
+   `replaceCellText` helper from Phase 3.1.1.
+2. **Focus = raw, blur = rendered.** No partial-render mode for
+   Phase 3.1.2. A finer "render some marks but not others" gradient
+   would complicate IME and caret restoration without a clear win.
+3. **IME-safe by construction.** Composition only happens on a
+   focused cell, and focused cells are always in raw mode. The
+   rendered DOM never touches an active IME composition. The Phase
+   3.1.1 `data-composing` guard remains intact.
+
+## v0.2.6 — Phase 3.3: per-table line styling (dual-format)
 
 Third slice of the v0.3 table-editing roadmap. Tables now carry
 per-instance border styling — top rule, header separator, body row

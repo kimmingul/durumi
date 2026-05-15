@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { EditorState, Extension, RangeSetBuilder, StateField } from '@codemirror/state';
 import { replaceCellText, markdownToCellText } from '../markdownExt/tableEdit';
+import { renderInlineMarksToDom } from '../markdownExt/inlineMarkdownRenderer';
 import {
   addTableRow,
   addTableColumn,
@@ -137,6 +138,15 @@ function tryConsumeFocus(rowEl: HTMLElement, tableFrom: number, row: number): vo
 }
 
 export function focusCell(cell: HTMLElement, caretAtEnd: boolean): void {
+  // Phase 3.1.2: programmatic focus must first switch the cell into raw
+  // mode so the caret-placement logic below operates on a real text node.
+  // The `focus` DOM event listener will do this, but we run it eagerly
+  // so the range we set isn't immediately discarded by the listener's
+  // own setCellText() swap.
+  if (cell.dataset.cellMode !== 'raw') {
+    cell.dataset.cellMode = 'raw';
+    setCellText(cell, cell.dataset.cellText ?? '');
+  }
   cell.focus();
   const sel = window.getSelection();
   if (!sel) return;
@@ -552,11 +562,22 @@ class TableRowWidget extends WidgetType {
       const cell = existingCells[i];
       // Don't trample the cell the user is actively composing in.
       if (cell.dataset.composing === 'true') continue;
-      // Read the cell's *text-only* content (ignoring the action-overlay
-      // child) so we don't churn DOM on a no-op patch.
+      // Read the cell's logical text. In raw mode this returns the live
+      // DOM text; in rendered mode the cached `dataset.cellText`.
       const textNow = cellTextOnly(cell);
       if (textNow !== this.cells[i]) {
-        setCellText(cell, this.cells[i]);
+        // The source changed externally (or our own dispatch round-tripped).
+        // If the cell is currently focused in raw mode, just update the
+        // cached source without rebuilding the DOM — the user's caret +
+        // selection must survive. The `input` listener already keeps the
+        // doc in sync with their typing; if our incoming `this.cells[i]`
+        // differs from the cached text by more than just normalisation,
+        // we still rebuild (a rare cross-edit scenario).
+        if (cell.dataset.cellMode === 'raw' && document.activeElement === cell) {
+          cell.dataset.cellText = this.cells[i];
+        } else {
+          setCellText(cell, this.cells[i]);
+        }
       }
       cell.dataset.row = String(this.row);
       cell.dataset.col = String(i);
@@ -652,38 +673,106 @@ function buildTableStyleGear(view: EditorView, tableFrom: number): HTMLButtonEle
 }
 
 /**
- * Read the user-visible text of a cell, ignoring any structural child
- * elements such as the hover-action overlay (`.cm-table-cell-actions-anchor`).
+ * Read the canonical markdown source text for a cell.
  *
- * We can't just use `cell.textContent` because that would include the
- * empty text of the overlay's invisible svg children — and conversely
- * we can't assume the cell only has a single text node, because the
- * Phase 3.2 overlay adds a sibling div.
+ * Phase 3.1.2: the cell's content may be EITHER a single raw text node
+ * (focused / IME-active state) OR a tree of rendered inline-mark nodes
+ * (`<strong>`, `<em>`, `<code>`, etc.) when blurred. To avoid having to
+ * "un-render" the rendered DOM back to markdown source, we cache the
+ * canonical text on `cell.dataset.cellText` and use that as the source
+ * of truth at the DOM layer. The action-overlay child is structural and
+ * has no bearing on the text content.
  */
 function cellTextOnly(cell: HTMLElement): string {
-  let s = '';
-  for (let n = cell.firstChild; n; n = n.nextSibling) {
-    if (n.nodeType === Node.TEXT_NODE) s += (n as Text).data;
+  // If focused, the raw text in the DOM IS the source — read it directly
+  // so in-progress edits (not yet synced) are visible to syncCell().
+  if (cell.dataset.cellMode === 'raw' || cell.dataset.composing === 'true') {
+    let s = '';
+    for (let n = cell.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === Node.TEXT_NODE) s += (n as Text).data;
+    }
+    return s;
   }
-  return s;
+  // Blurred — read the cached source. (Reading rendered DOM would strip
+  // markers like `**` because `<strong>` only contains the inner text.)
+  return cell.dataset.cellText ?? '';
 }
 
 /**
- * Replace the cell's text content while preserving the action-overlay
- * child (if any). This swaps only the leading text node(s) and leaves
- * structural children untouched.
+ * Set the cell's content. In `raw` mode this emits a single text node so
+ * the user can edit literal markdown; in `rendered` mode this emits the
+ * inline-marks DOM via the Phase 3.1.2 renderer.
+ *
+ * The Phase 3.2 hover-action overlay (`.cm-table-cell-actions-anchor`)
+ * is preserved across content swaps — it's a structural sibling that
+ * survives the children-replace path here.
  */
 function setCellText(cell: HTMLElement, text: string): void {
-  // Remove all existing text nodes.
+  // Update the canonical source-of-truth cache first.
+  cell.dataset.cellText = text;
+  // Capture the overlay (if mounted) so we can re-attach after wiping.
+  const overlay = cell.querySelector(':scope > .cm-table-cell-actions-anchor');
+  // Remove every child that is not the overlay.
   const toRemove: Node[] = [];
   for (let n = cell.firstChild; n; n = n.nextSibling) {
-    if (n.nodeType === Node.TEXT_NODE) toRemove.push(n);
+    if (n !== overlay) toRemove.push(n);
   }
   for (const n of toRemove) cell.removeChild(n);
-  // Prepend the new text node so it stays before any structural overlay.
-  if (text.length > 0) {
-    cell.insertBefore(document.createTextNode(text), cell.firstChild);
+  // Insert new content BEFORE the overlay so the overlay stays last.
+  const before = overlay ?? null;
+  const mode = cell.dataset.cellMode ?? 'rendered';
+  if (mode === 'raw') {
+    if (text.length > 0) cell.insertBefore(document.createTextNode(text), before);
+  } else {
+    const frag = renderInlineMarksToDom(text, {
+      onKatexReady: () => {
+        // Re-render this cell on the next animation frame so the cache
+        // hit picks up the rendered KaTeX HTML. Guarded by the dataset
+        // check so an unmounted cell doesn't try to mutate stale DOM.
+        const cellText = cell.dataset.cellText;
+        if (cellText === undefined) return;
+        if (cell.dataset.cellMode === 'raw') return;
+        setCellText(cell, cellText);
+      },
+    });
+    cell.insertBefore(frag, before);
   }
+}
+
+/**
+ * Toggle a cell into raw editing mode and place the caret at the end of
+ * the source text. The caller is expected to set focus on the cell first.
+ */
+function enterRawMode(cell: HTMLElement): void {
+  if (cell.dataset.cellMode === 'raw') return;
+  cell.dataset.cellMode = 'raw';
+  const src = cell.dataset.cellText ?? '';
+  setCellText(cell, src);
+  // Place caret at the end of the text node so the user can immediately
+  // resume editing. A finer "drop caret at click position" mapping is
+  // possible but out of scope for Phase 3.1.2.
+  const tn = cell.firstChild;
+  if (tn && tn.nodeType === Node.TEXT_NODE) {
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      const offset = (tn as Text).length;
+      range.setStart(tn, offset);
+      range.setEnd(tn, offset);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+}
+
+/**
+ * Swap back to rendered (blurred) mode. The latest source text is in
+ * `dataset.cellText` (kept in sync by every input event).
+ */
+function exitRawMode(cell: HTMLElement): void {
+  if (cell.dataset.cellMode !== 'raw') return;
+  cell.dataset.cellMode = 'rendered';
+  setCellText(cell, cell.dataset.cellText ?? '');
 }
 
 function buildCellElement(
@@ -702,11 +791,11 @@ function buildCellElement(
   c.dataset.row = String(row);
   c.dataset.col = String(col);
   c.dataset.tableFrom = String(tableFrom);
+  c.dataset.cellMode = 'rendered';
   if (alignment && alignment !== 'default') c.style.textAlign = alignment;
-  // Phase 3.1.1 displays cell content as LITERAL text. Inline-syntax
-  // rendering (`**bold**` → bold) lands in Phase 3.1.2. We use a
-  // text-only setter (vs `textContent =`) so we don't clobber the
-  // Phase 3.2 hover-action overlay when it's attached as a sibling.
+  // Phase 3.1.2: render inline marks (`**bold**`, `$x$`, etc.) when the
+  // cell is not focused; swap to raw markdown source on focus so editing
+  // stays source-honest. The mode swap lives in enterRawMode/exitRawMode.
   setCellText(c, text);
 
   c.addEventListener('compositionstart', () => {
@@ -714,11 +803,31 @@ function buildCellElement(
   });
   c.addEventListener('compositionend', () => {
     delete c.dataset.composing;
+    // During composition the DOM holds the raw text; sync it now.
+    if (c.dataset.cellMode === 'raw') {
+      c.dataset.cellText = readRawText(c);
+    }
     syncCell(view, c);
   });
   c.addEventListener('input', () => {
     if (c.dataset.composing === 'true') return;
+    // The cell is in raw mode whenever the user is typing (we forced
+    // raw on focus). Keep the cached source in sync with the live DOM.
+    if (c.dataset.cellMode === 'raw') {
+      c.dataset.cellText = readRawText(c);
+    }
     syncCell(view, c);
+  });
+  c.addEventListener('focus', () => {
+    enterRawMode(c);
+  });
+  c.addEventListener('blur', () => {
+    // Snap the cached source from the live DOM before re-rendering, in
+    // case a late input arrived without firing our `input` listener.
+    if (c.dataset.cellMode === 'raw') {
+      c.dataset.cellText = readRawText(c);
+    }
+    exitRawMode(c);
   });
   c.addEventListener('keydown', (ev) => {
     handleCellKeydown(ev, c, view);
@@ -736,6 +845,18 @@ function buildCellElement(
   // Phase 3.2 — hover-triggered floating action overlay.
   attachCellHoverOverlay(c, view);
   return c;
+}
+
+/**
+ * Read the raw text content of a cell that is currently in `raw` mode,
+ * ignoring any structural children (e.g. the hover-action overlay).
+ */
+function readRawText(cell: HTMLElement): string {
+  let s = '';
+  for (let n = cell.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === Node.TEXT_NODE) s += (n as Text).data;
+  }
+  return s;
 }
 
 function syncCell(view: EditorView, cell: HTMLElement): void {
@@ -767,6 +888,9 @@ function currentCaretAtEnd(cell: HTMLElement): boolean {
   if (!sel || sel.rangeCount === 0) return true;
   const r = sel.getRangeAt(0);
   if (!cell.contains(r.endContainer)) return true;
+  // In raw mode the cell's leading child is a text node; in rendered mode
+  // the cell holds inline-mark elements (but blur fires before we hit
+  // this path during normal editing).
   const tn = cell.firstChild;
   if (tn && tn.nodeType === Node.TEXT_NODE) {
     return r.endOffset >= (tn as Text).length;
