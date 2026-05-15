@@ -236,6 +236,9 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
 
     // Image paste (C3)
     'image.noFileAlert': 'Save the document first to use image paste.',
+    'image.noFileToast': 'Save this document first to paste images.',
+    'image.noFileAction': 'Save as…',
+    'image.toastDismiss': 'Dismiss',
 
     // Auto-updater (C8)
     'updates.upToDate': 'You are up to date',
@@ -771,6 +774,9 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
 
     // Image paste (C3)
     'image.noFileAlert': '이미지 붙여넣기를 사용하려면 먼저 문서를 저장하세요.',
+    'image.noFileToast': '이 문서를 먼저 저장한 후 이미지를 붙여넣을 수 있습니다.',
+    'image.noFileAction': '다른 이름으로 저장…',
+    'image.toastDismiss': '닫기',
 
     // Auto-updater (C8)
     'updates.upToDate': '최신 버전입니다',

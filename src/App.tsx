@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { MarkdownEditor } from './editor/MarkdownEditor';
 import { EditorToolbar } from './components/EditorToolbar';
 import { StatusBar } from './components/StatusBar';
@@ -6,6 +6,9 @@ import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { MemoPanel } from './components/MemoPanel';
 import { QuickOpen } from './components/QuickOpen';
+import { ToastHost } from './components/Toast';
+import { runPendingImageInserts } from './editor/imagePaste';
+import { clearPendingImages } from './editor/pendingImagePaste';
 // Dialogs are lazy: they only mount when the user opens them, and the dialog
 // bundle (Settings panel alone is ~50 KB, plus the AI usage dashboard, the
 // citation/reference dialogs, the keyboard-shortcuts cheat sheet, and the
@@ -117,6 +120,66 @@ export function App() {
 
   const pickAndInsertImage = usePickAndInsertImage(editorViewRef);
 
+  // v0.2.11 — Gate for the pending-image-flush effect. The bare `filePath`
+  // transition is too permissive: opening an unrelated file (sidebar click,
+  // quick-open, File > Open) also fires `setFile(newPath, content)` and would
+  // dump queued bytes into a doc the user never intended to modify (silent
+  // data corruption). We arm this ref ONLY in save-related entry points
+  // (toast "Save as…" action + native menu Save / Save As) and reset it after
+  // the drain runs. Bypassing actions (open / new) clear the queue outright.
+  const pendingDrainArmed = useRef(false);
+
+  // v0.2.11 — bridge the image-paste-into-untitled toast's "Save as…" action
+  // back to the file-command flow without taking a circular dependency.
+  // imagePaste.ts dispatches a `durumi:menu-command` CustomEvent; we listen
+  // here and route to `doSaveAs`. After the save resolves with a fresh path,
+  // flush the buffered image bytes so the user doesn't have to paste again.
+  useEffect(() => {
+    const handler = (event: Event): void => {
+      const detail = (event as CustomEvent<{ type: string; cmd?: string }>).detail;
+      if (!detail) return;
+      if (detail.type === 'fileCommand' && detail.cmd === 'saveAs') {
+        // Arm the drain BEFORE invoking save so the resulting filePath
+        // transition (if any) is recognized as save-driven.
+        pendingDrainArmed.current = true;
+        void fileCommands.doSaveAs();
+      }
+    };
+    window.addEventListener('durumi:menu-command', handler as EventListener);
+    return () => window.removeEventListener('durumi:menu-command', handler as EventListener);
+  }, [fileCommands]);
+
+  // Second menu-command listener (peer of useMenuCommandRouter; both are
+  // valid simultaneous subscribers) to arm/clear the drain gate against
+  // native menu actions that aren't routed through `durumi:menu-command`.
+  // Save / Save As arm the drain. New / Open clear the queued bytes outright
+  // — those represent an intentional context switch and the user's pasted
+  // image was meant for a buffer that no longer exists.
+  useEffect(() => {
+    return window.api.onMenuCommand((cmd) => {
+      if (cmd === 'save' || cmd === 'saveAs') {
+        pendingDrainArmed.current = true;
+        return;
+      }
+      if (cmd === 'new' || cmd === 'open') {
+        clearPendingImages();
+        pendingDrainArmed.current = false;
+      }
+    });
+  }, []);
+
+  // Drain any image-bytes the user pasted while the doc was still untitled,
+  // but ONLY when the transition was driven by an explicit save action (gate
+  // armed via `pendingDrainArmed`). A bare `filePath` change from File > Open
+  // / sidebar click / quick-open MUST NOT flush — those would silently
+  // mutate an unrelated file with bytes intended for the previous buffer.
+  useEffect(() => {
+    if (!filePath) return;
+    if (!pendingDrainArmed.current) return;
+    pendingDrainArmed.current = false;
+    void runPendingImageInserts(filePath);
+  }, [filePath]);
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
@@ -124,8 +187,17 @@ export function App() {
           content={content}
           view={editorView}
           onApplyOutlineMove={(newDoc) => setContent(newDoc)}
-          onOpenFile={(p) => fileCommands.doOpenPath(p)}
+          onOpenFile={(p) => {
+            // Sidebar click is a context switch, not a save — drop any
+            // bytes still queued from an untitled-buffer paste so they
+            // don't leak into this freshly opened file.
+            clearPendingImages();
+            pendingDrainArmed.current = false;
+            return fileCommands.doOpenPath(p);
+          }}
           onOpenHit={async (absPath, line) => {
+            clearPendingImages();
+            pendingDrainArmed.current = false;
             await fileCommands.doOpenPath(absPath);
             // Defer line jump until after the editor mounts the new doc.
             setTimeout(() => {
@@ -192,10 +264,15 @@ export function App() {
         />
       </div>
       <StatusBar />
+      <ToastHost />
       <QuickOpen
         open={quickOpen}
         onClose={() => setQuickOpen(false)}
-        onPick={(p) => fileCommands.doOpenPath(p)}
+        onPick={(p) => {
+          clearPendingImages();
+          pendingDrainArmed.current = false;
+          return fileCommands.doOpenPath(p);
+        }}
       />
       {/*
         All dialogs are React.lazy. We gate each lazy component on its `open`

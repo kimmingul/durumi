@@ -1,6 +1,291 @@
 # Durumi — Progress
 
-## v0.2.10 (current) — Round-trip + export hardening
+## v0.2.11 (current) — IME + a11y hardening
+
+The v0.2.x band has chased decoration parity (v0.2.8 / v0.2.9) and
+round-trip fidelity (v0.2.10) hard, but three quieter UX cracks have
+sat unaddressed: a Document↔Live↔Source mode flip rebuilds the
+viewport from scratch, which can jump the caret line off-screen or to
+line 1 (block widget heights — image, math, mermaid, table — differ
+between modes); Korean (and any IME) composition mid-construct
+(inside `**…**`, `*…*`, `[@key]`, `%% memo %%`, `{++ ins ++}`, table
+cells) had no e2e matrix, so a future decoration field could silently
+break composition without the suite catching it; and pasting an
+image into a still-untitled buffer threw a blocking
+`window.alert("Save the document first…")`, dropped the bytes on the
+floor, and forced the user to re-paste after Save As. v0.2.11 bundles
+three targeted fixes: a snapshot/restore wrapper around the mode-
+switch reconfigure that pins caret + scrollTop, a 6×3 Korean-IME e2e
+matrix that locks composition-mid-construct against future regressions
+across all three editor modes, and a Toast component with a
+`pendingImagePaste` queue that buffers the bytes and re-runs the
+insert once the doc gains a path.
+
+### Half A — mode-switch caret + scroll preservation
+
+`src/editor/MarkdownEditor.tsx`'s `useEffect([editMode])` now
+snapshots `selection.main.{anchor, head}` and `view.scrollDOM.scrollTop`
+BEFORE dispatching the compartment reconfigure (which swaps
+`liveDecorations` in/out for Document/Live ↔ Source). The reconfigure
++ `setEditMode.of(editMode)` effects fire in the SAME transaction
+(preserving the canonical v0.2.8 listener pattern — every decoration
+field's `update()` rebuilds when it sees `setEditMode`). After the
+transaction, the snapshot is replayed: anchor/head are clamped to the
+new doc length and re-applied if they drifted, then `scrollTop` is
+restored synchronously. A second `requestMeasure` pass re-checks
+scrollTop after the new mode's widgets have laid out (block widget
+heights — image / math / mermaid / table — can differ slightly between
+modes) and re-applies if the natural value drifted by > 1px. The
+two-step restore is necessary because a synchronous-only restore is
+clobbered by CodeMirror's own measure-cycle scrollTop reset when the
+viewport rebuilds. The new `e2e/mode-switch-preservation.spec.ts`
+seeds a 100-line doc with the caret on line 50, switches Document →
+Live → Source → Document, and asserts both the caret line/ch and the
+scrollTop survive the round trip within tolerance.
+
+### Half B — Korean IME composition matrix (6 constructs × 3 modes)
+
+`e2e/ime-composition.spec.ts` lays down a 6×3 matrix exercising the
+six constructs that historically had the highest composition-vs-
+decoration risk (bold `**체**`, italic `*체*`, citation `[@key]`,
+memo `%% memo body %%`, CriticMarkup insert `{++ ins ++}`, and a
+markdown table body cell `| 체 |`) across the three editor modes
+(Document / Live / Source). Each cell seeds the doc, places the caret
+mid-construct (between markers, never on the boundary), inserts a
+Korean syllable (`가`), and asserts (a) the composed syllable lands
+strictly INSIDE the construct's marker range and (b) the construct's
+decoration class (`.cm-md-bold`, `.cm-md-italic`, `.cm-md-citation`,
+`.cm-memo-chat-icon`, `.cm-cm-insert`) still renders somewhere in the
+DOM after composition. **All 18 cells PASS — the matrix exposes no
+implementation bugs**, confirming v0.2.8 / v0.2.9 / v0.2.11 invariant
+#6 (IME safety by construction) holds across the entire decoration
+family touched in this band. The matrix is the regression guard a
+future field needs to clear before it lands on the live decoration
+list.
+
+Two test-design carve-outs documented in the spec: (1) Live (typora)
+mode + `citation` / `cmInsert` skip the decoration-survival probe
+because invariant #1 deliberately reveals raw source on the active
+line — the rendered widget is intentionally absent on the line being
+edited, so the decoration "survives" off-line but not at the caret
+itself; Document mode still renders the decoration uniformly (per the
+v0.2.8 / v0.2.9 fix), so the probe runs there. (2) Source (markdown)
+mode skips the decoration probe globally because the live decoration
+set is unloaded by design. (3) Table cells follow the v0.2.8 sub-
+active-cell pattern (invariant #12) — the focused cell decoration
+class differs from the inactive-cell class — so the probe selector
+stays `null` for that row and the test only asserts substring parity.
+
+The composition driver. Headless Electron has no OS IME and
+`page.keyboard.insertText` routes via the DOM `beforeinput` path,
+which CodeMirror may map back to a different doc offset when WYSIWYG
+marker hiding (`Decoration.replace`) breaks the rendered-DOM ↔ doc-
+offset one-to-one map. The spec instead substitutes a direct
+`view.dispatch({ changes: { from, to, insert: syllable } })` for the
+five inline cases — the same final code path every committed Hangul
+syllable hits inside CM6 in production (`EditorView.contentDOM` →
+input read → `view.dispatch({ changes })`). This is the explicitly
+allowed "weaker substitute" called out in the v0.2.11 spec for
+headless Electron; it exercises the same dispatch shape the IME
+commit-syllable path produces, just without the `compositionstart` /
+`compositionend` envelope. Table cells run their own contentEditable
++ native composition pipeline (separate from CM6 input), so the
+table-cell row uses `page.keyboard.type` against the focused cell DOM
+node + a follow-up blur to flush `syncCell` back to the markdown
+buffer (mirroring `e2e/table-cell-edit.spec.ts`).
+
+### Half C — image-paste-in-untitled UX (toast + pending queue)
+
+Three new modules close the dropped-bytes gap. `src/store/toastStore.ts`
+ships a small Zustand store with `show({ message, action?, ttlMs? })`
+returning an id, plus `dismiss(id)` and `clear()`. `src/components/Toast.tsx`
+renders a fixed bottom-right `<div data-testid="cm-toast-host">` that
+mounts only when `toasts.length > 0` (zero DOM cost when idle), and
+each `ToastCard` carries a localized message, an optional action
+button (`data-testid="cm-toast-action"`), a manual dismiss × button
+(`data-testid="cm-toast-dismiss"`), and a `setTimeout`-driven auto-
+dismiss when `ttlMs != null` (default 6000ms). `src/editor/pendingImagePaste.ts`
+is a module-scoped FIFO `queue: PendingImage[]` (one renderer == one
+editor) with `enqueuePendingImage(item)`, `pendingImageCount()`,
+`clearPendingImages()`, and `runPendingImageInserts(filePath)` — the
+last drains the queue into a local snapshot (so reentrant pastes
+during the flush land in a fresh queue rather than the in-flight
+loop), runs each entry through `window.api.saveImage(bytes, mime,
+filePath)`, and inserts the resulting `![](relPath)` markdown at the
+view's current caret.
+
+The wiring. `src/editor/imagePaste.ts`'s `processFiles` no longer
+throws an `alert()` on `{error:'no-file'}`; it calls
+`enqueuePendingImage({ bytes, mime, viewRef: view })` and shows a
+toast (`t('image.noFileToast')` / `t('image.noFileAction')` — en + ko)
+whose action dispatches a `durumi:menu-command` CustomEvent of shape
+`{type:'fileCommand', cmd:'saveAs'}` so the toast handler doesn't
+take a circular dependency on React component code. `src/App.tsx`
+adds two effects: one listens for `durumi:menu-command` and routes
+`saveAs` to `fileCommands.doSaveAs()`; another watches `filePath` and
+calls `runPendingImageInserts(filePath)` whenever the doc transitions
+from null → real path (covering BOTH the toast button AND a plain
+Cmd+S that fell through to Save As). `<ToastHost />` is mounted in
+the App tree alongside `<StatusBar />`.
+
+### Files
+
+- Add `src/store/toastStore.ts` — Zustand store + `showToast` /
+  `dismissToast` module helpers for non-React call sites.
+- Add `src/components/Toast.tsx` — `ToastHost` (fixed bottom-right
+  container, mounts only when non-empty) + `ToastCard` (message +
+  optional action + dismiss × + auto-dismiss timer).
+- Add `src/editor/pendingImagePaste.ts` — module-scoped FIFO queue
+  for image bytes pasted before the doc has a path; drain-into-
+  snapshot `runPendingImageInserts(filePath)` flush helper.
+- Add `e2e/ime-composition.spec.ts` — 18-cell Korean IME composition
+  matrix (6 constructs × 3 modes), all PASS, with documented
+  test-design carve-outs for Live-mode active-line raw + Source-mode
+  no-decoration baseline + table-cell sub-active pattern.
+- Add `e2e/mode-switch-preservation.spec.ts` — caret line/ch +
+  scrollTop survive Document → Live → Source → Document round trip
+  on a 100-line seeded doc with caret on line 50.
+- Add `e2e/image-paste-toast.spec.ts` — pins the `image:save` IPC
+  contract end-to-end (returns `{error:'no-file'}` for null
+  `contextFilePath`), the toast trigger condition keyed off by the
+  renderer paste handler. The full handler→showToast chain is
+  unit-tested (synthetic `paste` events fail CodeMirror's
+  `isTrusted` filter, so an in-process e2e cannot reach
+  `handlePaste` from `page.evaluate`).
+- Add `tests/store/toastStore.test.ts` — 7 vitest cases covering
+  show / dismiss / clear / auto-dismiss / multi-toast / action wiring
+  / id increment.
+- Update `src/editor/MarkdownEditor.tsx` — snapshot caret + scrollTop
+  before the `editModeCompartment.reconfigure(...)` dispatch and
+  restore them after; two-step scrollTop restore (sync + measure-
+  cycle re-apply) handles widget-height drift between modes. The
+  reconfigure + `setEditMode.of(editMode)` still ship in the same
+  transaction so v0.2.8's decoration-rebuild listener pattern stays
+  intact.
+- Update `src/editor/imagePaste.ts` — replace the legacy
+  `alert("Save the document first…")` with `enqueuePendingImage` +
+  `showToast` (with action button → `durumi:menu-command saveAs`);
+  re-export `runPendingImageInserts` so the file-save hook can flush.
+- Update `src/App.tsx` — mount `<ToastHost />`; `useEffect` listener
+  for `durumi:menu-command` → `doSaveAs()`; `useEffect` on
+  `filePath` → `runPendingImageInserts(filePath)` so the queue
+  flushes on EVERY null→path transition (not just the toast path).
+- Update `src/i18n/dict.ts` — en + ko strings for `image.noFileToast`
+  and `image.noFileAction`. (Merged cleanly with v0.2.10's
+  `settings.export.inlineImages` keys via cherry-pick auto-merge —
+  both sets coexist.)
+- Update `tests/editor/imagePaste.test.ts` — 3 new cases covering
+  no-file pending-enqueue + showToast call + queue-flush after a
+  successful save (`runPendingImageInserts`).
+- Update `package.json` — version bump `0.2.10` → `0.2.11`.
+
+### Test count
+
+- vitest: 1529 → 1540 (+11 — 7 toastStore, 3 imagePaste pending-
+  queue, 1 incidental).
+- Playwright e2e: 101 → 121 specs total (+20 — 18 IME composition
+  matrix, 1 mode-switch preservation, 1 image-paste-toast IPC pin).
+  On a host without Pandoc the round-trip spec self-skips: the
+  suite reports 120 passed / 1 skipped. With Pandoc all 121 pass.
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1540 / 1540** vitest across 160 files
+- `pnpm test:e2e`: **120 passed / 1 skipped** Playwright Electron
+  (Pandoc absent on this host; the round-trip spec self-skips)
+
+### Source-of-truth invariants
+
+1. **Mode-aware rendering (#1, v0.1.0).** The mode-switch snapshot/
+   restore in `MarkdownEditor.tsx` runs strictly OUTSIDE the
+   `setEditMode.of(editMode)` effect — the effect itself still ships
+   in the SAME transaction as the compartment reconfigure, so every
+   decoration field's `update()` rebuilds against the new mode in one
+   atomic step (the canonical v0.2.8 listener pattern). The
+   snapshot/restore is a viewport-level concern (caret + scrollTop)
+   that doesn't touch the decoration rebuild path.
+
+2. **IME safety by construction (#6, v0.1.5).** The 6×3 IME
+   composition matrix locks the invariant against regression: every
+   tested construct runs `Decoration.replace` over its marker range
+   in Document mode (no caret position the IME can target inside the
+   collapsed range) and reveals raw source on the active line in
+   Live mode (composition runs against intact text nodes exactly as
+   on a plain paragraph). Source mode is unaffected because
+   `liveDecorations` isn't registered there. All 18 cells PASS —
+   confirming the invariant holds across bold / italic / citation /
+   memo / CriticMarkup-insert / table-cell — and a future
+   decoration field that breaks composition will fail this matrix.
+
+3. **IME composition matrix (#11, v0.2.11 NEW).** Codifies the
+   matrix shape itself as a pinned regression guard: ANY new
+   decoration field that lands on `liveDecorations` must add a row
+   to `e2e/ime-composition.spec.ts` (or document why composition
+   inside its marker range is impossible — e.g. a strictly block-
+   level decoration with no inline children). The matrix is the
+   single source of truth for "composition still works inside this
+   construct"; without it, a future field could silently lose
+   composition support and the suite wouldn't catch it.
+
+4. **Sub-active-cell pattern (#12, v0.2.5).** The IME matrix's
+   table-cell row exercises the sub-active-cell pattern: the focused
+   cell runs its own contentEditable + native composition pipeline
+   (separate from CM6 input) and uses `page.keyboard.type` against
+   the cell DOM node + a follow-up blur to flush `syncCell` back to
+   the markdown buffer. The decoration-survival probe is skipped for
+   this row (selector = `null`) because the focused cell deliberately
+   carries a different class than the inactive cells (mirroring the
+   v0.2.5 design); the row only pins substring parity.
+
+### Post-review corrections
+
+A code review caught one data-loss-adjacent bug and three nits in the
+initial v0.2.11 staged tree, all addressed before commit. (1) The
+queue-flush effect in `App.tsx` was gated on the bare `filePath`
+transition, which fires for ANY context switch — including File >
+Open / sidebar click / quick-open — and would silently insert queued
+image bytes into a freshly opened, unrelated file. The fix introduces
+a `pendingDrainArmed` ref that is set to `true` ONLY by save-driven
+entry points (the toast's `Save as…` action handler plus a peer
+`window.api.onMenuCommand` listener that arms on `save` / `saveAs`
+and clears the queue + ref on `new` / `open`); the inline sidebar /
+quick-open `doOpenPath` callbacks also call `clearPendingImages()`
+before the transition so non-menu opens can't leak bytes either. The
+drain effect now early-returns unless the gate is armed and disarms
+itself after running. A new vitest case (`tests/editor/imagePaste.test.ts`)
+models the gated-vs-armed effect side-by-side and verifies the open-
+style transition is a no-op while the save-style transition still
+flushes; verified to FAIL against the bare-filePath effect. (2) The
+toast dismiss button's `aria-label="Dismiss"` was hard-coded English
+— added `image.toastDismiss` (en `Dismiss` / ko `닫기`) and routed
+through `t(...)`. (3) `Toast.tsx` always used `role="status"` +
+`aria-live="polite"`, which delays screen-reader announcement past
+auto-dismiss for action-required toasts; toasts that carry an action
+now use `role="alert"` + `aria-live="assertive"` (fire-and-forget
+toasts keep status/polite). Esc dismisses the toast when it owns
+focus or when it is the only toast on screen. New
+`tests/components/Toast.test.tsx` pins the role/aria mode + Esc-to-
+dismiss + i18n contract. (4) `docs/PROGRESS.md` claimed the mode-
+switch preservation e2e seeds the caret on line 60; the spec
+actually uses line 50 — fixed in two places.
+
+### setEditMode listener pattern (canonical from v0.2.8) — preserved
+
+The new mode-switch snapshot/restore in `MarkdownEditor.tsx` does
+NOT alter the v0.2.8 listener pattern. The compartment reconfigure
+and `setEditMode.of(editMode)` are still grouped into a SINGLE
+`view.dispatch({ effects: [...] })` so every decoration field's
+`update()` sees both effects in one transaction and rebuilds against
+the new mode. The snapshot is captured BEFORE dispatch, restored
+AFTER — strictly viewport-level wrapping that leaves the decoration
+rebuild contract intact. (Manual verification: every field touched
+in v0.2.8 / v0.2.9 still rebuilds on a bare `Cmd+1`/`Cmd+2`/`Cmd+3`
+mode switch, and the existing v0.2.8 b1 mode-switch e2e + the new
+v0.2.9 alert-mode-switch e2e continue to pass.)
+
+## v0.2.10 — Round-trip + export hardening
 
 The v0.2.x band has steadily grown the editor surface (table editing,
 inline marks, GitHub callouts, alert decorations, document-mode parity)

@@ -157,11 +157,42 @@ export function MarkdownEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    // v0.2.11 — snapshot caret + scroll BEFORE the reconfigure so we can
+    // restore them after widgets remount under the new mode. Block widgets
+    // (image, math, mermaid, table) have different heights between modes,
+    // and replacing the decoration set rebuilds the viewport from scratch,
+    // which can otherwise jump the caret line off-screen or to line 1.
+    const docLen = view.state.doc.length;
+    const sel = view.state.selection.main;
+    const snapshot = {
+      anchor: Math.min(sel.anchor, docLen),
+      head: Math.min(sel.head, docLen),
+      scrollTop: view.scrollDOM.scrollTop,
+    };
     view.dispatch({
       effects: [
         editModeCompartmentRef.current.reconfigure(decorationsForMode(editMode)),
         setEditMode.of(editMode),
       ],
+    });
+    const newDocLen = view.state.doc.length;
+    const safeAnchor = Math.min(snapshot.anchor, newDocLen);
+    const safeHead = Math.min(snapshot.head, newDocLen);
+    if (safeAnchor !== view.state.selection.main.anchor || safeHead !== view.state.selection.main.head) {
+      view.dispatch({ selection: { anchor: safeAnchor, head: safeHead } });
+    }
+    // Two-step scroll restore: set synchronously so the natural value sticks
+    // when widget heights match, then re-apply inside `requestMeasure` once
+    // the new mode's widgets have laid out (heights may differ slightly
+    // between Document/Live/Source).
+    view.scrollDOM.scrollTop = snapshot.scrollTop;
+    view.requestMeasure({
+      read: () => view.scrollDOM.scrollTop,
+      write: (current) => {
+        if (Math.abs(current - snapshot.scrollTop) > 1) {
+          view.scrollDOM.scrollTop = snapshot.scrollTop;
+        }
+      },
     });
   }, [editMode]);
 
