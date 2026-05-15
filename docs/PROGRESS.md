@@ -1,6 +1,101 @@
 # Durumi — Progress
 
-## v0.2.12 (current) — htmlInline setEditMode listener (post-smoke hot-fix)
+## v0.2.13 (current) — e2e user-data isolation (post-smoke hot-fix)
+
+A second smoke-verification pass on v0.2.12 surfaced a TEST INFRASTRUCTURE
+bug, not a source regression. Running
+`pnpm exec playwright test e2e/b1-features.spec.ts` on a developer
+machine failed at `b1-features.spec.ts:101` with
+`expect(docLineText).not.toContain('%%')`. The spec asserts the
+"Default launch is Document (wysiwyg) mode" contract, but the failing
+machine had `editor.defaultMode: "typora"` set in
+`~/Library/Application Support/Electron/preferences.json`. The
+v0.2.12 source change (`htmlInline.ts setEditMode listener`) is
+unrelated; vitest stays at 1549/1549.
+
+### Root cause
+
+`@playwright/test`'s `_electron.launch()` does not isolate Electron's
+`userData` directory. The packaged main resolves prefs via
+`app.getPath('userData')`, which on macOS lands at
+`~/Library/Application Support/Electron/preferences.json` —
+the developer's actual app prefs. Whatever pref state the developer
+left from a real session bleeds into every Playwright spec, so an
+e2e contract that depends on a launch default (e.g. `defaultMode`,
+`language`, sidebar visibility) silently inverts the moment a
+developer flips that pref in the running app.
+
+c1- and c2-features specs already worked around this by passing
+`--user-data-dir=<tmp>` to `electron.launch`, but every other spec
+shared the developer's real userData. The v0.2.13 fix generalises
+that pattern to every spec via two new helpers.
+
+### The fix
+
+`e2e/_helpers.ts` gains two exports:
+
+- `launchClean(opts?)` — `mkdtemp`s a fresh `durumi-e2e-*` dir under
+  `os.tmpdir()`, launches the app with `--user-data-dir=<dir>`, and
+  stashes the dir on the `ElectronApplication` so cleanup can find
+  it. Accepts either a `string[]` of extra CLI args (back-compat) or
+  a `LaunchCleanOptions` object with `extraArgs` and a `userDataDir`
+  override (used by c1/c2 to seed prefs/css before launch).
+- `shutdownClean(app)` — calls `app.exit(0)` (the existing
+  beforeunload-bypass convention) and rm-rfs the userData dir if
+  `launchClean` owned it. Wraps the rm in a 5×200ms retry to
+  tolerate Electron's late cache flush.
+
+`electron/main.ts` parses `--user-data-dir=<path>` from `process.argv`
+before `app.whenReady()` and re-applies via `app.setPath('userData',
+path)`. Electron's Chromium layer already honors the switch, but the
+explicit re-apply guarantees the override survives any future
+Chromium upgrade and matches the `app.getPath('userData')` reads in
+`preferences.ts`, `customCss.ts`, `macros.ts`, `assetProtocol.ts`.
+
+### Migration
+
+Every spec that called `electron.launch(...)` now calls `launchClean()`,
+and every `app.evaluate(({ app: a }) => a.exit(0))` is now
+`shutdownClean(app)`. 17 specs migrated:
+`b1-features`, `b2-features`, `b25-features`, `b3-features`,
+`c1-features`, `c2-features`, `c5-features`, `golden`,
+`image-paste-toast`, `ime-composition`, `math`,
+`mode-switch-preservation`, `recent-folders`, `round-trip`,
+`smoke-screenshot`, `table-cell-edit`, `table-inline-marks`,
+`table-row-col`, `table-style`, `toolbar`, `workspaces`. Each spec
+file lost its local `APP_ENTRY` constant and its own
+`_electron as electron` import.
+
+### Verification
+
+The previously-failing `b1-features.spec.ts:101` test now passes
+even with `editor.defaultMode: "typora"` left set in the
+developer's real prefs.json. End-to-end suite: **120 passed / 2
+skipped** (round-trip, no pandoc; smoke-screenshot, no `SMOKE=1`).
+The v0.2.11/v0.2.12 baseline reported 1 skipped because the
+smoke-screenshot file was untracked at that time; it's still
+untracked here but Playwright now picks it up on disk and reports
+its single skipped test, hence the +1 skip delta. No real regressions.
+md5 of `~/Library/Application Support/Electron/preferences.json`
+captured before and after the full e2e run is identical
+(`3a0221d8ef3347700b4eb613a964d6b6`) — the user's prefs file was
+never opened, read, or written by the test process.
+
+### Files
+
+- `e2e/_helpers.ts` — `+88` lines (`launchClean`, `shutdownClean`,
+  `LaunchCleanOptions` interface, doc comments).
+- `electron/main.ts` — `+19` lines (early `--user-data-dir` arg
+  parser + `app.setPath`).
+- 21 e2e spec files — drop local launch helper, switch to
+  `launchClean`/`shutdownClean` (`-180` lines net across all specs).
+- `package.json` — `0.2.12 → 0.2.13`.
+
+Suite delta: vitest unchanged at **1549/1549**; e2e at **120 passed
+/ 2 skipped** (was 120/1; the +1 skip is the smoke-screenshot file
+becoming visible to the runner now that it lives on disk).
+
+## v0.2.12 — htmlInline setEditMode listener (post-smoke hot-fix)
 
 Manual smoke verification of v0.2.11 (the screenshot rig added in
 `e2e/smoke-screenshot.spec.ts`) caught a latent decoration bug that

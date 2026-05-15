@@ -1,11 +1,8 @@
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
-import path from 'node:path';
-import { setMarkdownMode, setTyporaMode, setWysiwygMode } from './_helpers';
-
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
+import { test, expect, type ElectronApplication } from '@playwright/test';
+import { launchClean, setMarkdownMode, setTyporaMode, setWysiwygMode, shutdownClean } from './_helpers';
 
 async function launch() {
-  const app = await electron.launch({ args: [APP_ENTRY] });
+  const app = await launchClean();
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
   return { app, page };
@@ -25,7 +22,7 @@ async function launchTypora() {
 // Use force-exit to bypass the dirty-close (beforeunload) dialog that
 // `app.close()` would otherwise hang on after we have typed into the editor.
 async function shutdown(app: ElectronApplication) {
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 }
 
 test('table insert + Tab adds row + click to render', async () => {

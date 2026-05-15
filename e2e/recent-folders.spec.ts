@@ -8,22 +8,21 @@
  * here is the sharpest contract we can pin from inside the renderer.
  */
 
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
+import { test, expect, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
+import { launchClean, shutdownClean } from './_helpers';
 
 async function launch() {
-  const app = await electron.launch({ args: [APP_ENTRY] });
+  const app = await launchClean();
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
   return { app, page };
 }
 
 async function shutdown(app: ElectronApplication) {
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 }
 
 test('recentFolders persistence: MRU order, dedup, cap at 10', async () => {

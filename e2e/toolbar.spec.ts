@@ -1,6 +1,5 @@
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
-import path from 'node:path';
-import { getEditorDoc, setMarkdownMode } from './_helpers';
+import { test, expect, type ElectronApplication } from '@playwright/test';
+import { getEditorDoc, launchClean, setMarkdownMode, shutdownClean } from './_helpers';
 
 /**
  * End-to-end coverage for the Document-mode (WYSIWYG) editor toolbar that
@@ -21,10 +20,8 @@ import { getEditorDoc, setMarkdownMode } from './_helpers';
  *    guard, matching the convention in the other specs in this directory.
  */
 
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
-
 async function launch() {
-  const app = await electron.launch({ args: [APP_ENTRY] });
+  const app = await launchClean();
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
   // Make sure the toolbar mounted before we start clicking buttons —
@@ -35,7 +32,7 @@ async function launch() {
 }
 
 async function shutdown(app: ElectronApplication) {
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 }
 
 /** Select-all helper that uses the platform mod key. */

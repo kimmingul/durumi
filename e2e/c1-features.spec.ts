@@ -1,12 +1,11 @@
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
+import { test, expect, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
+import { launchClean, shutdownClean } from './_helpers';
 
 async function shutdown(app: ElectronApplication) {
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 }
 
 test('language=ko renders sidebar tabs in Korean on launch', async () => {
@@ -25,9 +24,7 @@ test('language=ko renders sidebar tabs in Korean on launch', async () => {
     'utf8',
   );
 
-  const app = await electron.launch({
-    args: [APP_ENTRY, `--user-data-dir=${userData}`],
-  });
+  const app = await launchClean({ userDataDir: userData });
   try {
     const page = await app.firstWindow();
     await page.waitForSelector('.cm-content');

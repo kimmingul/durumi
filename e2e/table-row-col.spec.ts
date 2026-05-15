@@ -1,18 +1,15 @@
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
-import path from 'node:path';
-import { getEditorDoc } from './_helpers';
-
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
+import { test, expect, type ElectronApplication } from '@playwright/test';
+import { getEditorDoc, launchClean, shutdownClean } from './_helpers';
 
 async function launch() {
-  const app = await electron.launch({ args: [APP_ENTRY] });
+  const app = await launchClean();
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
   return { app, page };
 }
 
 async function shutdown(app: ElectronApplication) {
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 }
 
 /** Insert a fresh 2x2 table at the caret via the keyboard shortcut. */

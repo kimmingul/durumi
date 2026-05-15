@@ -15,13 +15,12 @@
  *   pnpm build && SMOKE=1 DURUMI_E2E=1 pnpm exec playwright test e2e/smoke-screenshot.spec.ts
  */
 
-import { test, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { test, type ElectronApplication, type Page } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { setMarkdownMode, setTyporaMode, setWysiwygMode } from './_helpers';
+import { launchClean, setMarkdownMode, setTyporaMode, setWysiwygMode, shutdownClean } from './_helpers';
 
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 const FIXTURE_SRC = path.resolve(process.cwd(), 'docs', 'v0.2-smoke-test.md');
 const SHOT_DIR = path.resolve(process.cwd(), 'e2e', 'screenshots', 'v0.2-smoke');
 
@@ -29,18 +28,14 @@ const SHOT_DIR = path.resolve(process.cwd(), 'e2e', 'screenshots', 'v0.2-smoke')
 test.skip(process.env.SMOKE !== '1', 'set SMOKE=1 to run the v0.2 smoke screenshot capture');
 
 async function launch() {
-  const app = await electron.launch({ args: [APP_ENTRY] });
+  const app = await launchClean();
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
   return { app, page };
 }
 
 async function shutdown(app: ElectronApplication) {
-  try {
-    await app.evaluate(({ app: a }) => a.exit(0));
-  } catch {
-    /* best effort */
-  }
+  await shutdownClean(app);
 }
 
 /** Open a markdown file via the same IPC the recent-files menu uses. */

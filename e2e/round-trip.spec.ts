@@ -14,14 +14,13 @@
  * Pandoc up front (e.g. `brew install pandoc` / `apt install pandoc`).
  */
 
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
+import { test, expect, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { setTyporaMode } from './_helpers';
+import { launchClean, setTyporaMode, shutdownClean } from './_helpers';
 
-const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 const PNG_FIXTURE = path.resolve(process.cwd(), 'e2e', 'fixtures', 'tiny.png');
 
 function pandocBinary(): string | null {
@@ -35,14 +34,14 @@ function pandocBinary(): string | null {
 const PANDOC = pandocBinary();
 
 async function launch() {
-  const app = await electron.launch({ args: [APP_ENTRY] });
+  const app = await launchClean();
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
   return { app, page };
 }
 
 async function shutdown(app: ElectronApplication) {
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 }
 
 /**

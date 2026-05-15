@@ -17,6 +17,23 @@ import { bootstrapSessionTreesFromRecents } from './pathGuard';
 // hooks after whenReady — see below.
 registerAssetProtocolSchemes();
 
+// Honor `--user-data-dir=<path>` early so every userData consumer
+// (preferences.json, custom.css, macros.json, asset-protocol.log) lands in
+// the override directory. Electron's Chromium layer already understands the
+// switch, but we re-apply via `app.setPath` so the override is bullet-proof
+// regardless of how Chromium evolves and so packaged Electron and `_electron.launch`
+// from Playwright behave identically. Used by `e2e/_helpers.ts → launchClean`
+// to give every Playwright spec a throwaway userData dir, isolating the test
+// process from the developer's real preferences (root cause of the v0.2.13
+// b1-features failure).
+{
+  const flag = process.argv.find((arg) => arg.startsWith('--user-data-dir='));
+  if (flag) {
+    const overridePath = flag.slice('--user-data-dir='.length);
+    if (overridePath) app.setPath('userData', overridePath);
+  }
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 

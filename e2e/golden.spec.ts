@@ -1,24 +1,19 @@
-import { test, expect, _electron as electronApp } from '@playwright/test';
-import { join } from 'node:path';
-import { setTyporaMode } from './_helpers';
+import { test, expect } from '@playwright/test';
+import { launchClean, setTyporaMode, shutdownClean } from './_helpers';
 
 test('app launches and shows window', async () => {
-  const app = await electronApp.launch({
-    args: [join(process.cwd(), 'out/main/main.cjs')],
-  });
+  const app = await launchClean();
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
   await expect(win).toHaveTitle(/Durumi/);
   // Use app.exit(0) (matching the other golden tests) instead of app.close().
   // app.close() relies on a graceful Cmd+W path which our renderer-driven
   // close guard would block until React has mounted its IPC handler.
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 });
 
 test('typing markdown applies live preview classes', async () => {
-  const app = await electronApp.launch({
-    args: [join(process.cwd(), 'out/main/main.cjs')],
-  });
+  const app = await launchClean();
   const win = await app.firstWindow();
   await win.waitForSelector('.cm-content');
   // Typed-markdown test: switch to Typora mode so the `#` heading marker
@@ -32,13 +27,11 @@ test('typing markdown applies live preview classes', async () => {
   await win.waitForSelector('.cm-md-h1', { timeout: 5000 });
   const headingCount = await win.locator('.cm-md-h1').count();
   expect(headingCount).toBeGreaterThan(0);
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 });
 
 test('toggling theme flips data-theme attribute', async () => {
-  const app = await electronApp.launch({
-    args: [join(process.cwd(), 'out/main/main.cjs')],
-  });
+  const app = await launchClean();
   const win = await app.firstWindow();
   await win.waitForSelector('.cm-content');
   await win.waitForTimeout(150);
@@ -53,5 +46,5 @@ test('toggling theme flips data-theme attribute', async () => {
   await win.waitForTimeout(200);
   const after = await win.evaluate(() => document.documentElement.dataset.theme);
   expect(after).not.toBe(before);
-  await app.evaluate(({ app: a }) => a.exit(0));
+  await shutdownClean(app);
 });
