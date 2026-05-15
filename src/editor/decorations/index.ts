@@ -6,6 +6,7 @@ import { criticMarkupDecoration, criticMarkupTheme } from './criticMarkup';
 import { footnoteDecoration, footnoteTheme } from './footnote';
 import { frontMatterDecoration, frontMatterTheme } from './frontMatter';
 import { headingDecoration } from './heading';
+import { highlightExtras } from './highlight';
 import { tocDecoration, tocTheme } from './toc';
 import { emphasisDecoration } from './emphasis';
 import { escapeDecoration } from './escape';
@@ -19,6 +20,7 @@ import { codeBlockDecoration } from './codeBlock';
 import { codeHighlight } from './codeHighlight';
 import { listDecoration } from './list';
 import { blockquoteDecoration } from './blockquote';
+import { alertsDecoration, alertsTheme } from './alerts';
 import { horizontalRuleDecoration } from './horizontalRule';
 import { strikethroughDecoration } from './strikethrough';
 import { taskListDecoration } from './taskList';
@@ -45,6 +47,7 @@ export const liveDecorations = [
   escapeDecoration(),
   htmlInlineDecoration(),
   htmlInlineTheme,
+  highlightExtras(),
   htmlBlockDecoration(),
   htmlBlockTheme,
   inlineCodeDecoration(),
@@ -60,6 +63,8 @@ export const liveDecorations = [
   taskListDecoration(),
   listDecoration(),
   blockquoteDecoration(),
+  alertsDecoration(),
+  alertsTheme,
   horizontalRuleDecoration(),
   strikethroughDecoration(),
   tableDecoration(),

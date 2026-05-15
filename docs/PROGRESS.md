@@ -1,6 +1,188 @@
 # Durumi — Progress
 
-## v0.2.8 (current) — Document-mode rendering parity (memos + CriticMarkup)
+## v0.2.9 (current) — Live preview parity for advertised marks
+
+`docs/editor-modes.md` and the v0.2 feature matrix promised that
+`==highlight==`, `~subscript~`, `^superscript^`, and GitHub-style alert
+callouts (`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` /
+`[!CAUTION]`) would render in the editor the same way the export
+pipeline already produced them. The export side has been correct since
+v0.1.x (`markdown-it-mark`, `markdown-it-sub`, `markdown-it-sup`, and
+`markdown-it-github-alerts` are all wired into `src/export/renderHtml.ts`),
+but the live editor still showed raw `==`/`~`/`^` markers and a plain
+quotation block. Document mode therefore lied: what you saw on screen
+was not what came out of "Export → HTML/PDF". v0.2.9 closes the
+preview-vs-export gap for both the inline marks and the block-level
+alert callouts so the editor reads as a true WYSIWYG approximation of
+the exported HTML.
+
+### Half A — inline `==hl==` / `~sub~` / `^sup^`
+
+A new `src/editor/decorations/highlight.ts` field walks the syntax
+tree for `Highlight`, `Subscript`, and `Superscript` nodes (already
+parsed by `inlineExtras.ts`) and emits the same `.cm-md-html-mark` /
+`.cm-md-html-sub` / `.cm-md-html-sup` classes that `htmlInline.ts`
+applies to the equivalent `<mark>` / `<sub>` / `<sup>` HTML — so
+`==hi==` and `<mark>hi</mark>` look identical, and `H~2~O` /
+`H<sub>2</sub>O` likewise. The `=`, `~`, `^` marker characters are
+collapsed via `Decoration.replace` of a zero-width hidden widget;
+the inner text gets `Decoration.mark` styling. No new theme is
+needed (the existing HTML-inline classes already carry the visual
+weight).
+
+### Half B — GitHub alert callouts
+
+A new `src/editor/decorations/alerts.ts` field detects the four-or-
+five-line GitHub callout shape on top-level `Blockquote` nodes (nested
+blockquotes are intentionally NOT promoted, matching the
+markdown-it-github-alerts spec) and decorates each callout with:
+
+  - A coloured `Decoration.line` per line (header + body) carrying the
+    `cm-md-alert-{kind}` class for left-border + tinted background.
+  - A `Decoration.replace` widget on the `[!KIND]` header line that
+    renders the GitHub icon SVG + label ("Note" / "Tip" / etc.) in
+    the kind's signature colour, so the user reads "Note" rather than
+    "[!NOTE]" in Document mode.
+
+A companion `alertsTheme` defines the per-kind colours (note=blue,
+tip=green, important=purple, warning=amber, caution=red) matching the
+GitHub palette and the export-side CSS in `markdown-it-github-alerts`.
+
+### Pattern reuse
+
+Both new fields follow the canonical v0.2.8 pattern verbatim: their
+`StateField.update()` rebuilds when `tr.docChanged || tr.selection ||
+e.is(setEditMode)`, so a bare `Cmd+1` mode switch flips the active-line
+carve-out without any other transaction. The active-line gating uses
+`hasActiveLine(state)` + `isWysiwygMode(state)` so Document mode
+collapses markers and renders the alert header widget uniformly across
+all lines, while Live (Typora) mode keeps the active line raw for direct
+markdown editing. Source mode is unaffected — `MarkdownEditor.tsx`
+already excludes `liveDecorations` there.
+
+### Files
+
+- Add `src/editor/decorations/highlight.ts` — `highlightExtras()`
+  StateField + extension factory for `==`/`~`/`^` inline marks.
+- Add `src/editor/decorations/alerts.ts` — `alertsDecoration()`
+  StateField, header `WidgetType`, and `alertsTheme` for GitHub
+  callouts.
+- Update `src/editor/decorations/index.ts` — register both new
+  extensions on `liveDecorations`. `highlightExtras()` lands next to
+  `htmlInlineDecoration()` (shared HTML-mark visual family);
+  `alertsDecoration()` + `alertsTheme` land next to
+  `blockquoteDecoration()` (block-quote family).
+- Add `tests/editor/highlight.test.ts` — 12 vitest cases covering
+  Document-mode marker hide for all three marks, Live-mode active-line
+  reveal, off-line behaviour, mode-switch rebuild, and edge cases
+  (nested marks, intra-word skip, empty body).
+- Add `tests/editor/alerts.test.ts` — 21 vitest cases covering header
+  detection (case-insensitive, all five kinds), nested-blockquote
+  exclusion (single-, two-, AND three-level — the last two are codex
+  follow-up regression guards, see below), line-level decoration
+  application across header + body, Document-vs-Live header-widget
+  visibility, mode-switch rebuild, malformed-header rejection, and a
+  CSS-precedence guard asserting every kind's `border-left` rule is
+  marked `!important` so it wins over the global `.cm-md-blockquote`
+  border.
+- Add `tests/editor/alertsExportParity.test.ts` — 1 vitest case asserting
+  the live decoration's emitted kind labels match the
+  `markdown-it-github-alerts` export-side output exactly.
+- Update `e2e/b1-features.spec.ts` — two new Playwright Electron tests:
+  one seeds `==hi==\nH~2~O\nX^2^` and asserts Document-mode collapse
+  everywhere + Live-mode active-line reveal; the other seeds all five
+  alert kinds and asserts Document mode renders the styled header
+  widgets while Source mode unloads the decoration and shows raw
+  `> [!KIND]` lines.
+- Update `package.json` — version bump `0.2.8` → `0.2.9`.
+
+### Test count
+
+- vitest: 1474 → 1508 (+34 — 12 highlight, 21 alerts, 1 alerts export
+  parity)
+- Playwright e2e: 96 → 98 (+2 — one inline-marks parity spec, one
+  GitHub-alerts mode-switch spec)
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1508 / 1508** vitest across 158 files
+- `pnpm test:e2e`: **98 / 98** Playwright Electron tests
+
+### Post-codex corrections
+
+A codex review caught one blocking bug and two nits in the initial
+v0.2.9 staged tree, all addressed before commit. (1) The
+`isNestedBlockquote` guard in `alerts.ts` only walked PARENTS, so the
+OUTER `Blockquote` of `> > [!NOTE]` (or any deeper `> > > […]` chain)
+had no `Blockquote` ancestor and slipped past the guard — the strip
+regex then ate every `>` level and the alert was incorrectly promoted.
+Lezer-markdown nests `Blockquote` nodes one per `>` level, so the fix
+also walks DESCENDANTS and rejects the node when it CONTAINS another
+`Blockquote` child. Two new vitest regression cases (`> > [!NOTE]` and
+`> > > [!NOTE]`, header on its own line) guard the fix and were
+verified to FAIL against the parent-only guard. (2) The alert
+`border-left` rules were tied with the global `.cm-md-blockquote`
+border in specificity, so the cascade order alone decided the visible
+colour; the alert kind colour now uses `!important` to win
+deterministically and a unit test asserts every kind's rule carries
+`!important`. (3) The files-touched list now mentions `package.json`.
+
+### Source-of-truth invariants
+
+1. **Mode-aware rendering (#1).** Both new fields gate the active-line
+   carve-out on `!isWysiwygMode(state)` so Document mode renders
+   uniformly across active and inactive lines (no marker leakage,
+   header widget always visible). Live mode keeps the v0.1.0
+   active-line raw behaviour: caret on a `==hi==` line shows the `=`
+   markers; caret on a `> [!NOTE]` header line shows the raw bracket
+   syntax. Source mode is unaffected because `liveDecorations` isn't
+   registered there. The mechanism is the same `cursorTouches &&
+   !isWysiwygMode(state)` short-circuit shipped in v0.2.8 for `comment.ts`
+   and `criticMarkup.ts`.
+2. **IME safety by construction (#6).** Marker hide and the alert
+   header widget both use `Decoration.replace` over the marker /
+   header range. Composition cannot enter a collapsed range — there is
+   no caret position the input method can target inside the
+   replacement, so no composition can start that would later be
+   invalidated by a re-render. In Live mode the carved-out active line
+   keeps the source as plain text, so an IME composing on `==한국어==`
+   or `> [!NOTE]` runs against intact text nodes exactly as on a
+   plain paragraph. The two modes therefore exercise different IME
+   guarantees by construction — Document mode by no-target, Live mode
+   by source-preservation — exactly as the v0.2.8 memo / CriticMarkup
+   plugins do.
+
+### setEditMode listener pattern (canonical from v0.2.8)
+
+Both `highlightField.update()` and `alertsField.update()` follow the
+canonical v0.2.8 codex-follow-up pattern verbatim:
+
+```ts
+update(value, tr) {
+  let rebuild = tr.docChanged || tr.selection;
+  if (!rebuild) {
+    for (const e of tr.effects) {
+      if (e.is(setEditMode)) { rebuild = true; break; }
+    }
+  }
+  if (rebuild) return buildDecorations(tr.state);
+  return value;
+},
+```
+
+This guarantees a bare `Cmd+1` mode switch (no doc change, no caret
+move) still rebuilds decorations so the user sees the mode flip
+immediately. Same shape as the six fields fixed in v0.2.8
+(`comment.ts`, `criticMarkup.ts`, `citation.ts`, `footnote.ts`,
+`frontMatter.ts`, `math.ts`-blockMathField); no per-feature e2e was
+added for the rebuild path on the v0.2.9 fields because the existing
+v0.2.8 b1 mode-switch spec already exercises that machinery and the
+new alert-mode-switch e2e test exercises the rebuild end-to-end for
+the Source-mode unload path.
+
+## v0.2.8 — Document-mode rendering parity (memos + CriticMarkup)
 
 A single-theme bug-fix release that brings the memo (`%% … %%`) and
 CriticMarkup (`{++ ++}`, `{-- --}`, `{~~a~>b~~}`, `{== ==}`, `{>> <<}`)

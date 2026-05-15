@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
-import { setTyporaMode, setWysiwygMode } from './_helpers';
+import { setMarkdownMode, setTyporaMode, setWysiwygMode } from './_helpers';
 
 const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
@@ -273,6 +273,171 @@ test('mode switch alone (no edit, no caret move) rebuilds memo + CriticMarkup de
     );
     expect(liveAgainText).toContain('%%');
     expect(liveAgainText).toContain('{++');
+  } finally {
+    await shutdown(app);
+  }
+});
+
+/**
+ * v0.2.9 — Live decorations for `==highlight==`, `~sub~`, `^sup^`.
+ *
+ * Three lines, one per mark. Document mode collapses every marker
+ * everywhere; Live mode keeps the active line raw and collapses the
+ * other two.
+ */
+test('==highlight==, ~sub~, ^sup^ render in Document mode and reveal active-line source in Live mode', async () => {
+  const { app, page } = await launch();
+  try {
+    const doc = '==hi==\nH~2~O\nX^2^';
+    const seed = async (anchor: number): Promise<void> => {
+      await page.evaluate(
+        ({ markdown, a }) => {
+          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+          if (!root) return;
+          const content = root.querySelector('.cm-content') as HTMLElement | null;
+          const tileHolder = (content ?? root) as unknown as {
+            cmTile?: {
+              root?: {
+                view?: {
+                  state: { doc: { length: number } };
+                  dispatch: (s: unknown) => void;
+                  focus: () => void;
+                };
+              };
+            };
+          };
+          const view = tileHolder.cmTile?.root?.view;
+          if (!view) return;
+          view.focus();
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: markdown },
+            selection: { anchor: a },
+            userEvent: 'input.testReset',
+          });
+        },
+        { markdown: doc, a: anchor },
+      );
+      await page.waitForTimeout(80);
+    };
+
+    // ── Document (wysiwyg) mode — every marker collapsed everywhere. ──
+    await seed(doc.length); // caret on last line is irrelevant for wysiwyg
+    await expect(page.locator('.cm-md-html-mark').first()).toBeVisible();
+    await expect(page.locator('.cm-md-html-sub').first()).toBeVisible();
+    await expect(page.locator('.cm-md-html-sup').first()).toBeVisible();
+    const docModeText = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line'))
+        .map((l) => (l as HTMLElement).innerText)
+        .join('\n'),
+    );
+    expect(docModeText).not.toContain('==');
+    // The two ~ on H~2~O and the two ^ on X^2^ must be hidden too.
+    expect(docModeText).not.toContain('~2~');
+    expect(docModeText).not.toContain('^2^');
+
+    // ── Live (typora) mode with caret on line 1 (==hi==). ──
+    await setTyporaMode(app, page);
+    await seed(2); // caret inside the highlight on line 1
+    const liveLines = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line')).map(
+        (l) => (l as HTMLElement).innerText,
+      ),
+    );
+    // Line 1 (active) shows raw `==`.
+    expect(liveLines[0]).toContain('==');
+    // Lines 2 and 3 (inactive) hide their markers.
+    expect(liveLines[1]).not.toContain('~2~');
+    expect(liveLines[2]).not.toContain('^2^');
+  } finally {
+    await shutdown(app);
+  }
+});
+
+/**
+ * v0.2.9 — GitHub-style alert callouts in the live editor.
+ *
+ * Seeds a fixture containing all five alert kinds, then verifies that
+ * Document mode renders the colored header widgets (one per kind) and
+ * Source mode shows the raw `> [!KIND]` lines so the user can edit the
+ * markdown directly.
+ */
+test('GitHub alert callouts: five kinds render in Document mode, raw in Source mode', async () => {
+  const { app, page } = await launch();
+  try {
+    const doc = [
+      '> [!NOTE]',
+      '> note body',
+      '',
+      '> [!TIP]',
+      '> tip body',
+      '',
+      '> [!IMPORTANT]',
+      '> important body',
+      '',
+      '> [!WARNING]',
+      '> warning body',
+      '',
+      '> [!CAUTION]',
+      '> caution body',
+      '',
+    ].join('\n');
+
+    const seed = async (): Promise<void> => {
+      await page.evaluate(
+        ({ markdown }) => {
+          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+          if (!root) return;
+          const content = root.querySelector('.cm-content') as HTMLElement | null;
+          const tileHolder = (content ?? root) as unknown as {
+            cmTile?: {
+              root?: {
+                view?: {
+                  state: { doc: { length: number } };
+                  dispatch: (s: unknown) => void;
+                  focus: () => void;
+                };
+              };
+            };
+          };
+          const view = tileHolder.cmTile?.root?.view;
+          if (!view) return;
+          view.focus();
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: markdown },
+            selection: { anchor: 0 },
+            userEvent: 'input.testReset',
+          });
+        },
+        { markdown: doc },
+      );
+      await page.waitForTimeout(120);
+    };
+
+    // Document mode (default): all five header widgets render with body styling.
+    await seed();
+    for (const kind of ['note', 'tip', 'important', 'warning', 'caution'] as const) {
+      await expect(page.locator(`.cm-md-alert-title-${kind}`)).toHaveCount(1);
+      expect(await page.locator(`.cm-md-alert-${kind}`).count()).toBeGreaterThanOrEqual(2);
+    }
+    const docModeText = await page.evaluate(
+      () => (document.querySelector('.cm-content') as HTMLElement).innerText,
+    );
+    expect(docModeText).not.toContain('[!NOTE]');
+    expect(docModeText).not.toContain('[!CAUTION]');
+
+    // Source (markdown) mode: alerts decoration is unloaded; raw `> [!KIND]` shows.
+    await setMarkdownMode(app, page);
+    await page.waitForFunction(
+      () => document.querySelectorAll('[data-alert-kind]').length === 0,
+      undefined,
+      { timeout: 2000 },
+    );
+    const sourceText = await page.evaluate(
+      () => (document.querySelector('.cm-content') as HTMLElement).innerText,
+    );
+    for (const kind of ['NOTE', 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION']) {
+      expect(sourceText).toContain(`[!${kind}]`);
+    }
   } finally {
     await shutdown(app);
   }
