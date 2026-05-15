@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { getActiveLineRange, hasActiveLine, shouldHideMarker, userActiveField } from './activeLine';
+import { setEditMode } from '../editMode';
 
 /**
  * Renders raw inline HTML tags that have an obvious visual semantic
@@ -98,7 +99,16 @@ function buildDecorations(state: EditorState): DecorationSet {
 const htmlInlineField = StateField.define<DecorationSet>({
   create(state) { return buildDecorations(state); },
   update(value, tr) {
-    if (tr.docChanged || tr.selection) return buildDecorations(tr.state);
+    let rebuild = tr.docChanged || tr.selection;
+    if (!rebuild) {
+      for (const e of tr.effects) {
+        if (e.is(setEditMode)) {
+          rebuild = true;
+          break;
+        }
+      }
+    }
+    if (rebuild) return buildDecorations(tr.state);
     return value;
   },
   provide: (f) => EditorView.decorations.from(f),

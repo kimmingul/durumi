@@ -1,6 +1,94 @@
 # Durumi — Progress
 
-## v0.2.11 (current) — IME + a11y hardening
+## v0.2.12 (current) — htmlInline setEditMode listener (post-smoke hot-fix)
+
+Manual smoke verification of v0.2.11 (the screenshot rig added in
+`e2e/smoke-screenshot.spec.ts`) caught a latent decoration bug that
+the v0.2.8 codex follow-up audit missed. Shot
+`08-document-highlights-subsup.png` rendered `<mark>HTML mark</mark>`
+as raw angle-bracket source instead of as the highlighted span — the
+exact symptom the canonical `setEditMode` listener pattern was
+introduced to prevent. Two contributing causes: (1) the smoke fixture
+wrapped `<mark>HTML mark</mark>` in backticks, demoting it to inline
+code so lezer never emitted `HTMLTag` nodes there in the first place
+(literal-by-spec — not a code bug for that particular cell, but the
+fixture was still wrong); (2) `src/editor/decorations/htmlInline.ts`'s
+`update()` short-circuited on `tr.docChanged || tr.selection`, so any
+mode-only transaction (the Document↔Live↔Source flips dispatched by
+`MarkdownEditor.tsx`'s mode compartment, which fire `setEditMode` with
+no doc change and no selection change) left the previous mode's
+decorations stale until the next keystroke. The field IS mode-aware
+indirectly via `shouldHideMarker → currentEditMode`; the v0.2.8
+follow-up agent missed it because they only grep'd for direct
+`isWysiwygMode` callers.
+
+### The fix
+
+`src/editor/decorations/htmlInline.ts` now mirrors the canonical
+listener pattern shipped by `mermaid.ts` / `comment.ts` /
+`highlight.ts` / `criticMarkup.ts` / `frontMatter.ts` / `alerts.ts` /
+`citation.ts` / `footnote.ts` / `math.ts`: imports `setEditMode` and
+extends `update()` to also rebuild when the transaction carries a
+`setEditMode` effect, even when `tr.docChanged` and `tr.selection` are
+both falsy.
+
+### Indirect-mode-aware audit
+
+A repo-wide grep for fields that read mode state via the indirect
+helpers (`shouldHideMarker`, `hasActiveLine`, `getActiveLineRange`,
+`isLineActive`) cross-referenced against their `update()` shape
+turned up exactly one offender: `htmlInline.ts`. `table.ts` (line
+1109) reads neither edit-mode nor any indirect helper — its only
+"mode" reference is the per-cell raw/rendered toggle, which is
+selection-driven and already covered by `tr.selection`. `toc.ts`
+(line 96) calls `hasActiveLine` but only as a "user has interacted
+yet?" gate, not for any edit-mode branching, and its rendering
+output does not depend on edit mode. Both confirmed clean.
+`highlight.ts`, `comment.ts`, `criticMarkup.ts`, `frontMatter.ts`,
+`alerts.ts`, `citation.ts`, `footnote.ts`, `mermaid.ts`, and
+`math.ts` already had the canonical listener in place from earlier
+v0.2.x work.
+
+### Smoke fixture correction
+
+`docs/v0.2-smoke-test.md` Section B: removed the backticks around
+`<mark>HTML mark</mark>` so the smoke run actually exercises the
+htmlInline decoration path (lezer now emits the HTMLTag nodes and
+the field has something to decorate). Added a NEW dedicated
+"Inline HTML coverage" line that exercises ALL FIVE styled tags
+bare on a single paragraph — `<mark>`, `<sub>`, `<sup>`, `<kbd>`,
+`<u>`. This is the new safety net: any future regression in any of
+the five tags will surface in `08-document-highlights-subsup.png`,
+not just the one mark cell.
+
+### Test guard
+
+`tests/editor/htmlInline.test.ts` adds a "mode-only transaction
+regression guard (v0.2.12)" describe block with two cases: a Live-
+mode caret-on-line baseline that asserts the inner-content
+`cm-md-html-mark` class renders with markers visible, then a bare
+`setEditMode.of('wysiwyg')` dispatch (no doc change, no selection
+change) that asserts the open + close tag markers transition to
+hidden replace-widgets. Verified the regression test FAILS without
+the field fix (open + close hide-widget count drops from 2 → 0) and
+PASSES with it. Mirrors the canonical regression-guard test added
+in v0.2.8 to `comment.test.ts` line 155.
+
+### Files
+
+- `src/editor/decorations/htmlInline.ts` — import `setEditMode`,
+  extend `htmlInlineField.update()` with the canonical effect-loop
+  rebuild branch (+10 lines).
+- `tests/editor/htmlInline.test.ts` — `+76` lines, +2 cases
+  (test count: 6 → 8).
+- `docs/v0.2-smoke-test.md` — Section B fixture corrected
+  (backticks removed, new 5-tag bare coverage line added).
+- `package.json` — `0.2.11 → 0.2.12`.
+
+Suite delta: 1547 → 1549 (+2). E2E unchanged: 120 passed / 1
+skipped.
+
+## v0.2.11 — IME + a11y hardening
 
 The v0.2.x band has chased decoration parity (v0.2.8 / v0.2.9) and
 round-trip fidelity (v0.2.10) hard, but three quieter UX cracks have
