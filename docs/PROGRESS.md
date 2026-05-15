@@ -1,6 +1,163 @@
 # Durumi — Progress
 
-## v0.2.7 (current) — Phase 3.1.2: inline marks render inside table cells
+## v0.2.8 (current) — Document-mode rendering parity (memos + CriticMarkup)
+
+A single-theme bug-fix release that brings the memo (`%% … %%`) and
+CriticMarkup (`{++ ++}`, `{-- --}`, `{~~a~>b~~}`, `{== ==}`, `{>> <<}`)
+decoration plugins into line with `docs/editor-modes.md`. In Document
+(WYSIWYG) mode, the active line must render uniformly — markers hidden,
+widgets in place — so a paragraph reads the same whether the caret is
+on it or off it. Before v0.2.8, both plugins reverted to raw source on
+the caret line in EVERY mode, leaking `%%memo%%` and `{++ins++}` text
+into Document-mode reading flow.
+
+The fix is the canonical pattern from invariant #1, already in place in
+`citation.ts` since v0.1.12: gate the active-line carve-out on
+`!isWysiwygMode(state)`. Live mode keeps the v0.1.0 active-line raw
+behaviour; Source mode is unaffected because these plugins aren't loaded
+there. IME safety (invariant #6) is preserved by construction: marker
+hide uses `Decoration.replace` of zero-width widgets and `Decoration.mark`
+classes — the same machinery as the inline-marker plugins covered by the
+v0.1.12 relaxation.
+
+### What changed
+
+**Bug.** `comment.ts` `buildDecorations()` and `criticMarkup.ts`
+`buildDecorations()` short-circuited on `cursorTouches` without
+consulting the edit mode. In Document mode the carve-out was wrong: it
+re-emitted the raw `%% @ai note %%` source as a `Decoration.mark` and
+suppressed the chat icon. Result: the user dropped the caret on a memo
+line and saw the markdown source pop into view — exactly what Document
+mode promises NOT to do.
+
+**Fix shape.** Two-line patch per file:
+
+  - Add `import { isWysiwygMode } from '../editMode';`
+  - Change `if (cursorTouches) {` → `if (cursorTouches && !isWysiwygMode(state)) {`
+
+The off-line branch stays untouched and now also handles the
+"active-line in Document mode" case — same code path, no duplication.
+This mirrors `citation.ts` line 84 verbatim.
+
+### Files
+
+- Update `src/editor/decorations/comment.ts` — gate the active-line
+  carve-out on `!isWysiwygMode(state)` AND add a `setEditMode` listener
+  to the StateField `update()` so decorations rebuild on a bare mode
+  switch (codex follow-up). Mirrors the `mermaid.ts:115-133` pattern.
+- Update `src/editor/decorations/criticMarkup.ts` — same gate plus
+  same `setEditMode` listener.
+- Update `src/editor/decorations/citation.ts` — `setEditMode` listener
+  only (the gate has been correct since v0.1.12; this file shared the
+  latent rebuild bug and is fixed in the same release for consistency).
+- Update `src/editor/decorations/footnote.ts` — `setEditMode` listener
+  only (second-wave codex follow-up; same latent rebuild bug).
+- Update `src/editor/decorations/frontMatter.ts` — extend the existing
+  `renderTick` effect-listener loop to also rebuild on `setEditMode`
+  (second-wave codex follow-up; same latent rebuild bug).
+- Update `src/editor/decorations/math.ts` (blockMathField) — same
+  `renderTick`-loop extension as `frontMatter.ts` (second-wave codex
+  follow-up; same latent rebuild bug).
+- Update `tests/editor/footnote.test.ts` — parameterise `setup` with
+  optional `mode`, register `editModeStateExtension()` when a mode is
+  passed, add one regression case asserting bare-`setEditMode`-effect
+  rebuild for the footnote field.
+- Update `tests/editor/frontMatter.test.ts` — same `setup`
+  parameterisation, one regression case for the frontMatter field.
+- Update `tests/editor/math.test.ts` — add a `blockMathField` describe
+  block with one regression case (the existing test file only covered
+  the scanner; this is the first decoration test for math).
+- Update `tests/editor/comment.test.ts` — parameterise
+  `setup(doc, cursor, mode)` defaulting to `'typora'`, register
+  `editModeStateExtension()` so `setEditMode` effects can flip the
+  field, add three Document-mode parity assertions, plus a fourth
+  case asserting the field rebuilds on a bare `setEditMode` effect
+  with no doc/selection change.
+- Update `tests/editor/criticMarkupDecoration.test.ts` — same `setup`
+  parameterisation, register the field, add five Document-mode parity
+  assertions (one per CriticMarkup operator: insert, delete,
+  substitution, highlight, comment), plus a sixth case asserting the
+  bare-`setEditMode`-effect rebuild.
+- Add `tests/editor/citationDecoration.test.ts` — a single regression
+  case covering the bare-`setEditMode`-effect rebuild for the
+  citation field, separate from the existing parser-focused
+  `tests/editor/citation.test.ts`.
+- Update `e2e/_helpers.ts` — new `setWysiwygMode()` mirror
+  of `setTyporaMode()` for specs that flip back to Document after
+  testing in another mode.
+- Update `e2e/b1-features.spec.ts` — one focused Playwright Electron
+  test seeding `%%memo%%` + `{++ins++}` on the same line via direct
+  `view.dispatch` (bypassing the WYSIWYG escape filter), then
+  asserting both modes back-to-back: Document keeps source hidden /
+  icon visible / no `cm-memo-active` class on the active line; Live
+  shows raw `%%` and `{++` and the active-line classes; Document
+  again confirms the round-trip stays clean. Plus a second e2e
+  asserting that switching modes WITHOUT re-seeding the doc still
+  flips the rendering — proves the StateField rebuilds on bare
+  mode switch end-to-end.
+
+### Test count
+
+- vitest: 1460 → 1474 (+14 — three new memo cases, five new CriticMarkup
+  cases, plus six codex-follow-up regression guards: one each for
+  `comment.ts`, `criticMarkup.ts`, `citation.ts`, `footnote.ts`,
+  `frontMatter.ts`, and `math.ts` (blockMathField) confirming the
+  StateField rebuilds on a bare `setEditMode` effect)
+- Playwright e2e: 94 → 96 (+2 — Document/Live parity end-to-end plus the
+  bare-mode-switch regression spec; no per-feature e2e was added for
+  the second-wave fields because the b1 mode-switch-alone case already
+  exercises the rebuild path conceptually)
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1474 / 1474** vitest across 155 files
+- `pnpm test:e2e`: **96 / 96** Playwright Electron tests
+
+### Source-of-truth invariants
+
+1. **Mode-aware rendering (#1).** Document mode renders uniformly across
+   active and inactive lines for every plugin that hides inline markers
+   — including memos and CriticMarkup. Live mode keeps the v0.1.0
+   active-line carve-out where caret presence reveals raw markers for
+   direct edit. Source mode bypasses the plugin entirely (only registered
+   in non-Source mode by `MarkdownEditor.tsx`). The gate is a single
+   `!isWysiwygMode(state)` check inside the `cursorTouches` branch of
+   `buildDecorations()`; the citation plugin has done this since v0.1.12.
+2. **IME safety by construction (#6).** In Document mode, the entire
+   memo / CriticMarkup span is collapsed via `Decoration.replace`; this
+   is IME-safe because composition cannot enter a collapsed range —
+   there is no caret position the input method can target inside the
+   replacement, so the user has no surface on which to start a
+   composition that would later be invalidated by a re-render. In Live
+   mode, the active-line carve-out preserves the existing
+   `Decoration.mark` so the source remains editable, including
+   mid-composition: the underlying text nodes are intact and the IME
+   can compose against them as it would on any plain text. The two
+   modes therefore exercise different IME guarantees by construction
+   — Document mode by no-target, Live mode by source-preservation.
+
+   Codex follow-up (post v0.2.8 review, in two waves): SIX mode-aware
+   StateField `update()` methods shared a `tr.docChanged || tr.selection`
+   short-circuit that left decorations stale on a bare `setEditMode`
+   effect (Cmd+1 with no other changes). The first wave fixed the
+   visible bug in `comment.ts` and `criticMarkup.ts` and the matching
+   latent bug in `citation.ts`. A second-wave audit found three more
+   fields with the same root cause: `footnote.ts` (no effect listener),
+   `frontMatter.ts` (listened for `renderTick` only), and `math.ts`
+   `blockMathField` (also `renderTick` only). All six `update()`
+   methods now also rebuild on `setEditMode`, mirroring the
+   `mermaid.ts:115-133` pattern. Six new vitest regression cases guard
+   each field (one per file); one new e2e spec in `b1-features.spec.ts`
+   exercises bare mode-switch end-to-end and is sufficient coverage
+   for the rebuild path across all six fields (no per-feature e2e was
+   added — that would balloon CI for marginal coverage). The remaining
+   non-mode-aware decoration plugins (`htmlInline.ts`, `table.ts`,
+   `toc.ts`) keep the same `tr.docChanged || tr.selection` shortcut
+   without harm because their output doesn't depend on edit mode.
+
+## v0.2.7 — Phase 3.1.2: inline marks render inside table cells
 
 Final slice of the v0.3 table-editing roadmap. Table cells now render
 inline markdown syntax (`**bold**`, `*italic*`, `` `code` ``, `~~strike~~`,

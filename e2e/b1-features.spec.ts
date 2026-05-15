@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import path from 'node:path';
-import { setTyporaMode } from './_helpers';
+import { setTyporaMode, setWysiwygMode } from './_helpers';
 
 const APP_ENTRY = path.resolve(process.cwd(), 'out', 'main', 'main.cjs');
 
@@ -82,4 +82,198 @@ test('typescript fenced block highlights keyword', async () => {
   await page.waitForSelector('.cm-tok-keyword', { timeout: 5000 });
   await expect(page.locator('.cm-tok-keyword').first()).toHaveText('const');
   await shutdown(app);
+});
+
+/**
+ * v0.2.8 — Document-mode rendering parity for memos and CriticMarkup.
+ *
+ * In Document mode the active-line carve-out is suppressed: even when
+ * the caret lies on a memo / CriticMarkup line, the source must stay
+ * collapsed so the rendered page reads uniformly. Live mode keeps the
+ * v0.1.0 behaviour where the active line shows raw markers for direct
+ * editing. This test seeds a doc with both `%%memo%%` and `{++ins++}`
+ * on the same line, then exercises both modes back-to-back.
+ *
+ * The doc is injected via `view.dispatch` rather than `keyboard.type`
+ * because Document-mode escape filter would auto-escape `[`, `+`, etc.
+ * if typed.
+ */
+test('Document mode collapses memos / CriticMarkup on the active line; Live mode shows source', async () => {
+  const { app, page } = await launch();
+  try {
+    // Default launch is Document (wysiwyg) mode.
+    const doc = 'lead %% @ai note %% mid {++ ins ++} tail';
+    // Caret position inside the memo body (after `%% @ai`), so the line
+    // is "active" by the editor's hasActiveLine semantics. We seed via
+    // `view.dispatch` rather than `keyboard.type` because the Document-
+    // mode escape filter would rewrite `[`, `+`, etc.
+    const caretPos = doc.indexOf('@ai') + 1;
+
+    const seed = async (): Promise<void> => {
+      await page.evaluate(
+        ({ markdown, anchor }) => {
+          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+          if (!root) return;
+          const content = root.querySelector('.cm-content') as HTMLElement | null;
+          const tileHolder = (content ?? root) as unknown as {
+            cmTile?: {
+              root?: {
+                view?: {
+                  state: { doc: { length: number } };
+                  dispatch: (s: unknown) => void;
+                  focus: () => void;
+                };
+              };
+            };
+          };
+          const view = tileHolder.cmTile?.root?.view;
+          if (!view) return;
+          view.focus();
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: markdown },
+            selection: { anchor },
+            userEvent: 'input.testReset',
+          });
+        },
+        { markdown: doc, anchor: caretPos },
+      );
+      await page.waitForTimeout(80);
+    };
+
+    // ── Document mode (default) ──
+    await seed();
+    const docLineText = await page.evaluate(
+      () => (document.querySelector('.cm-line') as HTMLElement).innerText,
+    );
+    expect(docLineText).not.toContain('%%');
+    expect(docLineText).not.toContain('{++');
+    expect(docLineText).not.toContain('++}');
+    expect(await page.locator('.cm-memo-active').count()).toBe(0);
+    expect(await page.locator('.cm-cm-active').count()).toBe(0);
+    await expect(page.locator('.cm-memo-chat-icon').first()).toBeVisible();
+    await expect(page.locator('.cm-cm-insert').first()).toBeVisible();
+
+    // ── Live (typora) mode — active-line raw must reappear. ──
+    await setTyporaMode(app, page);
+    await seed();
+    const liveLineText = await page.evaluate(
+      () => (document.querySelector('.cm-line') as HTMLElement).innerText,
+    );
+    expect(liveLineText).toContain('%%');
+    expect(liveLineText).toContain('{++');
+    expect(await page.locator('.cm-memo-active').count()).toBeGreaterThan(0);
+    expect(await page.locator('.cm-cm-active').count()).toBeGreaterThan(0);
+
+    // ── Flip back to Document mode (round-trip regression guard). ──
+    await setWysiwygMode(app, page);
+    await seed();
+    expect(await page.locator('.cm-memo-active').count()).toBe(0);
+    expect(await page.locator('.cm-cm-active').count()).toBe(0);
+    await expect(page.locator('.cm-memo-chat-icon').first()).toBeVisible();
+  } finally {
+    await shutdown(app);
+  }
+});
+
+/**
+ * v0.2.8 codex follow-up — bare mode-switch decoration rebuild.
+ *
+ * The original parity spec above re-seeds the doc after every mode
+ * switch, which masks a separate latent bug: the memo / CriticMarkup
+ * StateField `update()` short-circuited on `tr.docChanged || tr.selection`,
+ * so a bare `setEditMode` effect (e.g. user hits Cmd+1 mid-document
+ * with no edit) left the previous mode's decorations stale until the
+ * next keystroke. This spec seeds ONCE in Live mode, then flips to
+ * Document mode WITHOUT touching the doc or caret. The active-line
+ * carve-out should disappear because the field rebuilt on the effect
+ * — not because the doc / selection changed.
+ */
+test('mode switch alone (no edit, no caret move) rebuilds memo + CriticMarkup decorations', async () => {
+  const { app, page } = await launch();
+  try {
+    // Start in Live mode so the active-line carve-out is observable.
+    await setTyporaMode(app, page);
+
+    const doc = 'lead %% @ai note %% mid {++ ins ++} tail';
+    const caretPos = doc.indexOf('@ai') + 1; // caret inside the memo body
+
+    // Seed once. Subsequent assertions MUST NOT reseed.
+    await page.evaluate(
+      ({ markdown, anchor }) => {
+        const root = document.querySelector('.cm-editor') as HTMLElement | null;
+        if (!root) return;
+        const content = root.querySelector('.cm-content') as HTMLElement | null;
+        const tileHolder = (content ?? root) as unknown as {
+          cmTile?: {
+            root?: {
+              view?: {
+                state: { doc: { length: number } };
+                dispatch: (s: unknown) => void;
+                focus: () => void;
+              };
+            };
+          };
+        };
+        const view = tileHolder.cmTile?.root?.view;
+        if (!view) return;
+        view.focus();
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: markdown },
+          selection: { anchor },
+          userEvent: 'input.testReset',
+        });
+      },
+      { markdown: doc, anchor: caretPos },
+    );
+    await page.waitForTimeout(80);
+
+    // ── Live baseline: caret-on-memo line shows raw `%%` + `{++`. ──
+    const liveText = await page.evaluate(
+      () => (document.querySelector('.cm-line') as HTMLElement).innerText,
+    );
+    expect(liveText).toContain('%%');
+    expect(liveText).toContain('{++');
+    expect(await page.locator('.cm-memo-active').count()).toBeGreaterThan(0);
+    expect(await page.locator('.cm-cm-active').count()).toBeGreaterThan(0);
+
+    // ── Bare mode switch — no reseed, no caret move. ──
+    await setWysiwygMode(app, page);
+    // Wait until the Document-mode collapse has applied (the active-line
+    // carve-out class disappears). The setEditMode IPC takes a few frames
+    // to flow main → renderer → React rerender → useEffect → view.dispatch,
+    // and the bare mode-switch decoration rebuild is exactly what this
+    // spec is asserting — so we must wait for the field to rebuild.
+    await page.waitForFunction(
+      () => document.querySelectorAll('.cm-memo-active').length === 0,
+      undefined,
+      { timeout: 2000 },
+    );
+
+    // Document mode should now have collapsed the memo / CriticMarkup
+    // spans even though no doc change and no selection change happened.
+    const docModeText = await page.evaluate(
+      () => (document.querySelector('.cm-line') as HTMLElement).innerText,
+    );
+    expect(docModeText).not.toContain('%%');
+    expect(docModeText).not.toContain('{++');
+    expect(await page.locator('.cm-memo-active').count()).toBe(0);
+    expect(await page.locator('.cm-cm-active').count()).toBe(0);
+    await expect(page.locator('.cm-memo-chat-icon').first()).toBeVisible();
+    await expect(page.locator('.cm-cm-insert').first()).toBeVisible();
+
+    // ── Bare flip back to Live — same invariant in reverse. ──
+    await setTyporaMode(app, page);
+    await page.waitForFunction(
+      () => document.querySelectorAll('.cm-memo-active').length > 0,
+      undefined,
+      { timeout: 2000 },
+    );
+    const liveAgainText = await page.evaluate(
+      () => (document.querySelector('.cm-line') as HTMLElement).innerText,
+    );
+    expect(liveAgainText).toContain('%%');
+    expect(liveAgainText).toContain('{++');
+  } finally {
+    await shutdown(app);
+  }
 });

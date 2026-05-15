@@ -11,7 +11,7 @@ import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetTy
 import { EditorState, Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { scanBlockMath, scanInlineMath, type BlockMathRange, type InlineMathRange } from '../math/scan';
 import { getCachedKatex, isKatexInflight, requestKatexRender } from '../math/katexLoader';
-import { isWysiwygMode } from '../editMode';
+import { isWysiwygMode, setEditMode } from '../editMode';
 
 const renderTick = StateEffect.define<number>();
 
@@ -171,7 +171,7 @@ const blockMathField = StateField.define<DecorationSet>({
     let rebuild = tr.docChanged || tr.selection;
     if (!rebuild) {
       for (const e of tr.effects) {
-        if (e.is(renderTick)) {
+        if (e.is(renderTick) || e.is(setEditMode)) {
           rebuild = true;
           break;
         }

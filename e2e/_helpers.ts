@@ -44,6 +44,22 @@ export async function setMarkdownMode(app: ElectronApplication, page: Page): Pro
 }
 
 /**
+ * Switch the editor to Document (WYSIWYG) mode.
+ *
+ * WYSIWYG is the launch default, so most specs don't need this helper.
+ * Use it inside specs that have already flipped to Live or Source mode
+ * and want to flip back — e.g. the v0.2.8 memo/CriticMarkup parity spec
+ * which exercises both modes back-to-back.
+ */
+export async function setWysiwygMode(app: ElectronApplication, page: Page): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w?.webContents.send('menu:command', { type: 'setEditMode', mode: 'wysiwyg' });
+  });
+  await page.waitForTimeout(150);
+}
+
+/**
  * Read the live CodeMirror document via the EditorView attached to the DOM.
  *
  * The toolbar tests need to assert raw source (e.g. `**hello**`) — `cm-content`

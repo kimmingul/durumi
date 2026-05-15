@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
+import { isWysiwygMode, setEditMode } from '../editMode';
 
 /**
  * Live decorations for CriticMarkup track-changes operators.
@@ -200,7 +201,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   const spans = collectSpans(state);
   for (const span of spans) {
     const cursorTouches = rangeTouchesActiveLine(state, span.from, span.to);
-    if (cursorTouches) {
+    if (cursorTouches && !isWysiwygMode(state)) {
       // Active line: source visible. Apply a faint background to make the
       // span discoverable, but do not hide marks.
       ranges.push(
@@ -281,7 +282,16 @@ const criticMarkupField = StateField.define<DecorationSet>({
     return buildDecorations(state);
   },
   update(value, tr) {
-    if (tr.docChanged || tr.selection) return buildDecorations(tr.state);
+    let rebuild = tr.docChanged || tr.selection;
+    if (!rebuild) {
+      for (const e of tr.effects) {
+        if (e.is(setEditMode)) {
+          rebuild = true;
+          break;
+        }
+      }
+    }
+    if (rebuild) return buildDecorations(tr.state);
     return value;
   },
   provide: (f) => EditorView.decorations.from(f),

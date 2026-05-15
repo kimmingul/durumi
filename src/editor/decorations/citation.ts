@@ -2,7 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { hasActiveLine, userActiveField } from './activeLine';
-import { isWysiwygMode } from '../editMode';
+import { isWysiwygMode, setEditMode } from '../editMode';
 
 /**
  * Renders citation spans as compact superscript markers when the caret is not
@@ -92,7 +92,16 @@ const citationField = StateField.define<DecorationSet>({
     return buildDecorations(state);
   },
   update(value, tr) {
-    if (tr.docChanged || tr.selection) return buildDecorations(tr.state);
+    let rebuild = tr.docChanged || tr.selection;
+    if (!rebuild) {
+      for (const e of tr.effects) {
+        if (e.is(setEditMode)) {
+          rebuild = true;
+          break;
+        }
+      }
+    }
+    if (rebuild) return buildDecorations(tr.state);
     return value;
   },
   provide: (f) => EditorView.decorations.from(f),

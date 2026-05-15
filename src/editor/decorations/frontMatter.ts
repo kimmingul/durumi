@@ -2,7 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
 import { hasActiveLine, userActiveField } from './activeLine';
-import { isWysiwygMode } from '../editMode';
+import { isWysiwygMode, setEditMode } from '../editMode';
 
 // js-yaml (~105 KB) is dynamic-imported on first encounter with a front-matter
 // block. Until the parse module loads, the summary widget shows the generic
@@ -123,7 +123,7 @@ const frontMatterField = StateField.define<DecorationSet>({
     let rebuild = tr.docChanged || tr.selection;
     if (!rebuild) {
       for (const e of tr.effects) {
-        if (e.is(renderTick)) {
+        if (e.is(renderTick) || e.is(setEditMode)) {
           rebuild = true;
           break;
         }

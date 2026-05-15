@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language';
 import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
+import { isWysiwygMode, setEditMode } from '../editMode';
 
 /**
  * Live decoration for `%%` memos.
@@ -124,7 +125,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   for (const span of spans) {
     const cursorTouches = rangeTouchesActiveLine(state, span.from, span.to);
     const tagClass = tagClassFragment(span.tagText);
-    if (cursorTouches) {
+    if (cursorTouches && !isWysiwygMode(state)) {
       // Active line: render the source as-is, just give the range a faint
       // highlight so the user sees the memo they're editing. No replace, no
       // chat icon — they're inside the markdown.
@@ -162,7 +163,16 @@ const commentField = StateField.define<DecorationSet>({
     return buildDecorations(state);
   },
   update(value, tr) {
-    if (tr.docChanged || tr.selection) return buildDecorations(tr.state);
+    let rebuild = tr.docChanged || tr.selection;
+    if (!rebuild) {
+      for (const e of tr.effects) {
+        if (e.is(setEditMode)) {
+          rebuild = true;
+          break;
+        }
+      }
+    }
+    if (rebuild) return buildDecorations(tr.state);
     return value;
   },
   provide: (f) => EditorView.decorations.from(f),

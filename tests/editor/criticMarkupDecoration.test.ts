@@ -9,8 +9,13 @@ import {
   criticMarkupDecoration,
   criticMarkupTheme,
 } from '../../src/editor/decorations/criticMarkup';
+import {
+  editModeStateExtension,
+  setEditMode,
+  type EditMode,
+} from '../../src/editor/editMode';
 
-function setup(doc: string, cursor: number) {
+function setup(doc: string, cursor: number, mode: EditMode = 'typora') {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
   const view = new EditorView({
@@ -18,6 +23,7 @@ function setup(doc: string, cursor: number) {
       doc,
       selection: { anchor: cursor },
       extensions: [
+        editModeStateExtension(),
         markdown({
           base: markdownLanguage,
           extensions: [GFM, InlineExtrasExtension, CriticMarkupExtension],
@@ -28,7 +34,11 @@ function setup(doc: string, cursor: number) {
     }),
     parent,
   });
-  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  view.dispatch({
+    effects: setEditMode.of(mode),
+    selection: { anchor: cursor },
+    userEvent: 'select',
+  });
   return view;
 }
 
@@ -78,7 +88,7 @@ describe('criticMarkupDecoration', () => {
     v.destroy();
   });
 
-  it('shows source verbatim when caret is on the line (active-line invariant)', () => {
+  it('shows source verbatim when caret is on the line (Live active-line invariant)', () => {
     const doc = 'foo {++ X ++} bar';
     const v = setup(doc, 6); // caret inside `{++`
     // Source preserved.
@@ -113,6 +123,79 @@ describe('criticMarkupDecoration', () => {
     expect(v.dom.querySelector('.cm-cm-highlight')).toBeTruthy();
     expect(v.dom.textContent ?? '').toContain('regular');
     expect(v.dom.textContent ?? '').toContain('strike');
+    v.destroy();
+  });
+
+  // ── Document mode (WYSIWYG) parity — v0.2.8 ──
+  // Each CriticMarkup operator must keep its delimiters hidden and its
+  // styled inner content visible even when the caret is on the line.
+  // The active-line carve-out is intentional only in Live mode.
+
+  it('Document mode: insertion stays styled, `{++ ++}` stays hidden when caret on the line', () => {
+    const doc = 'foo {++ X ++} bar';
+    const v = setup(doc, 6, 'wysiwyg'); // caret inside `{++`
+    expect(v.dom.querySelector('.cm-cm-insert')).toBeTruthy();
+    expect(v.dom.textContent ?? '').not.toContain('{++');
+    expect(v.dom.textContent ?? '').not.toContain('++}');
+    expect(v.dom.querySelector('.cm-cm-active')).toBeNull();
+    v.destroy();
+  });
+
+  it('Document mode: deletion stays styled, `{-- --}` stays hidden when caret on the line', () => {
+    const doc = 'hi {-- gone --} bye';
+    const v = setup(doc, 5, 'wysiwyg'); // caret inside the delete span
+    expect(v.dom.querySelector('.cm-cm-delete')).toBeTruthy();
+    expect(v.dom.textContent ?? '').not.toContain('{--');
+    expect(v.dom.textContent ?? '').not.toContain('--}');
+    expect(v.dom.querySelector('.cm-cm-active')).toBeNull();
+    v.destroy();
+  });
+
+  it('Document mode: substitution stays rendered, `~>` arrow widget remains', () => {
+    const doc = 'edit {~~old~>new~~} done';
+    const v = setup(doc, 8, 'wysiwyg'); // caret inside the sub span
+    expect(v.dom.querySelector('.cm-cm-sub-old')).toBeTruthy();
+    expect(v.dom.querySelector('.cm-cm-sub-new')).toBeTruthy();
+    expect(v.dom.querySelector('.cm-cm-sub-arrow')).toBeTruthy();
+    expect(v.dom.textContent ?? '').not.toContain('~>');
+    expect(v.dom.textContent ?? '').not.toContain('{~~');
+    expect(v.dom.querySelector('.cm-cm-active')).toBeNull();
+    v.destroy();
+  });
+
+  it('Document mode: highlight stays styled, `{== ==}` stays hidden when caret on the line', () => {
+    const doc = 'pre {== mark ==} post';
+    const v = setup(doc, 8, 'wysiwyg'); // caret inside the highlight
+    expect(v.dom.querySelector('.cm-cm-highlight')).toBeTruthy();
+    expect(v.dom.textContent ?? '').not.toContain('{==');
+    expect(v.dom.textContent ?? '').not.toContain('==}');
+    expect(v.dom.querySelector('.cm-cm-active')).toBeNull();
+    v.destroy();
+  });
+
+  it('Document mode: comment stays as a pill, body hidden when caret on the line', () => {
+    const doc = 'pre {>> note here <<} post';
+    const v = setup(doc, 8, 'wysiwyg'); // caret inside the comment
+    expect(v.dom.querySelector('.cm-cm-comment-pill')).toBeTruthy();
+    expect(v.dom.textContent ?? '').not.toContain('note here');
+    expect(v.dom.querySelector('.cm-cm-active')).toBeNull();
+    v.destroy();
+  });
+
+  // ── Mode-only transaction regression guard — v0.2.8 codex follow-up ──
+  // The decoration field must rebuild when a `setEditMode` effect arrives,
+  // even if the transaction has no doc change and no selection change. Prior
+  // to the fix, `update()` short-circuited on `tr.docChanged || tr.selection`,
+  // leaving the previous mode's decorations stale until the next keystroke.
+  it('rebuilds decorations on a bare setEditMode effect (no doc/selection change)', () => {
+    const doc = 'foo {++ X ++} bar';
+    const v = setup(doc, 6); // caret inside the insert span, Live (typora) mode
+    // Baseline: Live-mode active-line carve-out applies a `cm-cm-active` mark.
+    expect(v.dom.querySelector('.cm-cm-active')).toBeTruthy();
+    // Mode-only transaction: no `changes`, no `selection`.
+    v.dispatch({ effects: setEditMode.of('wysiwyg') });
+    // After the effect, Document mode must have removed the active-line carve-out.
+    expect(v.dom.querySelector('.cm-cm-active')).toBeNull();
     v.destroy();
   });
 });

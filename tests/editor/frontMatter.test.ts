@@ -9,12 +9,18 @@ import {
   frontMatterDecoration,
   frontMatterTheme,
 } from '../../src/editor/decorations/frontMatter';
+import {
+  editModeStateExtension,
+  setEditMode,
+  type EditMode,
+} from '../../src/editor/editMode';
 
-function setup(doc: string, cursor = 0): EditorView {
+function setup(doc: string, cursor = 0, mode?: EditMode): EditorView {
   const state = EditorState.create({
     doc,
     selection: { anchor: cursor },
     extensions: [
+      ...(mode ? [editModeStateExtension()] : []),
       markdown({
         base: markdownLanguage,
         extensions: [GFM, FrontMatterExtension],
@@ -26,7 +32,15 @@ function setup(doc: string, cursor = 0): EditorView {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
   const view = new EditorView({ state, parent });
-  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  if (mode) {
+    view.dispatch({
+      effects: setEditMode.of(mode),
+      selection: { anchor: cursor },
+      userEvent: 'select',
+    });
+  } else {
+    view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  }
   return view;
 }
 
@@ -101,6 +115,26 @@ describe('frontMatterDecoration', () => {
     const summary = view.dom.querySelector('.cm-md-frontmatter-summary');
     expect(summary).toBeNull();
     expect(view.dom.textContent).toContain('title: Foo');
+    view.destroy();
+  });
+
+  // ── Mode-only transaction regression guard — v0.2.8 codex follow-up #2 ──
+  // The frontMatter field listened for `renderTick` but not `setEditMode`, so
+  // a bare mode switch with no doc/selection change left the previous mode's
+  // raw-YAML / summary-widget rendering stale.
+  it('rebuilds decorations on a bare setEditMode effect (no doc/selection change)', () => {
+    const doc = '---\ntitle: Foo\n---\n# Body';
+    const view = setup(doc, 5, 'typora'); // caret inside YAML, Live mode
+    // Baseline: caret-in-YAML reveals the raw block (no summary widget).
+    expect(view.dom.querySelector('.cm-md-frontmatter-summary')).toBeNull();
+    expect(view.dom.textContent).toContain('title: Foo');
+    // Mode-only transaction: no `changes`, no `selection`.
+    view.dispatch({ effects: setEditMode.of('wysiwyg') });
+    // After the effect, Document mode must have collapsed the YAML block to
+    // a summary widget (or at least replaced the raw lines — the cold-path
+    // label may be the generic "Front matter" since js-yaml hasn't loaded).
+    expect(view.dom.querySelector('.cm-md-frontmatter-summary')).not.toBeNull();
+    expect(view.dom.textContent).not.toContain('title: Foo');
     view.destroy();
   });
 });

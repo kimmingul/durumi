@@ -9,12 +9,18 @@ import {
   footnoteDecoration,
   footnoteTheme,
 } from '../../src/editor/decorations/footnote';
+import {
+  editModeStateExtension,
+  setEditMode,
+  type EditMode,
+} from '../../src/editor/editMode';
 
-function setup(doc: string, cursor = 0): EditorView {
+function setup(doc: string, cursor = 0, mode?: EditMode): EditorView {
   const state = EditorState.create({
     doc,
     selection: { anchor: cursor },
     extensions: [
+      ...(mode ? [editModeStateExtension()] : []),
       markdown({
         base: markdownLanguage,
         extensions: [GFM, FootnoteExtension],
@@ -26,7 +32,15 @@ function setup(doc: string, cursor = 0): EditorView {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
   const view = new EditorView({ state, parent });
-  view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  if (mode) {
+    view.dispatch({
+      effects: setEditMode.of(mode),
+      selection: { anchor: cursor },
+      userEvent: 'select',
+    });
+  } else {
+    view.dispatch({ selection: { anchor: cursor }, userEvent: 'select' });
+  }
   return view;
 }
 
@@ -96,6 +110,23 @@ describe('footnoteDecoration', () => {
     const marker = view.dom.querySelector('.cm-md-footnote-def-marker');
     expect(marker).not.toBeNull();
     expect(marker?.textContent).toBe('[a]');
+    view.destroy();
+  });
+
+  // ── Mode-only transaction regression guard — v0.2.8 codex follow-up #2 ──
+  // The footnote field was mode-aware (`isWysiwygMode` gates the active-line
+  // carve-out) but its `update()` short-circuited on `tr.docChanged ||
+  // tr.selection`, leaving decorations stale on a bare `setEditMode` effect.
+  it('rebuilds decorations on a bare setEditMode effect (no doc/selection change)', () => {
+    const doc = 'see[^a] body';
+    const view = setup(doc, 5, 'typora'); // caret inside `[^a]`, Live mode
+    // Baseline: caret-on-ref reveals the raw `[^a]` source — no widget.
+    expect(view.dom.querySelector('.cm-md-footnote-ref')).toBeNull();
+    expect(view.dom.textContent).toContain('[^a]');
+    // Mode-only transaction: no `changes`, no `selection`.
+    view.dispatch({ effects: setEditMode.of('wysiwyg') });
+    // After the effect, Document mode must have collapsed the ref to a widget.
+    expect(view.dom.querySelector('.cm-md-footnote-ref')).not.toBeNull();
     view.destroy();
   });
 });
