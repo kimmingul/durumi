@@ -69,6 +69,14 @@ export interface Preferences {
    */
   author: { name: string };
   workspaceFolders: string[];
+  /**
+   * v0.2.10 — most-recently-opened workspace-folder paths, MRU order, capped
+   * at 10 (mirroring `recentFiles`). Pushed by the workspace open flow, used
+   * to populate the "Open Recent Folder" menu. Path-guarded the same way as
+   * `recentFiles` (`assertPrefsPatchAllowed` rejects entries the session
+   * didn't see come from a dialog).
+   */
+  recentFolders: string[];
   /** Optional explicit path to the pandoc binary; null = auto-detect on PATH. */
   pandocPath: string | null;
   /** Optional `.docx` style reference template path (Pandoc --reference-doc). */
@@ -93,6 +101,15 @@ export interface Preferences {
    * text, comments dropped) — the safe default for medical manuscripts.
    */
   exportPreserveAnnotations: boolean;
+  /**
+   * v0.2.10 — when `true`, HTML export inlines every `<img>` whose source
+   * resolves to a local file (via `durumi-asset://` or a relative workspace
+   * path) as a base64 `data:` URI. Default `false` preserves the existing
+   * behaviour (relative URLs kept as-is, requiring the assets directory to
+   * be shipped alongside the HTML). Turn on for a single-file shareable
+   * export. Remote URLs (`http(s):`) are never touched.
+   */
+  exportInlineImages: boolean;
   /**
    * Bibliography / live-reference-search preferences (v0.1.6). All fields are
    * optional from the user's perspective: with empty values the feature
@@ -270,6 +287,7 @@ export type MenuCommand =
   | 'openKeyboardShortcuts'
   | { type: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { type: 'openRecent'; path: string }
+  | { type: 'openRecentFolder'; path: string }
   | { type: 'closeFolder'; path: string };
 
 export interface FilePickerOptions {

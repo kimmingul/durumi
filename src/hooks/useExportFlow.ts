@@ -66,15 +66,20 @@ export function useExportFlow(deps: {
       const prefs = await window.api.prefsGet();
       const includeComments = prefs.exportIncludeComments ?? false;
       const preserveAnnotations = prefs.exportPreserveAnnotations ?? false;
+      const inlineImages = prefs.exportInlineImages ?? false;
       // Lazy: pulls in markdown-it, KaTeX renderToString path, mermaid
       // preprocessor, code-highlight prefetch, etc. — none of which the
       // editor itself needs on first paint.
       const { renderHtml } = await import('../export/renderHtml');
-      const html = await renderHtml(content, title, customCss, {
+      let html = await renderHtml(content, title, customCss, {
         bibliography,
         includeComments,
         preserveAnnotations,
       });
+      if (inlineImages) {
+        const { inlineImagesInHtml } = await import('../export/inlineImages');
+        html = await inlineImagesInHtml(html, { docPath: filePath });
+      }
       await window.api.exportFile(html, format, suggested);
     },
     [filePath, content, loadBibliography],

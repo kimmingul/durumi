@@ -22,6 +22,10 @@ export function FileTree({ onOpenFile }: FileTreeProps) {
           onClick={async () => {
             const p = await window.api.dialogOpenFolder();
             if (!p) return;
+            // v0.2.10 — push to recentFolders MRU (mirrors useWorkspaceMenu).
+            const prefs = await window.api.prefsGet();
+            const nextRecent = [p, ...(prefs.recentFolders ?? []).filter((x) => x !== p)].slice(0, 10);
+            void window.api.prefsSet({ recentFolders: nextRecent });
             const current = useSidebarStore.getState().workspaceFolders;
             if (current.includes(p)) return;
             addFolder(p);

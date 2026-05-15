@@ -160,3 +160,50 @@ describe('rightSidebar migration (v0.1.8.4)', () => {
     expect(prefs.rightSidebar.width).toBe(280);
   });
 });
+
+describe('recentFolders persistence (v0.2.10)', () => {
+  it('defaults to an empty list', async () => {
+    const { getPreferences } = await import('../../electron/preferences');
+    const prefs = await getPreferences();
+    expect(prefs.recentFolders).toEqual([]);
+  });
+
+  it('addRecentFolder pushes the folder onto the head of the list', async () => {
+    const mod = await import('../../electron/preferences');
+    await mod.addRecentFolder('/Users/me/projects/alpha');
+    const prefs = await mod.getPreferences();
+    expect(prefs.recentFolders[0]).toBe('/Users/me/projects/alpha');
+  });
+
+  it('addRecentFolder dedupes — re-adding an existing folder moves it to the head', async () => {
+    const mod = await import('../../electron/preferences');
+    await mod.addRecentFolder('/a');
+    await mod.addRecentFolder('/b');
+    await mod.addRecentFolder('/a');
+    const prefs = await mod.getPreferences();
+    expect(prefs.recentFolders).toEqual(['/a', '/b']);
+  });
+
+  it('addRecentFolder caps the list at 10 entries', async () => {
+    const mod = await import('../../electron/preferences');
+    for (let i = 0; i < 15; i++) {
+      await mod.addRecentFolder(`/folder-${i}`);
+    }
+    const prefs = await mod.getPreferences();
+    expect(prefs.recentFolders.length).toBe(10);
+    // Head is the most-recent push (folder-14), tail the 10th-most-recent.
+    expect(prefs.recentFolders[0]).toBe('/folder-14');
+    expect(prefs.recentFolders[9]).toBe('/folder-5');
+  });
+
+  it('migrates a prefs file without recentFolders to the empty default', async () => {
+    fileStore.set(
+      PREFS_PATH,
+      JSON.stringify({ theme: 'system', workspaceFolders: ['/x'] }),
+    );
+    const { getPreferences } = await import('../../electron/preferences');
+    const prefs = await getPreferences();
+    expect(prefs.recentFolders).toEqual([]);
+    expect(prefs.workspaceFolders).toEqual(['/x']);
+  });
+});

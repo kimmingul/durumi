@@ -197,4 +197,39 @@ describe('assertPrefsPatchAllowed', () => {
       assertPrefsPatchAllowed({ recentFiles: ['/etc/passwd'] }),
     ).rejects.toBeInstanceOf(PathNotAllowedError);
   });
+
+  it('applies the same rule to recentFolders (v0.2.10)', async () => {
+    await expect(
+      assertPrefsPatchAllowed({ recentFolders: ['/etc'] }),
+    ).rejects.toBeInstanceOf(PathNotAllowedError);
+  });
+
+  it('allows a recentFolders entry that the session saw via dialog', async () => {
+    allowSessionPath('/Users/min/PickedFolder');
+    await expect(
+      assertPrefsPatchAllowed({ recentFolders: ['/Users/min/PickedFolder'] }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('preserves an existing recentFolders entry on round-trip', async () => {
+    const existing = resolve('/Users/min/Recent');
+    setPrefs({ recentFolders: [existing] });
+    await expect(
+      assertPrefsPatchAllowed({ recentFolders: [existing] }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('isAllowedPath — recent folders trees (v0.2.10)', () => {
+  it('allows files inside a recent-folders entry', async () => {
+    setPrefs({ recentFolders: ['/Users/me/Workspace'] });
+    expect(await isAllowedPath('/Users/me/Workspace/doc.md')).toBe(true);
+    expect(await isAllowedPath('/Users/me/Workspace/sub/img.png')).toBe(true);
+  });
+
+  it('rejects siblings of recent-folders entries', async () => {
+    setPrefs({ recentFolders: ['/Users/me/Workspace'] });
+    expect(await isAllowedPath('/Users/me/Workspace-clone/doc.md')).toBe(false);
+    expect(await isAllowedPath('/etc/passwd')).toBe(false);
+  });
 });

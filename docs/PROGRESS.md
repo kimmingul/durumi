@@ -1,6 +1,282 @@
 # Durumi — Progress
 
-## v0.2.9 (current) — Live preview parity for advertised marks
+## v0.2.10 (current) — Round-trip + export hardening
+
+The v0.2.x band has steadily grown the editor surface (table editing,
+inline marks, GitHub callouts, alert decorations, document-mode parity)
+without ever proving end-to-end that those features actually survive the
+canonical Pandoc DOCX round-trip the medical-manuscript workflow depends
+on. At the same time, the existing HTML export emitted bare `<img src>`
+URLs that broke as soon as the user emailed just the `.html` file
+(images sat in a sibling `assets/` directory or behind the
+`durumi-asset://` protocol that only the Electron renderer can resolve),
+and the workspace UI offered Recent Files but no folder MRU — so
+re-opening yesterday's project meant re-walking the OS folder picker.
+v0.2.10 bundles three targeted fixes: a golden Pandoc round-trip e2e
+that pins which features round-trip cleanly versus which are documented-
+lossy, an opt-in HTML export that base64-inlines every local image into
+a single self-contained file, and a Recent Folders menu that mirrors
+Recent Files (MRU, dedup, capped at 10).
+
+### Half A — golden Pandoc DOCX round-trip e2e
+
+`e2e/round-trip.spec.ts` builds a kitchen-sink markdown fixture covering
+every section of `docs/durumi-markdown-reference.md` (headings, inline
+marks, blockquotes + GitHub callouts, ordered/unordered/task lists,
+code fences, links, images, footnotes, tables with inline marks,
+citations, all five CriticMarkup operators, memos, inline + block math,
+mermaid blocks, YAML front matter), exports it to `.docx` via the same
+menu-driven flow the user sees (`menu:command` → `exportDocx`), then
+re-imports the `.docx` via Pandoc to a deterministic markdown subset and
+asserts STRUCTURAL parity (heading text, list items, citation/footnote
+presence, CriticMarkup acceptance defaults, table cell content, etc.).
+Byte-perfect parity is explicitly NOT the goal — Pandoc reformats
+whitespace and rewrites several constructs — but the structural pins
+catch any future regression that drops a feature on the floor.
+
+The whole suite gates on Pandoc availability via `test.skip()` with a
+documented reason; CI environments that need to verify it should
+install Pandoc up front (`brew install pandoc` / `apt install pandoc`).
+Local dev without Pandoc sees a single SKIPPED entry rather than a
+hard failure, so the spec costs nothing on a fresh checkout.
+
+A second spec in the same file exercises the new HTML image-inlining
+flow end-to-end: it flips `exportInlineImages` on, opens a markdown
+fixture with a relative `<img>`, runs the menu export, and asserts the
+emitted HTML contains a `data:image/png;base64,...` URI and contains
+neither the original PNG path nor the `durumi-asset://` URL.
+
+### Half B — HTML export image inlining (data-URI option, default OFF)
+
+`src/export/inlineImages.ts` ships a single pure function
+`inlineImagesInHtml(html, { docPath, fetcher?, warn? })` that scans the
+exported HTML for `<img>` tags, resolves each `src` through the same
+`resolveImageSrc` helper the editor decoration uses (so relative paths,
+absolute paths, and `durumi-asset://` URLs all map to the same canonical
+resource), fetches the bytes, and rewrites the attribute to a base64
+`data:` URI. Remote `http(s):` URLs and already-inlined `data:` URIs
+pass through untouched. Failed fetches are warned and skipped rather
+than aborting the entire export — a single broken `<img>` shouldn't
+cost the whole document.
+
+**Per-image size cap (defensive).** A `MAX_INLINE_IMAGE_BYTES = 25 *
+1024 * 1024` constant guards the encode loop: a single image > 25MB
+would balloon renderer memory (base64 encode roughly triples bytes in a
+binary-string intermediate), so the cap skips with a warning, leaving
+the original URL in the HTML. The feature is default-OFF, but the cap
+closes the foot-gun cleanly so a stray 100MB asset can't briefly hold
+~3GB during export.
+
+The wiring: `useExportFlow.ts` reads `exportInlineImages` from prefs
+and, when `true`, lazy-imports `inlineImages` and pipes the HTML
+through it before handing off to `window.api.exportFile`. The lazy
+import keeps the inliner out of the cold-start bundle for the default
+(off) path. A new SettingsDialog field (`settings.export.inlineImages`,
+en + ko) toggles the preference and persists via the existing
+`prefsSet` IPC.
+
+**CSP change (security-relevant).** The default fetcher uses the
+ambient global `fetch` to read the resolved URL. For
+`durumi-asset://x/?p=<abs>` URLs that's a renderer-side fetch against
+the custom protocol, which the existing CSP (`default-src 'self'; img-src
+'self' data: https: durumi-asset:; …`) blocked because no `connect-src`
+was declared. `index.html` now adds an explicit
+`connect-src 'self' durumi-asset:` directive, narrowly opening
+`durumi-asset://` for the inliner without weakening the default-src
+boundary. The asset protocol itself enforces the path-guard tree
+(invariant #9 / v0.2.2), so `connect-src durumi-asset:` is bounded by
+the same trusted-path check that `<img src>` already enjoyed.
+
+### Half C — Recent Folders menu (mirror of Recent Files)
+
+`Preferences.recentFolders: string[]` joins `recentFiles` as a
+session-persistent MRU list capped at 10. `electron/preferences.ts`
+ships the default empty list, a migration shim for older prefs files
+without the field, and an `addRecentFolder()` helper that mirrors
+`addRecentFile()` exactly (push to head, dedup, slice to 10).
+`electron/menu.ts` builds an "Open Recent Folder" submenu (en: "Open
+Recent Folder" / ko: "최근 폴더") that emits a
+`{ type: 'openRecentFolder', path }` menu command.
+
+Renderer side, `useWorkspaceMenu.ts` exposes a new
+`openRecentFolder(path)` callback that opens the workspace without the
+OS dialog (the path was vetted on a prior session), and a
+`pushRecentFolder(path)` helper that the existing `openWorkspaceFolder`
+flow now also calls so a fresh dialog pick lands in the MRU. The
+sidebar's "Add folder" button (`FileTree.tsx`) mirrors the same push.
+`useMenuCommandRouter.ts` routes the new command type.
+
+**pathGuard change (invariant #9, security-relevant).** The path-scoped
+IPC guard added in v0.2.1 has always rejected renderer-supplied
+`workspaceFolders` / `recentFiles` entries that didn't come through a
+dialog session. v0.2.10 extends the same rule to `recentFolders`:
+`assertPrefsPatchAllowed` now validates each new entry against the
+session-trusted set (paths the main process actually handed out via
+dialogs) plus the existing prefs (round-trip safe) and the
+`E2E_TMPDIR` test bypass. A renderer that tries `prefsSet({
+recentFolders: ['/etc'] })` is rejected with `PathNotAllowedError` —
+mirroring the v0.2.1 baseline so the new field doesn't widen the
+attack surface. Symmetrically, `isAllowedPath` now treats a recent
+folder as a trusted tree root (files inside the folder are allowed,
+sibling paths are not), matching how `workspaceFolders` already
+worked.
+
+### Files
+
+- Add `e2e/round-trip.spec.ts` — kitchen-sink Pandoc DOCX round-trip
+  + the HTML inline-images end-to-end spec; both gated on the binary
+  / preference at test-time so the suite runs unattended.
+- Add `e2e/recent-folders.spec.ts` — renderer-side persistence test
+  for `recentFolders` (MRU order, dedup-to-head, cap at 10) via real
+  `prefsSet`/`prefsGet` round-trip in a launched Electron app.
+- Add `e2e/fixtures/tiny.png` — 69-byte PNG used by both the round-
+  trip and inline-images specs.
+- Add `src/export/inlineImages.ts` — `inlineImagesInHtml(html, opts)`
+  with injectable `ImageFetcher` test seam, MIME inference by URL
+  extension, chunked base64 encoding (multi-MB image safe), and
+  reverse-order splice rewrite.
+- Add `tests/export/inlineImages.test.ts` — 11 vitest cases covering
+  no-op (no images), relative-path rewrite, `durumi-asset://` rewrite,
+  remote/data passthrough (idempotent), fetch-failure warn-and-skip,
+  null-docPath warn, multi-image one-pass rewrite, fetcher-mime
+  precedence over extension fallback, attribute-order preservation,
+  and SVG handling.
+- Update `electron/preferences.ts` — add `recentFolders` (default
+  `[]`), migration shim, `addRecentFolder()` helper; add
+  `exportInlineImages` (default `false`).
+- Update `electron/menu.ts` — build "Open Recent Folder" submenu
+  with up to 10 entries, falls back to a disabled "No recent folders"
+  placeholder.
+- Update `electron/pathGuard.ts` — extend `isAllowedPath` and
+  `assertPrefsPatchAllowed` to cover `recentFolders` with the same
+  session-trust + existing-entry round-trip rules used for
+  `workspaceFolders` / `recentFiles`.
+- Update `electron/ipc/preferences.ts` — pass `recentFolders` through
+  the prefs-patch path-guard validator.
+- Update `index.html` — add `connect-src 'self' durumi-asset:` to the
+  CSP so the renderer-side fetch in the image inliner can reach the
+  custom asset protocol.
+- Update `shared/ipc-contract.ts` — `Preferences.recentFolders`,
+  `Preferences.exportInlineImages`, and `MenuCommand` union now
+  includes `{ type: 'openRecentFolder'; path: string }`.
+- Update `shared/menuLabels.ts` — en + ko strings for the new
+  submenu (`menu.file.openRecentFolder` / `menu.file.noRecentFolders`).
+- Update `src/components/SettingsDialog.tsx` — add the "Inline images
+  in HTML export" toggle in the Export section.
+- Update `src/components/sidebar/FileTree.tsx` — push to
+  `recentFolders` when the "Add folder" button picks a new folder.
+- Update `src/hooks/useExportFlow.ts` — read `exportInlineImages`,
+  lazy-import the inliner, pipe HTML through it for HTML-format
+  exports.
+- Update `src/hooks/useMenuCommandRouter.ts` — route
+  `{ type: 'openRecentFolder' }` to `workspace.openRecentFolder`.
+- Update `src/hooks/useWorkspaceMenu.ts` — new `openRecentFolder`
+  callback + shared `pushRecentFolder` helper; existing
+  `openWorkspaceFolder` now also pushes.
+- Update `src/i18n/dict.ts` — en + ko strings for the new
+  Settings field (`settings.export.inlineImages` /
+  `.help`).
+- Update `tests/electron/pathGuard.test.ts` — 5 new cases covering
+  `recentFolders` rejection, session-trusted acceptance, existing-
+  entry round-trip, and the `isAllowedPath` recent-folders tree
+  semantics.
+- Update `tests/electron/preferences.test.ts` — 5 new cases covering
+  default empty, push-to-head, dedup, cap-at-10, and the migration
+  shim for prefs files without the field.
+- Update `package.json` — version bump `0.2.9` → `0.2.10`.
+
+### Test count
+
+- vitest: 1508 → 1529 (+21 — 11 inline-images, 5 path-guard
+  recentFolders, 5 preferences recentFolders)
+- Playwright e2e: 98 → 101 specs total (+3 — round-trip, inline-images
+  end-to-end, recent-folders persistence). On a host without Pandoc
+  the round-trip spec self-skips; the suite reports 100 passed / 1
+  skipped. On a host with Pandoc installed all 101 should pass.
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1529 / 1529** vitest across 159 files
+- `pnpm test:e2e`: **100 passed / 1 skipped** Playwright Electron
+  tests on this host (no Pandoc); the skipped spec is the golden
+  DOCX round-trip and runs to completion when `pandoc` is on PATH.
+
+### Round-trip findings
+
+The kitchen-sink fixture pins which features survive the Pandoc DOCX
+round-trip cleanly versus which are documented-lossy. Recorded here so
+future regressions are easy to spot:
+
+**Cleanly round-tripping (assertion-pinned in the spec):**
+
+- ATX headings H1 / H2 / H3 (text content + level)
+- Bold, italic, strikethrough text content (formatting may be re-
+  expressed as `**` / `*` / `~~` or as semantic Word styling, but the
+  text survives)
+- Inline `code`
+- Bullet, numbered, and task lists (item text survives; task-list
+  checkbox state on `[x]` is preserved as text — `done task` is the
+  pinned token)
+- Fenced code blocks (the `const x` token from a typescript fence
+  survives)
+- Inline links — the `https://example.com` target survives somewhere
+  in the body even if the wrapping `[text](url)` shape is rewritten
+- Footnotes — Pandoc round-trips them as `[^N]` references with the
+  body text preserved
+- Tables — cell text survives; header alignment may be normalised
+- Block math — the integral payload (`\int`, `e^{-x}`, `\infty`)
+  survives in some Pandoc-recognised form
+- YAML front matter `title:` and `author:` (round-trip into a YAML
+  block or into Word document properties, depending on Pandoc version)
+
+**Documented-lossy (intentional, asserted by NEGATIVE assertions):**
+
+- CriticMarkup is ACCEPTED on export by default (the safe medical-
+  manuscript default, controlled by `exportPreserveAnnotations`):
+  `{++inserted++}` survives as plain text, `{--deleted--}` is
+  removed, `{~~old~>new~~}` resolves to `new`, `{==marked==}`
+  survives, and `{>>comment<<}` is gated on `exportIncludeComments`
+  (default off → stripped).
+- Memos `%% reviewer note %%` are stripped by default (also
+  `exportIncludeComments`-gated).
+- Mermaid blocks: Pandoc doesn't know the dialect, so it round-trips
+  them as a generic fenced block with the source `graph TD; A-->B;`
+  preserved verbatim — the user gets the source back, not a rendered
+  diagram. (Acceptable: an export → re-import flow shouldn't silently
+  lose authoring intent.)
+- GitHub alert callouts (`> [!NOTE]`) round-trip as plain blockquotes
+  (Pandoc doesn't have a native callout type); the body text
+  survives, the `[!NOTE]` header degrades to a bare line.
+
+### Source-of-truth invariants
+
+1. **Path-scoped IPC guard (#9, v0.2.1).** The new `recentFolders`
+   field follows the v0.2.1 path-scoped IPC guard pattern verbatim:
+   `assertPrefsPatchAllowed` rejects renderer-supplied entries that
+   weren't sourced from a main-process dialog (the canonical trust
+   anchor) and aren't already in the existing prefs (round-trip
+   safe). The same three-line check (`existingRecentFolders`,
+   `sessionAllowed`, `E2E_TMPDIR` bypass) extends to the new list
+   without widening the attack surface — a malicious renderer can't
+   write `/etc` into the menu and trick a future session into
+   trusting it. Symmetrically, `isAllowedPath` now treats a recent
+   folder as a trusted tree root, matching how `workspaceFolders`
+   already worked since v0.2.1.
+
+2. **CSP boundary (extension of v0.2.2 Electron-sandbox baseline).**
+   The new `connect-src 'self' durumi-asset:` directive narrowly
+   opens the renderer's `fetch` to the custom asset protocol so the
+   image inliner can read local files. The asset protocol itself
+   enforces the path-guard tree (every URL is `?p=<abs>` and the
+   main-process handler rejects paths outside the trusted set), so
+   `connect-src durumi-asset:` is bounded by the same trusted-path
+   check that `<img src>` (`img-src durumi-asset:`) has had since
+   v0.2.2 — no new attack surface, just a narrowly-scoped extension
+   of the same boundary.
+
+## v0.2.9 — Live preview parity for advertised marks
 
 `docs/editor-modes.md` and the v0.2 feature matrix promised that
 `==highlight==`, `~subscript~`, `^superscript^`, and GitHub-style alert

@@ -321,6 +321,20 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 </span>
               </label>
             </Field>
+
+            <Field label={t('settings.export.inlineImages')}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  data-testid="settings-inline-images"
+                  checked={prefs.exportInlineImages ?? false}
+                  onChange={(e) => { void update({ exportInlineImages: e.target.checked }); }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--muted-fg, var(--fg))' }}>
+                  {t('settings.export.inlineImages.help')}
+                </span>
+              </label>
+            </Field>
           </Section>
 
           <Section heading={t('settings.author')}>

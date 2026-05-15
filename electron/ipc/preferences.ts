@@ -16,6 +16,7 @@ export function registerPreferencesHandlers(): void {
     await assertPrefsPatchAllowed({
       workspaceFolders: patch.workspaceFolders,
       recentFiles: patch.recentFiles,
+      recentFolders: patch.recentFolders,
     });
     return setPreferences(patch);
   });

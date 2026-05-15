@@ -107,6 +107,7 @@ export function _resetSessionForTests(): void {
 export interface PrefsLike {
   workspaceFolders?: string[];
   recentFiles?: string[];
+  recentFolders?: string[];
 }
 let prefsReader: () => Promise<PrefsLike> =
   getPreferences as unknown as () => Promise<PrefsLike>;
@@ -144,6 +145,9 @@ export async function isAllowedPath(targetPath: string): Promise<boolean> {
   for (const recent of prefs.recentFiles ?? []) {
     if (resolve(recent) === target) return true;
   }
+  for (const folder of prefs.recentFolders ?? []) {
+    if (isInside(target, folder)) return true;
+  }
   return false;
 }
 
@@ -179,11 +183,13 @@ export async function assertAllowedPath(targetPath: string): Promise<void> {
 export async function assertPrefsPatchAllowed(patch: {
   workspaceFolders?: string[];
   recentFiles?: string[];
+  recentFolders?: string[];
 }): Promise<void> {
-  if (!patch.workspaceFolders && !patch.recentFiles) return;
+  if (!patch.workspaceFolders && !patch.recentFiles && !patch.recentFolders) return;
   const current = await prefsReader();
   const existingFolders = new Set((current.workspaceFolders ?? []).map((p) => resolve(p)));
   const existingRecents = new Set((current.recentFiles ?? []).map((p) => resolve(p)));
+  const existingRecentFolders = new Set((current.recentFolders ?? []).map((p) => resolve(p)));
   for (const wf of patch.workspaceFolders ?? []) {
     const r = resolve(wf);
     if (existingFolders.has(r)) continue;
@@ -195,6 +201,13 @@ export async function assertPrefsPatchAllowed(patch: {
   for (const rf of patch.recentFiles ?? []) {
     const r = resolve(rf);
     if (existingRecents.has(r)) continue;
+    if (sessionAllowed.has(r)) continue;
+    if (E2E_TMPDIR && isInside(r, E2E_TMPDIR)) continue;
+    throw new PathNotAllowedError(rf);
+  }
+  for (const rf of patch.recentFolders ?? []) {
+    const r = resolve(rf);
+    if (existingRecentFolders.has(r)) continue;
     if (sessionAllowed.has(r)) continue;
     if (E2E_TMPDIR && isInside(r, E2E_TMPDIR)) continue;
     throw new PathNotAllowedError(rf);

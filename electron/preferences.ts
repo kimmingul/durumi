@@ -47,6 +47,7 @@ const DEFAULTS: Preferences = {
   language: 'system',
   lastWindow: { width: 980, height: 720 },
   recentFiles: [],
+  recentFolders: [],
   sidebar: {
     visible: true,
     activeTab: 'files',
@@ -71,6 +72,7 @@ const DEFAULTS: Preferences = {
   spellCheckCustomWords: [],
   exportIncludeComments: false,
   exportPreserveAnnotations: false,
+  exportInlineImages: false,
   bibliography: {
     email: null,
     ncbiApiKey: null,
@@ -215,6 +217,7 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
       ...(migrated.lastWindow ?? {}),
     },
     workspaceFolders: migrated.workspaceFolders ?? DEFAULTS.workspaceFolders,
+    recentFolders: migrated.recentFolders ?? DEFAULTS.recentFolders,
   };
 }
 
@@ -243,4 +246,16 @@ export async function addRecentFile(path: string): Promise<void> {
   const prefs = await getPreferences();
   const next = [path, ...prefs.recentFiles.filter((p) => p !== path)].slice(0, 10);
   await setPreferences({ recentFiles: next });
+}
+
+/**
+ * v0.2.10 — push a workspace-folder path onto `recentFolders` (MRU,
+ * deduplicated, capped at 10 to mirror `addRecentFile`). Called by the
+ * workspace open flow so the "Open Recent Folder" menu reflects the user's
+ * actual usage.
+ */
+export async function addRecentFolder(path: string): Promise<void> {
+  const prefs = await getPreferences();
+  const next = [path, ...prefs.recentFolders.filter((p) => p !== path)].slice(0, 10);
+  await setPreferences({ recentFolders: next });
 }

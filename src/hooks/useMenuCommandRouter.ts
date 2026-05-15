@@ -214,6 +214,7 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
       if (typeof cmd === 'object' && cmd !== null && 'type' in cmd) {
         if (cmd.type === 'heading' && view) { setHeading(view, cmd.level); view.focus(); return; }
         if (cmd.type === 'openRecent') { await fileCommands.doOpenPath(cmd.path); return; }
+        if (cmd.type === 'openRecentFolder') { await workspace.openRecentFolder(cmd.path); return; }
         if (cmd.type === 'closeFolder') { workspace.closeWorkspaceFolder(cmd.path); return; }
         if (cmd.type === 'newFromTemplate') {
           const tpl = findTemplate(cmd.templateId);

@@ -27,6 +27,11 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
     click: () => send({ type: 'openRecent', path: p }),
   }));
 
+  const recentFoldersItems = prefs.recentFolders.slice(0, 10).map<MenuItemConstructorOptions>((p) => ({
+    label: p,
+    click: () => send({ type: 'openRecentFolder', path: p }),
+  }));
+
   const closeFolderItems: MenuItemConstructorOptions[] = prefs.workspaceFolders.map((p) => ({
     label: `${basename(p) || p}  —  ${p}`,
     click: () => {
@@ -99,6 +104,12 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
           submenu: recent.length
             ? recent
             : [{ label: tr('menu.file.noRecent'), enabled: false }],
+        },
+        {
+          label: tr('menu.file.openRecentFolder'),
+          submenu: recentFoldersItems.length
+            ? recentFoldersItems
+            : [{ label: tr('menu.file.noRecentFolders'), enabled: false }],
         },
         { type: 'separator' },
         { label: tr('menu.file.save'), accelerator: 'CmdOrCtrl+S', click: () => send('save') },
