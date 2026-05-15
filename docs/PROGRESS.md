@@ -1,6 +1,160 @@
 # Durumi — Progress
 
-## v0.2.5 (current) — Phase 3.2: table row/column add/delete
+## v0.2.6 (current) — Phase 3.3: per-table line styling (dual-format)
+
+Third slice of the v0.3 table-editing roadmap. Tables now carry
+per-instance border styling — top rule, header separator, body row
+rules, vertical column rules, bottom rule, and cell padding — all
+authored through a small gear-icon popover that mounts at the top-right
+of every WYSIWYG table. Four built-in presets (None, Default, Booktabs,
+Grid) cover the common shapes; everything else is a manual width /
+style / color tweak per rule. The style metadata travels with the
+markdown source in one of two interchangeable wire formats — Pandoc
+attribute blocks (default) or an inline HTML `<div class="durumi-table">`
+wrapper (opt-in via Settings) — so documents stay portable across
+non-Durumi renderers.
+
+### What changed
+
+**Gear-icon popover.** Each rendered table now has a `⚙` button mounted
+on its first physical row (header) at the top-right. Click → a 320px
+React popover lazy-loads into a portal-style root attached to
+`document.body`. The popover exposes (i) preset buttons (None / Default
+/ Booktabs / Grid), (ii) per-line border editors (width + CSS style +
+color picker) for each of the five rule positions plus a cell-padding
+select, (iii) a Pandoc / HTML wrapper format toggle, and (iv) cancel /
+apply. Apply dispatches a single `userEvent: 'input.tableStyle'`
+transaction that splices the new wrapper into the source; cancel
+discards the picker state.
+
+**Two wire formats with preserve-on-edit semantics.** The same set of
+`data-*` attribute names is supported in two equivalent shapes:
+
+  - Pandoc attribute block (default) — `{.durumi-table data-top-rule="2px solid"}`
+    on its own line directly before the markdown table. Pandoc itself
+    promotes the class and data-attrs onto the rendered `<table>`
+    natively. Non-Pandoc viewers (vanilla GFM) show the `{...}` line
+    as a literal paragraph but the table below renders untouched.
+  - HTML wrapper — `<div class="durumi-table" data-top-rule="...">` ...
+    `</div>` around the table. Works in any renderer that enables raw
+    HTML (markdown-it `html: true`, pandoc by default, GitHub).
+
+The popover detects the existing wire format and preserves it across
+re-edits — a Pandoc-styled table re-applied stays Pandoc; an
+HTML-wrapped table stays HTML. The Settings ▸ Style ▸ Table styling
+format preference picks the default for *new* styles on tables that
+don't yet carry either format.
+
+**Default = no markdown overhead.** Resetting a table to the Default
+preset (Durumi's traditional GFM look — header separator only, no
+vertical rules) REMOVES the attrs block / wrapper entirely from the
+source. Plain markdown tables don't accumulate empty `{.durumi-table}`
+lines; the wrapper materialises only when a non-default style is
+applied.
+
+**Export rendering.** `src/export/renderHtml.ts` recognises both wire
+formats. Pandoc attr blocks are stripped from the source before
+markdown-it parses and the captured attrs queue is drained onto the
+matching `table_open` tokens in document order — this is a workaround
+for `markdown-it-attrs`' trailing-attrs semantics (which would
+mis-route a second adjacent attr block onto the previous table). HTML
+wrappers pass through to the rendered HTML directly and rely on the
+global `table.durumi-table` selectors in `exportStyles.ts`. Each
+Pandoc-styled table gets a unique `id` (`durumi-table-1`,
+`durumi-table-2`, …) plus a scoped `<style>` block injected before it
+so the per-table CSS doesn't leak.
+
+**CSS variables drive the live editor.** The WYSIWYG table row widget
+sets `--durumi-table-top-rule`, `--durumi-table-header-separator`,
+`--durumi-table-row-rules`, `--durumi-table-vert-rules`,
+`--durumi-table-bottom-rule`, and `--durumi-table-cell-pad` on the
+table-row DOM elements. `src/styles/global.css` consumes those
+variables with sensible fallbacks so unstyled tables look identical to
+v0.2.5.
+
+### Files
+
+- New `shared/tableStyle.ts` — pure module: `TableStyle` /
+  `BorderSpec` types, `presets` (none / default / booktabs / grid),
+  parsers for the Pandoc attr block + HTML wrapper, serializers for
+  both, and `styleToCssVars` for the editor's live styling.
+- New `src/components/TableStylePopover.tsx` +
+  `TableStylePopover.css` — React popover UI; lazy-loaded via
+  `src/components/tableStylePopoverHost.ts` so the picker chunk
+  doesn't bloat the main bundle.
+- New `src/components/tableStylePopoverHost.ts` — DOM-level mount
+  bridge from the CodeMirror table widget (vanilla DOM) into the
+  React popover.
+- New `src/editor/markdownExt/tableStylePlugin.ts` — `resolveTableStyle`
+  (state-aware), `resolveTableStyleFromText` (pure-string), and
+  `locateTableWrapperSpan` for the writer to compute deletion bounds.
+- Update `src/editor/decorations/table.ts` — mount the gear icon on the
+  first physical row; apply per-table CSS variables in both `toDOM` and
+  `updateDOM` paths so style changes reflect live without a widget
+  rebuild.
+- Update `src/export/renderHtml.ts` — add `markdown-it-attrs` for
+  paragraph / heading attrs use elsewhere; add a pre-md-it source pass
+  (`extractDurumiTableAttrs`) that strips leading `{.durumi-table ...}`
+  attr blocks and queues their data for a post-tokenize core ruler
+  (`durumi-table-style`) which lifts the attrs onto the right
+  `table_open` tokens, then injects a scoped `<style>` block per
+  styled table.
+- Update `src/export/exportStyles.ts` — `.durumi-table` global
+  selectors for the HTML wrapper path; CSS variable defaults for the
+  per-rule custom properties.
+- Update `src/styles/global.css` — `--durumi-table-*` CSS variable
+  defaults + `.cm-table-style-gear` styles.
+- Update `src/components/SettingsDialog.tsx` — Style ▸ Table styling
+  format preference (Pandoc / HTML wrapper) with help text.
+- Update `electron/preferences.ts`, `shared/ipc-contract.ts`,
+  `src/hooks/usePreferencesInit.ts` — persist + propagate
+  `editor.tableStyleFormat`; cache it on `window.__durumiTableStyleFormat`
+  so the lazy-loaded popover reads it synchronously.
+- Update `src/i18n/dict.ts` — 18 new keys × 2 languages
+  (`table.style.*`, `settings.styles.tableFormat*`).
+- Update `package.json` — add `markdown-it-attrs` dep.
+- New `tests/shared/tableStyle.test.ts` — **43** vitest cases covering
+  parser / serializer round-trips for both formats, preset shapes,
+  border-shorthand parsing, default-style detection, CSS-var output.
+- New `tests/export/tableStyle.test.ts` — **5** vitest cases covering
+  the export pipeline: Pandoc-styled `<table class="durumi-table" ...>`
+  output with inline style + scoped CSS block, HTML wrapper
+  pass-through, booktabs / grid preset shapes, unique `id`s for
+  multiple styled tables, plain tables unaffected.
+- New `e2e/table-style.spec.ts` — **11** Playwright Electron cases
+  covering gear visibility on the header row, popover open + UI
+  presence, cancel preserves source, Booktabs / Grid presets emit the
+  expected Pandoc attrs, format switching Pandoc → HTML rewrites the
+  source in place, Default preset removes the attr block entirely,
+  HTML format preserved across re-edit, persistence (attrs survive a
+  doc reset round-trip and are re-parsed on read), the user-pref
+  format default is honoured for unstyled tables, Escape closes
+  without mutating the source.
+
+### Test count
+
+- vitest: 1377 → 1425 (+48)
+- Playwright e2e: 72 → 83 (+11)
+
+### Quality gates
+
+- `pnpm lint`: clean
+- `pnpm typecheck`: clean
+- `pnpm test`: **1425 / 1425** vitest across 153 files
+- `pnpm test:e2e`: **83 / 83** Playwright Electron tests
+- `pnpm build`: clean (main chunk 1.85 MB; +110 KB from the popover +
+  shared module; the popover itself is in a lazy chunk)
+
+### GFM compatibility note
+
+Non-Pandoc markdown viewers see the `{.durumi-table ...}` line as a
+plain text paragraph but the table below renders normally — the
+attributes are simply ignored. Users who want first-class portability
+to GFM-only viewers (GitHub, plain markdown-it without `attrs`) can
+switch the default wire format to `html` under Settings ▸ Style: the
+wrapper div passes through any renderer that allows raw HTML.
+
+## v0.2.5 — Phase 3.2: table row/column add/delete
 
 Second slice of the v0.3 table-editing roadmap. Tables now grow and
 shrink in place from inside the WYSIWYG widget — hover any cell and a
