@@ -15,6 +15,13 @@ import {
   navigatePrevRow,
 } from '../keymap/tableNavigation';
 import { t } from '../../i18n/t';
+import { resolveTableStyle } from '../markdownExt/tableStylePlugin';
+import {
+  styleToCssVars,
+  type TableStyle,
+  type TableStyleSerialized,
+} from '../../../shared/tableStyle';
+import { openTableStylePopover } from '../../components/tableStylePopoverHost';
 
 /**
  * Phase 3.1.1 — in-place contentEditable table-cell editing (v0.2.4).
@@ -475,6 +482,8 @@ class TableRowWidget extends WidgetType {
     readonly alignment: Alignment[],
     readonly cols: string,
     readonly kind: 'header' | 'delimiter' | 'body',
+    readonly styleMeta: TableStyleSerialized,
+    readonly isFirstRow: boolean,
   ) {
     super();
   }
@@ -487,7 +496,9 @@ class TableRowWidget extends WidgetType {
       other.cols === this.cols &&
       other.cells.length === this.cells.length &&
       other.cells.every((c, i) => c === this.cells[i]) &&
-      other.alignment.every((a, i) => a === this.alignment[i])
+      other.alignment.every((a, i) => a === this.alignment[i]) &&
+      other.isFirstRow === this.isFirstRow &&
+      tableStyleMetaEquals(other.styleMeta, this.styleMeta)
     );
   }
   toDOM(view: EditorView) {
@@ -498,6 +509,10 @@ class TableRowWidget extends WidgetType {
     row.dataset.tableFrom = String(this.tableFrom);
     row.dataset.tableTo = String(this.tableTo);
     row.dataset.row = String(this.row);
+    applyStyleVars(row, this.styleMeta.style);
+    if (this.styleMeta.source !== 'none') {
+      row.dataset.tableStyleSource = this.styleMeta.source;
+    }
     if (this.kind === 'delimiter') {
       for (let i = 0; i < this.alignment.length; i++) {
         const c = document.createElement('div');
@@ -509,6 +524,9 @@ class TableRowWidget extends WidgetType {
     for (let i = 0; i < this.cells.length; i++) {
       const c = buildCellElement(this.cells[i], i, this.row, this.tableFrom, this.alignment[i], view);
       row.appendChild(c);
+    }
+    if (this.isFirstRow) {
+      row.appendChild(buildTableStyleGear(view, this.tableFrom));
     }
     tryConsumeFocus(row, this.tableFrom, this.row);
     return row;
@@ -524,6 +542,12 @@ class TableRowWidget extends WidgetType {
     dom.dataset.tableTo = String(this.tableTo);
     dom.dataset.row = String(this.row);
     dom.style.setProperty('--cm-table-cols', this.cols);
+    applyStyleVars(dom, this.styleMeta.style);
+    if (this.styleMeta.source !== 'none') {
+      dom.dataset.tableStyleSource = this.styleMeta.source;
+    } else {
+      delete dom.dataset.tableStyleSource;
+    }
     for (let i = 0; i < this.cells.length; i++) {
       const cell = existingCells[i];
       // Don't trample the cell the user is actively composing in.
@@ -537,6 +561,14 @@ class TableRowWidget extends WidgetType {
       cell.dataset.row = String(this.row);
       cell.dataset.col = String(i);
       cell.dataset.tableFrom = String(this.tableFrom);
+    }
+    // Ensure the gear stays mounted on the first row even after a rebuild.
+    if (this.isFirstRow && !dom.querySelector('.cm-table-style-gear')) {
+      dom.appendChild(buildTableStyleGear(view, this.tableFrom));
+    }
+    if (!this.isFirstRow) {
+      const oldGear = dom.querySelector('.cm-table-style-gear');
+      if (oldGear) oldGear.remove();
     }
     tryConsumeFocus(dom, this.tableFrom, this.row);
     // Suppress unused-var: view is part of the contract but unused here.
@@ -554,6 +586,69 @@ class TableRowWidget extends WidgetType {
     // would select the whole document instead of just the cell.
     return true;
   }
+}
+
+function applyStyleVars(el: HTMLElement, style: TableStyle): void {
+  const vars = styleToCssVars(style);
+  // Always clear previously-set vars so a style reset doesn't leave
+  // stale values behind on rebuilds.
+  el.style.removeProperty('--durumi-table-top-rule');
+  el.style.removeProperty('--durumi-table-header-separator');
+  el.style.removeProperty('--durumi-table-row-rules');
+  el.style.removeProperty('--durumi-table-vert-rules');
+  el.style.removeProperty('--durumi-table-bottom-rule');
+  el.style.removeProperty('--durumi-table-cell-pad');
+  for (const [k, v] of Object.entries(vars)) {
+    el.style.setProperty(k, v);
+  }
+}
+
+function tableStyleMetaEquals(a: TableStyleSerialized, b: TableStyleSerialized): boolean {
+  if (a.source !== b.source) return false;
+  return JSON.stringify(a.style) === JSON.stringify(b.style);
+}
+
+function buildTableStyleGear(view: EditorView, tableFrom: number): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cm-table-style-gear';
+  btn.setAttribute('data-testid', 'table-style-gear');
+  const label = t('table.style.gear');
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  btn.dataset.tableFrom = String(tableFrom);
+  // Gear SVG (six-cog).
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', '12');
+  c.setAttribute('cy', '12');
+  c.setAttribute('r', '3');
+  svg.appendChild(c);
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute(
+    'd',
+    'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.16.66.42.88.74.22.32.34.7.34 1.09V12c0 .39-.12.77-.34 1.09-.22.32-.52.58-.88.74Z',
+  );
+  svg.appendChild(p);
+  btn.appendChild(svg);
+  btn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+  });
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openTableStylePopover(view, tableFrom, btn.getBoundingClientRect());
+  });
+  return btn;
 }
 
 /**
@@ -853,12 +948,18 @@ function build(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const tables = collectTables(state);
   for (const t of tables) {
+    const styleMeta = resolveTableStyle(state, t.from);
+    // The "first row" is the first physical row (header). The gear icon
+    // mounts there so it sits at the visual top-right of the table.
+    let firstRowFlagSet = false;
     for (const r of t.rowLines) {
       // INVARIANT-DEVIATION (table-only): unlike every other block widget
       // we deliberately render even when the caret line intersects the
       // row. The widget is the editing surface; collapsing back to source
       // would break the contenteditable cell. See top-of-file doc and
       // CONTRIBUTING.md #11.
+      const isFirstRow = !firstRowFlagSet && r.kind === 'header';
+      if (isFirstRow) firstRowFlagSet = true;
       const widget = new TableRowWidget(
         t.from,
         t.to,
@@ -867,6 +968,8 @@ function build(state: EditorState): DecorationSet {
         t.alignment,
         t.cols,
         r.kind,
+        styleMeta,
+        isFirstRow,
       );
       builder.add(r.from, r.to, Decoration.replace({ widget, block: true }));
     }

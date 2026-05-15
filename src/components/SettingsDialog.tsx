@@ -686,6 +686,39 @@ function StylesSection({ prefs, update }: StylesSectionProps) {
           onChange={(patch) => { void onSpecChange(entry, patch); }}
         />
       ))}
+
+      <Field label={t('settings.styles.tableFormat')}>
+        <select
+          data-testid="settings-table-style-format"
+          value={editor?.tableStyleFormat ?? 'pandoc'}
+          onChange={(e) => {
+            const next = e.target.value === 'html' ? 'html' : 'pandoc';
+            // Cache for the popover default + persist.
+            try {
+              (window as { __durumiTableStyleFormat?: 'pandoc' | 'html' }).__durumiTableStyleFormat =
+                next;
+            } catch {
+              // ignore
+            }
+            void update({
+              editor: {
+                ...editor,
+                defaultMode: editor?.defaultMode ?? 'wysiwyg',
+                activePreset: editor?.activePreset ?? DEFAULT_PRESET_ID,
+                styles: editor?.styles ?? cloneStyleSet(JOURNAL_PRESETS[DEFAULT_PRESET_ID].styles),
+                tableStyleFormat: next,
+              },
+            });
+          }}
+          style={inputStyle}
+        >
+          <option value="pandoc">{t('table.style.format.pandoc')}</option>
+          <option value="html">{t('table.style.format.html')}</option>
+        </select>
+        <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted-fg, #6a6a6a)' }}>
+          {t('settings.styles.tableFormat.help')}
+        </p>
+      </Field>
     </>
   );
 }

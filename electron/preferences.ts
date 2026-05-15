@@ -94,6 +94,7 @@ const DEFAULTS: Preferences = {
     defaultMode: 'wysiwyg',
     activePreset: 'durumi-default',
     styles: DURUMI_DEFAULT_STYLES,
+    tableStyleFormat: 'pandoc',
   },
 };
 
@@ -205,6 +206,9 @@ function mergeDefaults(loaded: Partial<Preferences>): Preferences {
       styles: isValidStyleSet(migrated.editor?.styles)
         ? migrated.editor!.styles
         : DEFAULTS.editor.styles,
+      // v0.2.6 — clamp table style format to known values; default `pandoc`.
+      tableStyleFormat:
+        migrated.editor?.tableStyleFormat === 'html' ? 'html' : 'pandoc',
     },
     lastWindow: {
       ...DEFAULTS.lastWindow,

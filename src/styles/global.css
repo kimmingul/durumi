@@ -160,6 +160,28 @@ body {
   grid-template-columns: var(--cm-table-cols);
   gap: 0;
   border-collapse: collapse;
+  position: relative;
+}
+/* Phase 3.3 — per-table CSS variables consumed by row/cell rules. The
+ * `unset` fallback lets unstyled tables inherit the editor defaults, while
+ * tables with a Pandoc attr block / HTML wrapper get their inline-set
+ * `--durumi-table-*` values applied row-wide. */
+.cm-table-row[data-table-style-source] .cm-table-cell {
+  padding: var(--durumi-table-cell-pad, 4px 8px);
+  border-top: var(--durumi-table-row-rules, 0) !important;
+  border-bottom: var(--durumi-table-row-rules, 0) !important;
+  border-left: var(--durumi-table-vert-rules, 0) !important;
+  border-right: var(--durumi-table-vert-rules, 0) !important;
+}
+.cm-table-row[data-table-style-source].cm-table-row-header .cm-table-cell {
+  border-top: var(--durumi-table-top-rule, 0) !important;
+  border-bottom: var(--durumi-table-header-separator, 1px solid var(--border)) !important;
+}
+.cm-table-row[data-table-style-source].cm-table-row-delimiter {
+  display: none;
+}
+.cm-table-row[data-table-style-source].cm-table-row-body:last-of-type .cm-table-cell {
+  border-bottom: var(--durumi-table-bottom-rule, 0) !important;
 }
 .cm-table-cell {
   padding: 4px 8px;
@@ -168,6 +190,36 @@ body {
   overflow-x: auto;
   white-space: nowrap;
   position: relative;
+}
+/* Phase 3.3 — gear icon anchored at the top-right of the table (first
+ * row). Hidden by default; revealed on hover anywhere on the table. */
+.cm-table-style-gear {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--bg, #ffffff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.18));
+  border-radius: 50%;
+  color: var(--fg, #2a2a2a);
+  cursor: pointer;
+  opacity: 0;
+  z-index: 60;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: opacity 90ms ease, background 90ms ease;
+}
+.cm-table-row:hover .cm-table-style-gear,
+.cm-table-style-gear:hover,
+.cm-table-style-gear:focus-visible {
+  opacity: 1;
+}
+.cm-table-style-gear:hover {
+  background: var(--code-bg, rgba(0, 0, 0, 0.06));
 }
 /* When hovered (i.e. the Phase 3.2 action overlay is mounted) bump the
  * cell into its own stacking context above the editor content so the

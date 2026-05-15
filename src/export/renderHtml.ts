@@ -15,6 +15,10 @@ import subPlugin from 'markdown-it-sub';
 // @ts-expect-error - markdown-it-sup ships no type declarations
 import supPlugin from 'markdown-it-sup';
 import githubAlertsPlugin from 'markdown-it-github-alerts';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error - markdown-it-attrs ships its own d.ts but plugin export
+//   types are too loose for `MarkdownIt.PluginSimple` without a cast.
+import attrsPlugin from 'markdown-it-attrs';
 import { prefetchLang, highlightCodeSync } from './highlightCode';
 import { getExportStyles } from './exportStyles';
 import { injectMath } from './renderMath';
@@ -56,7 +60,152 @@ const md = new MarkdownIt({
   .use(markPlugin as MarkdownIt.PluginSimple)
   .use(subPlugin as MarkdownIt.PluginSimple)
   .use(supPlugin as MarkdownIt.PluginSimple)
-  .use(githubAlertsPlugin as unknown as MarkdownIt.PluginSimple);
+  .use(githubAlertsPlugin as unknown as MarkdownIt.PluginSimple)
+  // v0.2.6 — Pandoc-style `{.class data-foo="bar"}` attributes on block
+  // elements. Used by the per-table line-styling feature so a
+  // `{.durumi-table data-top-rule="2px solid"}` line above a markdown
+  // table promotes the rendered `<table>` to carry those attributes.
+  .use(attrsPlugin as MarkdownIt.PluginWithOptions, {
+    leftDelimiter: '{',
+    rightDelimiter: '}',
+    allowedAttributes: [], // empty = allow all
+  });
+
+// v0.2.6 — translate `data-*` table attributes into per-table inline
+// styles + an injected `<style>` block. Each styled table gets a unique
+// `id` (`durumi-table-<n>`) so the scoped CSS targets exactly that
+// table's rows / cells without leaking onto other tables.
+md.core.ruler.push('durumi-table-style', (state) => {
+  const tokens = state.tokens;
+  // Pass 1 — drain the pre-tokenize `pendingDurumiAttrs` queue onto each
+  // matching table_open token, in document order. The queue is populated
+  // by `extractDurumiTableAttrs` in `renderHtml` (one entry per leading
+  // `{.durumi-table ...}` line that was stripped from the source).
+  if (pendingDurumiAttrs.length > 0) {
+    const queue = pendingDurumiAttrs;
+    let qi = 0;
+    for (let i = 0; i < tokens.length && qi < queue.length; i++) {
+      const tok = tokens[i];
+      if (tok?.type !== 'table_open') continue;
+      const pairs = queue[qi++];
+      tok.attrJoin('class', 'durumi-table');
+      for (const [k, v] of pairs) tok.attrSet(k, v);
+    }
+    // Reset for the next call (renderHtml is one-shot but the `md` instance
+    // is module-singleton, so we must clear).
+    pendingDurumiAttrs = [];
+  }
+  // Pass 2 — render styles for every table_open with the durumi-table class.
+  let serial = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok?.type !== 'table_open') continue;
+    const cls = tok.attrGet('class') ?? '';
+    if (!/\bdurumi-table\b/.test(cls)) continue;
+    const id = `durumi-table-${++serial}`;
+    tok.attrSet('id', id);
+    const inserted = rewriteTableStyleAttrs(tokens, i, id);
+    // `rewriteTableStyleAttrs` may splice a `<style>` html_block before the
+    // current table_open. Advance `i` past the inserted token so the next
+    // iteration doesn't re-process the same table_open and produce an
+    // infinite chain of style blocks.
+    if (inserted) i += 1;
+  }
+});
+
+function rewriteTableStyleAttrs(
+  tokens: import('markdown-it/lib/token').default[],
+  tableOpenIdx: number,
+  id: string,
+): boolean {
+  const tok = tokens[tableOpenIdx];
+  const attrs = tok.attrs ?? [];
+  const get = (name: string): string | null => {
+    for (const [k, v] of attrs) {
+      if (k === name) return v;
+    }
+    return null;
+  };
+  const top = get('data-top-rule');
+  const header = get('data-header-separator') ?? get('data-header-rule');
+  const row = get('data-row-rules');
+  const vert = get('data-vert-rules') ?? get('data-vertical-rules');
+  const bottom = get('data-bottom-rule');
+  const pad = get('data-cell-pad') ?? get('data-cell-padding');
+  // Inline-style the table itself for top / bottom rule + cell-pad.
+  const tableStyles: string[] = [];
+  if (top) tableStyles.push(`border-top: ${cssBorder(top)}`);
+  if (bottom) tableStyles.push(`border-bottom: ${cssBorder(bottom)}`);
+  if (top || bottom) tableStyles.push('border-collapse: collapse');
+  if (tableStyles.length > 0) {
+    const existing = tok.attrGet('style') ?? '';
+    tok.attrSet('style', [existing, tableStyles.join('; ')].filter(Boolean).join('; '));
+  }
+  // Inject a scoped <style> block right before the table.
+  const css: string[] = [];
+  css.push(`#${id} th, #${id} td { border: 0; }`);
+  if (pad) css.push(`#${id} th, #${id} td { padding: ${pad}; }`);
+  if (header) css.push(`#${id} thead th { border-bottom: ${cssBorder(header)}; }`);
+  if (row) css.push(`#${id} tbody tr:not(:last-child) td { border-bottom: ${cssBorder(row)}; }`);
+  if (vert) {
+    css.push(`#${id} th + th, #${id} td + td { border-left: ${cssBorder(vert)}; }`);
+  }
+  if (bottom) css.push(`#${id} tbody tr:last-child td { border-bottom: ${cssBorder(bottom)}; }`);
+  if (css.length > 0) {
+    const styleTok = new (tokens[0]!.constructor as new (
+      type: string,
+      tag: string,
+      nesting: number,
+    ) => import('markdown-it/lib/token').default)('html_block', '', 0);
+    styleTok.content = `<style>${css.join(' ')}</style>\n`;
+    tokens.splice(tableOpenIdx, 0, styleTok);
+    return true;
+  }
+  return false;
+}
+
+function cssBorder(shorthand: string): string {
+  const trimmed = shorthand.trim().toLowerCase();
+  if (trimmed === 'none' || trimmed.startsWith('0 ') || trimmed === '0') return '0';
+  return shorthand;
+}
+
+/**
+ * v0.2.6 — `{.durumi-table data-*}` attr blocks immediately above a
+ * markdown table. Used as a side-channel between the pre-md-it source
+ * pass and the post-tokenize core ruler so we don't depend on
+ * markdown-it-attrs' trailing-attrs semantics (which mis-routes a second
+ * attrs block onto the previous table).
+ */
+type DurumiAttrPairs = Array<[string, string]>;
+let pendingDurumiAttrs: DurumiAttrPairs[] = [];
+
+const PANDOC_TABLE_ATTRS_RE =
+  /^\{[^{}\n]*\.durumi-table[^{}\n]*\}[ \t]*\n(?:[ \t]*\n)+(?=\|)/gm;
+
+function extractDurumiTableAttrs(source: string): {
+  source: string;
+  attrs: DurumiAttrPairs[];
+} {
+  const attrs: DurumiAttrPairs[] = [];
+  const stripped = source.replace(PANDOC_TABLE_ATTRS_RE, (match) => {
+    const firstNl = match.indexOf('\n');
+    const attrLine = match.slice(0, firstNl).trim();
+    const inner = attrLine.slice(1, -1).trim();
+    const pairs: DurumiAttrPairs = [];
+    const re = /data-([a-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(inner)) !== null) {
+      pairs.push([`data-${m[1]}`, m[2] ?? m[3] ?? '']);
+    }
+    attrs.push(pairs);
+    // Replace the attr line + blank-line gap with a single blank line so the
+    // table position in the doc shifts minimally and remaining offsets stay
+    // sensible for downstream passes (mermaid, TOC, citations).
+    return '';
+  });
+  return { source: stripped, attrs };
+}
 
 // Add slugified id attributes to ATX headings so the TOC's `#anchor` links
 // resolve. Mutates the heading_open token in place inside markdown-it's
@@ -174,6 +323,16 @@ export async function renderHtml(
       bibliographyHtml = renderBibliography(formatted);
     }
   }
+
+  // v0.2.6 — strip leading `{.durumi-table ...}` attribute blocks from
+  // the source and capture them as a side-channel queue. The core ruler
+  // reads them back and applies the attrs to the matching table_open
+  // tokens. We bypass `markdown-it-attrs` for these blocks because the
+  // plugin has trailing-attrs semantics (attrs attach to the *previous*
+  // block), so two adjacent `{.durumi-table}` blocks would mis-route.
+  const pandocTableAttrs = extractDurumiTableAttrs(source);
+  source = pandocTableAttrs.source;
+  pendingDurumiAttrs = pandocTableAttrs.attrs;
 
   const headings = buildOutlineTree(parseHeadings(source));
   const tocHtml = renderTocHtml(headings);

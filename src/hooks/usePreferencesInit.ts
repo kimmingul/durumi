@@ -63,6 +63,15 @@ export function usePreferencesInit(): void {
       if (prefs.editor?.styles) {
         applyStyleSet(prefs.editor.styles);
       }
+      // v0.2.6 — cache the table-style wire-format preference on `window`
+      // so the popover (mounted lazily) doesn't need its own IPC roundtrip
+      // for the default-format read.
+      try {
+        (window as { __durumiTableStyleFormat?: 'pandoc' | 'html' }).__durumiTableStyleFormat =
+          prefs.editor?.tableStyleFormat === 'html' ? 'html' : 'pandoc';
+      } catch {
+        // ignore — non-renderer contexts.
+      }
     });
   }, [setThemePreference, setWorkspaceFolders, updateGitStatus, setLang, setMemoPanelWidth]);
 }

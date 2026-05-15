@@ -194,6 +194,16 @@ export interface Preferences {
      * the renderer.
      */
     styles: StyleSet;
+    /**
+     * v0.2.6 Phase 3.3 — preferred wire format for per-table line
+     * styling metadata. `pandoc` writes a `{.durumi-table ...}` block
+     * above the table; `html` wraps the table in a
+     * `<div class="durumi-table">`. The parser accepts either format on
+     * read; this preference only controls what the writer emits when a
+     * table has NO existing format yet. Tables that already have one
+     * format keep it on edit (preserve-format invariant).
+     */
+    tableStyleFormat?: 'pandoc' | 'html';
   };
 }
 

@@ -84,6 +84,17 @@ th, td {
 tr:nth-child(2n) { background: #f6f8fa; }
 th { font-weight: 600; background: #f0f3f6; }
 
+/* Phase 3.3 (v0.2.6) — per-table line styling overrides. Tables with the
+ * durumi-table class (via Pandoc attrs OR an HTML wrapper) opt out of the
+ * default zebra stripe + 1px grid. Per-table style is injected as a
+ * scoped style block ahead of each table by the renderer. */
+table.durumi-table,
+.durumi-table > table {
+  border-collapse: collapse;
+}
+table.durumi-table tr:nth-child(2n),
+.durumi-table > table tr:nth-child(2n) { background: transparent; }
+
 img { max-width: 100%; height: auto; }
 
 hr {
