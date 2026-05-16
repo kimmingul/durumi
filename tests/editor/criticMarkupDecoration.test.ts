@@ -182,6 +182,71 @@ describe('criticMarkupDecoration', () => {
     v.destroy();
   });
 
+  // ── Empty-body CriticMarkup handling — v0.2.14 ──
+  // Zero-length CM spans (`{++++}`, `{----}`, `{== ==}`, `{>><<}`,
+  // `{~~~>~~}`) used to fall through the parser and render as raw braces.
+  // v0.2.14 accepts empty bodies at the parser level and the decoration
+  // layer hides the delimiters + renders a tiny styled placeholder (insert/
+  // delete/highlight/sub) or the pill widget (comment).
+
+  it('Document mode: empty `{++++}` hides delimiters and renders a styled placeholder', () => {
+    const doc = 'a {++++} b\nnext';
+    const v = setup(doc, doc.length, 'wysiwyg');
+    expect(v.dom.textContent ?? '').not.toContain('{++');
+    expect(v.dom.textContent ?? '').not.toContain('++}');
+    const ph = v.dom.querySelector('.cm-cm-empty.cm-cm-insert');
+    expect(ph).toBeTruthy();
+    v.destroy();
+  });
+
+  it('Document mode: empty `{----}` hides delimiters and renders a styled placeholder', () => {
+    const doc = 'a {----} b\nnext';
+    const v = setup(doc, doc.length, 'wysiwyg');
+    expect(v.dom.textContent ?? '').not.toContain('{--');
+    expect(v.dom.textContent ?? '').not.toContain('--}');
+    const ph = v.dom.querySelector('.cm-cm-empty.cm-cm-delete');
+    expect(ph).toBeTruthy();
+    v.destroy();
+  });
+
+  it('Document mode: empty `{== ==}` hides delimiters and renders the highlight mark', () => {
+    const doc = 'a {== ==} b\nnext';
+    const v = setup(doc, doc.length, 'wysiwyg');
+    expect(v.dom.textContent ?? '').not.toContain('{==');
+    expect(v.dom.textContent ?? '').not.toContain('==}');
+    // The single-space body renders as a `Decoration.mark` (visible
+    // highlight). Either an empty-placeholder OR the styled mark span
+    // satisfies the invariant; assert at least one of them is present.
+    const hasMark = v.dom.querySelector('.cm-cm-highlight');
+    const hasEmpty = v.dom.querySelector('.cm-cm-empty.cm-cm-highlight');
+    expect(hasMark || hasEmpty).toBeTruthy();
+    v.destroy();
+  });
+
+  it('Document mode: empty `{>><<}` hides delimiters and renders the comment pill', () => {
+    const doc = 'a {>><<} b\nnext';
+    const v = setup(doc, doc.length, 'wysiwyg');
+    expect(v.dom.textContent ?? '').not.toContain('{>>');
+    expect(v.dom.textContent ?? '').not.toContain('<<}');
+    const pill = v.dom.querySelector('.cm-cm-comment-pill');
+    expect(pill).toBeTruthy();
+    v.destroy();
+  });
+
+  it('Document mode: empty substitution `{~~~>~~}` keeps the arrow widget', () => {
+    const doc = 'a {~~~>~~} b\nnext';
+    const v = setup(doc, doc.length, 'wysiwyg');
+    expect(v.dom.textContent ?? '').not.toContain('{~~');
+    expect(v.dom.textContent ?? '').not.toContain('~~}');
+    expect(v.dom.textContent ?? '').not.toContain('~>');
+    const arrow = v.dom.querySelector('.cm-cm-sub-arrow');
+    expect(arrow).toBeTruthy();
+    // Both old and new sides are empty — placeholders should appear.
+    expect(v.dom.querySelector('.cm-cm-empty.cm-cm-sub-old')).toBeTruthy();
+    expect(v.dom.querySelector('.cm-cm-empty.cm-cm-sub-new')).toBeTruthy();
+    v.destroy();
+  });
+
   // ── Mode-only transaction regression guard — v0.2.8 codex follow-up ──
   // The decoration field must rebuild when a `setEditMode` effect arrives,
   // even if the transaction has no doc change and no selection change. Prior

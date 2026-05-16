@@ -147,6 +147,32 @@ describe('commentDecoration (v0.1.3 chat-icon design)', () => {
     v.destroy();
   });
 
+  // ── Empty-body memo handling — v0.2.14 ──
+  // A whitespace-only memo (`%% %%`) used to fall through the inline parser
+  // and render as raw `%% %%` in Document mode. v0.2.14 accepts the empty
+  // body at the parser level and the decoration field collapses it to the
+  // chat-icon widget like any non-empty memo.
+
+  it('Document mode: collapses an empty `%% %%` memo to the chat icon', () => {
+    const doc = 'hello %% %% world\nnext';
+    const v = setup(doc, doc.length, 'wysiwyg');
+    const icon = v.dom.querySelector('.cm-memo-chat-icon');
+    expect(icon).toBeTruthy();
+    // The raw `%%` delimiters must NOT be visible in the rendered DOM.
+    expect(v.dom.textContent ?? '').not.toContain('%%');
+    v.destroy();
+  });
+
+  it('Live mode off-line: collapses an empty `%% %%` memo to the chat icon', () => {
+    const doc = 'hello %% %% world\nnext';
+    // Caret on the `next` line so the memo line is OFF the active line.
+    const v = setup(doc, doc.length);
+    const icon = v.dom.querySelector('.cm-memo-chat-icon');
+    expect(icon).toBeTruthy();
+    expect(v.dom.textContent ?? '').not.toContain('%%');
+    v.destroy();
+  });
+
   // ── Mode-only transaction regression guard — v0.2.8 codex follow-up ──
   // The decoration field must rebuild when a `setEditMode` effect arrives,
   // even if the transaction has no doc change and no selection change. Prior

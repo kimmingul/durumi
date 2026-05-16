@@ -64,15 +64,18 @@ export const CommentsExtension: MarkdownConfig = {
           ) {
             const innerStart = pos + 2;
             const innerEnd = end;
-            if (innerEnd <= innerStart) {
+            // v0.2.14: empty / whitespace-only body is now accepted as a
+            // degenerate (but still well-formed) memo. The decoration layer
+            // collapses it to a chat-icon widget in Document mode so the
+            // raw `%% %%` doesn't bleed into the rendered prose. The shared
+            // parser (`shared/comments.ts`) still rejects empty bodies so
+            // export/promotion pipelines aren't affected — this concession
+            // is editor-render-only.
+            if (innerEnd < innerStart) {
               end++;
               continue;
             }
-            const inner = cx.slice(innerStart, innerEnd);
-            if (inner.trim().length === 0) {
-              end++;
-              continue;
-            }
+            const inner = innerEnd > innerStart ? cx.slice(innerStart, innerEnd) : '';
             const trimmed = inner.replace(/^\s+/, '');
             const leadingWs = inner.length - trimmed.length;
             const tagMatch = trimmed.match(TAG_RE);
@@ -84,7 +87,7 @@ export const CommentsExtension: MarkdownConfig = {
               if (tagTo < innerEnd) {
                 children.push(cx.elt('CommentBody', tagTo, innerEnd));
               }
-            } else {
+            } else if (innerEnd > innerStart) {
               children.push(cx.elt('CommentBody', innerStart, innerEnd));
             }
             children.push(cx.elt('CommentMark', end, end + 2));

@@ -60,7 +60,12 @@ function findSubstitutionParts(
       cx.char(i + 1) === TILDE &&
       cx.char(i + 2) === RBRACE
     ) {
-      if (arrowAt < 0 || arrowAt + 2 >= i) return null;
+      // v0.2.14: allow `arrowAt + 2 === i` (zero-length new side, e.g.
+      // `{~~old~>~~}`). The arrow must still appear (`arrowAt >= 0`) and
+      // must not visually overlap the closer (`arrowAt + 2 > i` would
+      // mean the closer's first `~` is part of the arrow which is
+      // impossible — the arrow is `~>` not `~~`).
+      if (arrowAt < 0 || arrowAt + 2 > i) return null;
       return { arrowAt, closeAt: i };
     }
     i++;
@@ -78,6 +83,11 @@ function scanForCloser(
   // Return the index of the start of the two-char closing pair followed by
   // `}`, or -1 if not found before EOF/newline. `pos` is the start of the
   // body to scan.
+  //
+  // v0.2.14: the prior `i <= inner` guard rejected zero-length bodies (e.g.
+  // `{++++}`). We now allow `i === inner` so empty CM spans are recognised
+  // as well-formed; the decoration layer renders them as styled but
+  // visually empty marks in Document mode.
   let i = pos;
   while (i < cx.end - 1) {
     const ch = cx.char(i);
@@ -87,7 +97,7 @@ function scanForCloser(
       cx.char(i + 1) === closer2 &&
       cx.char(i + 2) === RBRACE
     ) {
-      if (i <= inner) {
+      if (i < inner) {
         i++;
         continue;
       }
@@ -124,9 +134,12 @@ export const CriticMarkupExtension: MarkdownConfig = {
         const inner = pos + 3;
         const closeAt = scanForCloser(cx, inner, inner, PLUS, PLUS);
         if (closeAt < 0) return -1;
-        if (closeAt === inner) return -1;
-        const body = cx.slice(inner, closeAt);
-        if (body.trim().length === 0) return -1;
+        // v0.2.14: empty / whitespace-only body is now accepted so the
+        // decoration layer can render a styled (zero-width or whitespace)
+        // mark in Document mode instead of leaking raw `{++++}`. The
+        // closer-position guard inside `scanForCloser` keeps the original
+        // `closeAt > inner` invariant when the body has at least one char
+        // between `{++` and `++}`.
         const open = cx.elt('CmInsertMark', pos, inner);
         const close = cx.elt('CmInsertMark', closeAt, closeAt + 3);
         return cx.addElement(
@@ -143,9 +156,7 @@ export const CriticMarkupExtension: MarkdownConfig = {
         const inner = pos + 3;
         const closeAt = scanForCloser(cx, inner, inner, MINUS, MINUS);
         if (closeAt < 0) return -1;
-        if (closeAt === inner) return -1;
-        const body = cx.slice(inner, closeAt);
-        if (body.trim().length === 0) return -1;
+        // v0.2.14: see CmInsert above — empty body accepted at parser level.
         const open = cx.elt('CmDeleteMark', pos, inner);
         const close = cx.elt('CmDeleteMark', closeAt, closeAt + 3);
         return cx.addElement(
@@ -166,17 +177,19 @@ export const CriticMarkupExtension: MarkdownConfig = {
         const oldTo = parts.arrowAt;
         const newFrom = parts.arrowAt + 2;
         const newTo = parts.closeAt;
-        if (oldTo <= oldFrom || newTo <= newFrom) return -1;
-        const oldText = cx.slice(oldFrom, oldTo);
-        const newText = cx.slice(newFrom, newTo);
-        if (oldText.trim().length === 0 || newText.trim().length === 0) {
-          return -1;
-        }
+        if (oldTo < oldFrom || newTo < newFrom) return -1;
+        // v0.2.14: allow empty old / empty new (e.g. `{~~~>~~}` or `{~~ ~> ~~}`).
+        // The decoration layer renders the styled marks even when zero-width
+        // so Document mode shows the arrow widget without leaking raw braces.
         const children: Element[] = [];
         children.push(cx.elt('CmSubMark', pos, inner));
-        children.push(cx.elt('CmSubOld', oldFrom, oldTo));
+        if (oldTo > oldFrom) {
+          children.push(cx.elt('CmSubOld', oldFrom, oldTo));
+        }
         children.push(cx.elt('CmSubArrow', parts.arrowAt, parts.arrowAt + 2));
-        children.push(cx.elt('CmSubNew', newFrom, newTo));
+        if (newTo > newFrom) {
+          children.push(cx.elt('CmSubNew', newFrom, newTo));
+        }
         children.push(
           cx.elt('CmSubMark', parts.closeAt, parts.closeAt + 3),
         );
@@ -198,9 +211,7 @@ export const CriticMarkupExtension: MarkdownConfig = {
         const inner = pos + 3;
         const closeAt = scanForCloser(cx, inner, inner, EQUAL, EQUAL);
         if (closeAt < 0) return -1;
-        if (closeAt === inner) return -1;
-        const body = cx.slice(inner, closeAt);
-        if (body.trim().length === 0) return -1;
+        // v0.2.14: empty body accepted — see CmInsert above.
         const open = cx.elt('CmHighlightMark', pos, inner);
         const close = cx.elt('CmHighlightMark', closeAt, closeAt + 3);
         return cx.addElement(
@@ -218,14 +229,16 @@ export const CriticMarkupExtension: MarkdownConfig = {
         // For comments the closer is `<<}`.
         const closeAt = scanForCloser(cx, inner, inner, LT, LT);
         if (closeAt < 0) return -1;
-        if (closeAt === inner) return -1;
-        const body = cx.slice(inner, closeAt);
-        if (body.trim().length === 0) return -1;
+        // v0.2.14: empty body accepted — see CmInsert above. The pill widget
+        // still renders even when the body preview is empty.
         const open = cx.elt('CmCommentMark', pos, inner);
-        const bodyEl = cx.elt('CmCommentBody', inner, closeAt);
-        const close = cx.elt('CmCommentMark', closeAt, closeAt + 3);
+        const children = [open];
+        if (closeAt > inner) {
+          children.push(cx.elt('CmCommentBody', inner, closeAt));
+        }
+        children.push(cx.elt('CmCommentMark', closeAt, closeAt + 3));
         return cx.addElement(
-          cx.elt('CmComment', pos, closeAt + 3, [open, bodyEl, close]),
+          cx.elt('CmComment', pos, closeAt + 3, children),
         );
       },
       before: 'Emphasis',

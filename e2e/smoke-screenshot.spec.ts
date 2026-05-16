@@ -2,11 +2,14 @@
  * v0.2 manual smoke-test screenshot capture (NOT part of the regular CI run).
  *
  * Opens `docs/v0.2-smoke-test.md` (the human-readable smoke fixture) inside
- * the built Electron app and takes 13 screenshots that cover every visually
- * verifiable feature shipped between v0.2.8 and v0.2.11. The orchestrator
- * (a human) eyeballs the captured PNGs against the `docs/v0.2-signoff.md`
- * §6 checklist — this file does not assert pixel content, it only drives
- * the app into the right state and snaps the window.
+ * the built Electron app and takes 23 screenshots that cover every visually
+ * verifiable feature shipped between v0.2.8 and v0.2.12. Shots 01–13 mirror
+ * the original v0.2.8–v0.2.11 baseline (Sections A–E); shots 14–23 cover the
+ * v0.2.12 expansion (Sections F–N) — heading levels, list depth, link
+ * variants, code variants, citations, footnotes, math, and edge cases. The
+ * orchestrator (a human) eyeballs the captured PNGs against the
+ * `docs/v0.2-signoff.md` §6 checklist — this file does not assert pixel
+ * content, it only drives the app into the right state and snaps the window.
  *
  * Gating: skipped unless `SMOKE=1` is set in the environment so the regular
  * `pnpm test:e2e` run doesn't pay the screenshot cost on every CI loop.
@@ -150,9 +153,109 @@ async function snap(page: Page, name: string) {
   await page.screenshot({ path: path.join(SHOT_DIR, name), fullPage: false });
 }
 
+/**
+ * Park a given source line near the top of the viewport (offsetPx from the
+ * scroll-DOM top) and place the caret one line above it so it does not become
+ * the active line. Used by Section F–N captures that need a section heading
+ * pinned at the top so its body fits below in one frame.
+ */
+async function parkLineAtTop(page: Page, line: number, offsetPx = 60) {
+  if (line <= 0) return;
+  // Use CodeMirror 6's EditorView.scrollIntoView effect via the view's
+  // constructor. This is the canonical way to scroll a position to the top
+  // of the viewport with a precise yMargin — it materializes virtualized
+  // lines and respects widget heights (which our scrollHeight-ratio
+  // heuristic could not, because widgets like [toc] add visual height with
+  // no corresponding source line count).
+  await page.evaluate(
+    (args: { line: number; offsetPx: number }) => {
+      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+      const content = root?.querySelector('.cm-content') as HTMLElement | null;
+      type ScrollIntoViewArg = unknown;
+      type ViewLike = {
+        state: { doc: { lines: number; line: (n: number) => { from: number } } };
+        dispatch: (s: unknown) => void;
+        focus: () => void;
+        constructor: { scrollIntoView: (pos: number, opts?: { y?: string; yMargin?: number }) => ScrollIntoViewArg };
+      };
+      const tile = (content ?? root) as unknown as { cmTile?: { root?: { view?: ViewLike } } };
+      const view = tile.cmTile?.root?.view;
+      if (!view) return;
+      view.focus();
+      const safe = Math.max(1, Math.min(args.line, view.state.doc.lines));
+      const info = view.state.doc.line(safe);
+      const above = view.state.doc.line(Math.max(1, safe - 1));
+      // Two effects in one transaction: move caret to one line above the
+      // target (so the target heading isn't the "active line" in Live mode),
+      // and force-scroll the target line to the top of the viewport with a
+      // yMargin equal to the requested offsetPx.
+      view.dispatch({
+        selection: { anchor: above.from },
+        effects: view.constructor.scrollIntoView(info.from, {
+          y: 'start',
+          yMargin: args.offsetPx,
+        }),
+        userEvent: 'select.smoke',
+      });
+    },
+    { line, offsetPx },
+  );
+  await page.waitForTimeout(280);
+  // One refinement pass in case CM's first scrollIntoView missed by a few px
+  // due to widget heights settling after layout.
+  await page.evaluate(
+    (args: { line: number; offsetPx: number }) => {
+      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+      const content = root?.querySelector('.cm-content') as HTMLElement | null;
+      type ViewLike = {
+        state: { doc: { line: (n: number) => { from: number } } };
+        coordsAtPos: (pos: number) => { top: number } | null;
+        scrollDOM: {
+          scrollTop: number;
+          scrollHeight: number;
+          clientHeight: number;
+          getBoundingClientRect: () => DOMRect;
+        };
+        requestMeasure?: () => void;
+      };
+      const tile = (content ?? root) as unknown as { cmTile?: { root?: { view?: ViewLike } } };
+      const view = tile.cmTile?.root?.view;
+      if (!view) return;
+      const info = view.state.doc.line(args.line);
+      const c = view.coordsAtPos(info.from);
+      if (!c) return;
+      const sd = view.scrollDOM;
+      const r = sd.getBoundingClientRect();
+      const d = c.top - r.top - args.offsetPx;
+      if (Math.abs(d) < 4) return;
+      sd.scrollTop = Math.max(0, Math.min(sd.scrollTop + d, sd.scrollHeight - sd.clientHeight));
+      view.requestMeasure?.();
+    },
+    { line, offsetPx },
+  );
+  await page.waitForTimeout(140);
+}
+
+/** Best-effort wrapper that logs and continues if a section can't be located. */
+async function captureSection(
+  page: Page,
+  needle: string,
+  shotName: string,
+  offsetPx = 60,
+): Promise<void> {
+  const line = await findLine(page, needle);
+  if (line === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(`[smoke] could not find line containing "${needle}" — capturing whatever is in view for ${shotName}`);
+  } else {
+    await parkLineAtTop(page, line, offsetPx);
+  }
+  await snap(page, shotName);
+}
+
 test.describe('v0.2 smoke screenshots', () => {
-  test('capture all 13 reference shots', async () => {
-    test.setTimeout(180_000);
+  test('capture all 23 reference shots', async () => {
+    test.setTimeout(240_000);
 
     // Copy the fixture into tmpdir so the path-guard's DURUMI_E2E=1 tmpdir
     // bypass accepts it (matches the pattern used by round-trip.spec.ts).
@@ -313,6 +416,52 @@ test.describe('v0.2 smoke screenshots', () => {
       await setWysiwygMode(app, page);
       await page.waitForTimeout(200);
       await snap(page, '13-post-4-switches-line50.png');
+
+      // ---- v0.2.12 expansion (Sections F–N) ----
+      // Each capture: ensure Document mode, scroll the section header to ~60px
+      // from the top so the section body fills the rest of the viewport, then
+      // snap. captureSection() logs and continues if the heading can't be
+      // located so a single missing section doesn't abort the whole run.
+
+      // 14 — Section F: heading levels (H1–H6 + Setext)
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Section F — Heading levels', '14-document-headings-h1-h6.png', 40);
+
+      // 15 — Section G: task list states + nesting
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Task list states', '15-document-task-list-states.png', 40);
+
+      // 16 — Section H: link variants
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Section H — Links variants', '16-document-links-variants.png', 40);
+
+      // 17 — Section I: code variants (inline + fenced + indented + overflow)
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Section I — Code variants', '17-document-code-variants.png', 40);
+
+      // 18 — Section J: all five citation variants
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Section J — Citation variants', '18-document-citations-all.png', 40);
+
+      // 19 — Section K: footnote refs + multi-line def + orphan
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Section K — Footnote', '19-document-footnote-variants.png', 40);
+
+      // 20 — Section L: math variants (inline + block + special chars + bad)
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Section L — Math variants', '20-document-math-variants.png', 40);
+
+      // 21 — Section M: edge cases (empty containers, adjacent marks)
+      await setWysiwygMode(app, page);
+      await captureSection(page, 'Section M — Edge cases', '21-document-edge-cases.png', 40);
+
+      // 22 — Section M edge cases in Source mode (verify raw markdown survives)
+      await setMarkdownMode(app, page);
+      await captureSection(page, 'Section M — Edge cases', '22-source-mode-edge-cases.png', 40);
+
+      // 23 — Section G task list in Live mode (active line widget vs off-line)
+      await setTyporaMode(app, page);
+      await captureSection(page, 'Task list states', '23-live-mode-task-list.png', 40);
     } finally {
       await shutdown(app);
       try {

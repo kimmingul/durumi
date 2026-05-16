@@ -85,11 +85,19 @@ describe('CriticMarkupExtension parser', () => {
     v.destroy();
   });
 
-  it('rejects empty bodies', () => {
-    expect(nodesOfType(setup('a {++++} b'), 'CmInsert')).toHaveLength(0);
-    expect(nodesOfType(setup('a {----} b'), 'CmDelete')).toHaveLength(0);
-    expect(nodesOfType(setup('a {==  ==} b'), 'CmHighlight')).toHaveLength(0);
-    expect(nodesOfType(setup('a {>><<} b'), 'CmComment')).toHaveLength(0);
+  // v0.2.14: empty bodies are now ACCEPTED at the parser level so the
+  // decoration layer can render a styled placeholder in Document mode
+  // (otherwise raw `{++++}` would leak through). The shared (export) path
+  // is unaffected — these zero-length tracked-change spans only matter in
+  // the live editor where the user can see and complete them.
+  it('accepts empty bodies (v0.2.14 — decoration layer renders placeholder)', () => {
+    expect(nodesOfType(setup('a {++++} b'), 'CmInsert')).toHaveLength(1);
+    expect(nodesOfType(setup('a {----} b'), 'CmDelete')).toHaveLength(1);
+    expect(nodesOfType(setup('a {== ==} b'), 'CmHighlight')).toHaveLength(1);
+    expect(nodesOfType(setup('a {>><<} b'), 'CmComment')).toHaveLength(1);
+    // The zero-length body case must not produce a CmCommentBody child —
+    // there is no body text to delimit.
+    expect(nodesOfType(setup('a {>><<} b'), 'CmCommentBody')).toHaveLength(0);
   });
 
   it('rejects unbalanced operators (no closing match)', () => {
@@ -110,9 +118,16 @@ describe('CriticMarkupExtension parser', () => {
     );
   });
 
-  it('rejects substitutions with empty old or new side', () => {
-    expect(nodesOfType(setup('a {~~~> new ~~} b'), 'CmSubstitution')).toHaveLength(0);
-    expect(nodesOfType(setup('a {~~ old ~>~~} b'), 'CmSubstitution')).toHaveLength(0);
+  it('accepts substitutions with empty old or new side (v0.2.14)', () => {
+    // Empty-old `{~~~> new ~~}` and empty-new `{~~ old ~>~~}` are now
+    // recognised as well-formed substitutions; the decoration layer renders
+    // a tiny placeholder on the empty side so the arrow widget still has
+    // visible neighbours in Document mode.
+    expect(nodesOfType(setup('a {~~~> new ~~} b'), 'CmSubstitution')).toHaveLength(1);
+    expect(nodesOfType(setup('a {~~ old ~>~~} b'), 'CmSubstitution')).toHaveLength(1);
+    // The empty side does NOT emit a CmSubOld / CmSubNew element.
+    expect(nodesOfType(setup('a {~~~>new~~} b'), 'CmSubOld')).toHaveLength(0);
+    expect(nodesOfType(setup('a {~~old~>~~} b'), 'CmSubNew')).toHaveLength(0);
   });
 
   it('beats single-tilde Subscript and double-tilde Strikethrough', () => {

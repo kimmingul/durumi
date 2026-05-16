@@ -1,6 +1,148 @@
 # Durumi — Progress
 
-## v0.2.13 (current) — e2e user-data isolation (post-smoke hot-fix)
+## v0.2.14 (current) — Empty-container rendering + smoke v2 infra
+
+A third visual smoke verification pass — this time with the expanded
+Section F–O fixture and the new `parkLineAtTop` helper — caught two
+latent edge cases that had been hidden since the v0.1.x parser writes
+because no fixture exercised them: an empty memo `%% %%` rendered as
+raw text in Document mode, and the five empty-body CriticMarkup spans
+(`{++++}`, `{----}`, `{== ==}`, `{>><<}`, `{~~~>~~}`) likewise leaked
+their delimiters. v0.2.14 fixes both at the lezer-parser layer and
+bundles the smoke v2 fixture + screenshot rig that uncovered them.
+
+### Root cause (same shape for both)
+
+`src/editor/markdownExt/comments.ts` and `criticMarkup.ts` both
+explicitly REJECTED zero-length bodies (the inline parsers returned
+`-1` on `body.trim().length === 0`). The shared parser
+`shared/comments.ts` also rejects empty memos — but that's the export
+path, which has a different invariant. In the editor, returning `-1`
+just leaves the raw `%% %%` / `{++++}` in the document text without
+any decoration, so the user sees an unstyled malformed-looking span.
+The fix relaxes the parser-level rejection so the decoration layer
+gets a well-formed syntax node and can render a chat-icon (memo) or
+a tiny styled placeholder (CM) in Document mode.
+
+### The fix — empty memo
+
+`src/editor/markdownExt/comments.ts`: the inline parser now emits a
+`Comment` node even when the inner range is zero-length or whitespace
+only. `CommentBody` / `CommentTag` are emitted only when there's
+actual content to delimit (otherwise the children list is just the
+two `CommentMark`s). The decoration field in
+`src/editor/decorations/comment.ts` needed NO code change — its
+existing `Decoration.replace + ChatIconWidget` path already handles
+the zero-body span correctly because `from < to` (the `%% %%` source
+range itself is non-empty).
+
+### The fix — empty CriticMarkup
+
+`src/editor/markdownExt/criticMarkup.ts`:
+- `scanForCloser` relaxed from `i <= inner` to `i < inner` so a
+  closer at `inner` (i.e. `{++++}`, body is zero-length) returns the
+  correct offset.
+- `findSubstitutionParts` relaxed from `arrowAt + 2 >= i` to
+  `arrowAt + 2 > i` so a closer at the position immediately after the
+  `~>` arrow (zero-length new side) is accepted.
+- Each of CmInsert / CmDelete / CmHighlight / CmComment / CmSub
+  dropped the `body.trim().length === 0` rejection and the
+  `closeAt === inner` rejection. CmSub additionally skips emitting
+  `CmSubOld` / `CmSubNew` children when the corresponding side is
+  zero-length, so the decoration layer can distinguish "side present
+  but empty" from "side present with content".
+
+`src/editor/decorations/criticMarkup.ts`: new `EmptyCmBodyWidget`
+class (mirrors the existing `HiddenMarkWidget` / `ArrowWidget`
+shape — small, stateless, single-purpose). The insert/delete/highlight
+branch now picks between `Decoration.mark` (non-empty body) and a
+`Decoration.widget` showing a `·` placeholder (zero-length body). The
+substitution branch does the same per-side. Comment fall through is
+unchanged because its existing `Decoration.replace + CommentPillWidget`
+covers zero-length bodies identically. A small theme block was added
+for `.cm-cm-empty` and its kind-specific colour variants so the
+placeholder reads as a faint version of the operator's primary colour.
+
+### Canonical pattern reuse
+
+Both files already had the v0.2.8 `setEditMode` listener + the
+v0.2.8 mode-aware active-line gate in place from earlier work — this
+release does NOT touch either. The fix is purely the pair-matching
+edge case in the lezer parsers + a small placeholder widget for the
+decoration layer; no new patterns are introduced.
+
+### Smoke v2 infrastructure (bundled)
+
+`docs/v0.2-smoke-test.md` extended from Sections A–E to A–O (10 new
+sections, ~250 added lines). New sections cover heading levels (H1–
+H6 + Setext), task-list state matrix, link variants (inline / ref /
+auto / image), code variants (inline / fenced / indented / overflow),
+all 5 citation variants, footnote ref + multi-line def + orphan, math
+variants (inline + block + special chars + bad), edge cases (empty
+containers — which is what caught the bug above —, adjacent marks,
+line-edge marks), front matter variants, and Section O's trailing
+padding lines so any of F–N can be parked at the top of the viewport.
+
+`e2e/smoke-screenshot.spec.ts` gained `parkLineAtTop(page, line,
+offsetPx)` + `captureSection(page, needle, shotName, offsetPx)`
+helpers and 10 new captures (#14–23). The crucial fix: the original
+scroll-by-coords-arithmetic approach didn't work past the visible
+viewport because CodeMirror 6 virtualises far-away lines, so
+`view.coordsAtPos(targetPos)` returned `null`. The new helper
+materialises the line first via `EditorView.scrollIntoView(pos, { y:
+'start', yMargin: offsetPx })` (accessed through `view.constructor`
+because CM doesn't export the static at module level when bundled),
+then refines the scroll with one additional `coordsAtPos`-based pass
+in case widget heights shifted the layout. 10 new reference PNGs are
+committed under `e2e/screenshots/v0.2-smoke/14-23-*.png`.
+
+### Deliberately deferred
+
+Two sign-off-relevant gaps were re-confirmed during smoke v2 but are
+NOT fixed in this release:
+
+- **Setext heading marker hide** — `src/editor/decorations/heading.ts`
+  lines 33–36 explicitly skip Setext H1/H2 (`====` and `----` under-
+  lines). Captured in #14 and noted as deferred in the v0.2 sign-off.
+  No behavioural change requested.
+- **Orphan footnote ref** — `[^missing]` (defined nowhere) currently
+  renders as a styled pill identical to a defined ref. Captured in
+  #19. This is a design choice (footnote refs render as pills until
+  the user defines the matching note) not a parser bug; the v0.2
+  sign-off did not flag it.
+
+### Files
+
+- `src/editor/markdownExt/comments.ts` — `+8 −4` (inline parser
+  accepts empty body, emits `CommentBody` conditionally).
+- `src/editor/markdownExt/criticMarkup.ts` — `+22 −16` (relaxed
+  scanForCloser + findSubstitutionParts guards; dropped empty-body
+  rejections in all 5 operator parsers; CmSubstitution + CmComment
+  emit body/old/new children conditionally).
+- `src/editor/decorations/criticMarkup.ts` — `+58 −10` (new
+  `EmptyCmBodyWidget` class, conditional mark/widget selection in
+  insert/delete/highlight branch and per-side in substitution branch,
+  `.cm-cm-empty` theme block with kind-specific colours).
+- `tests/editor/comment.test.ts` — `+22` (two new regression tests
+  for empty memo in Document + Live-off-line modes).
+- `tests/editor/criticMarkupDecoration.test.ts` — `+58` (five new
+  regression tests, one per CM operator's empty body in Document
+  mode).
+- `tests/editor/criticMarkupParser.test.ts` — `+15 −5` (two existing
+  rejection tests inverted to accept tests).
+- `docs/v0.2-smoke-test.md` — `+254` (Sections F–O bundled from the
+  earlier working tree).
+- `e2e/smoke-screenshot.spec.ts` — `+135 −5` (helpers + 10 captures).
+- `e2e/screenshots/v0.2-smoke/14-23-*.png` — 10 new reference shots.
+- `e2e/screenshots/v0.2-smoke/01-13-*.png` — regenerated against the
+  expanded fixture so any future Phase D run reproduces.
+- `package.json` — `0.2.13 → 0.2.14`.
+
+Suite delta: vitest **1549 → 1556** (+7 new regression cases); e2e
+unchanged at **120 passed / 2 skipped** (the round-trip + smoke
+skips are gating-driven, not behaviour-driven).
+
+## v0.2.13 — e2e user-data isolation (post-smoke hot-fix)
 
 A second smoke-verification pass on v0.2.12 surfaced a TEST INFRASTRUCTURE
 bug, not a source regression. Running

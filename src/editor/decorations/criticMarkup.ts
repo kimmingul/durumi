@@ -42,6 +42,30 @@ class ArrowWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+/**
+ * Small placeholder shown inside a styled CM span whose body is zero-length
+ * (`{++++}`, `{----}`, etc.). Without a non-empty body, a `Decoration.mark`
+ * would have nothing to render, leaving an invisible span. The placeholder
+ * gives Document mode a tiny visual breadcrumb so the user can see that a
+ * track-changes operator exists at the position. v0.2.14.
+ */
+class EmptyCmBodyWidget extends WidgetType {
+  constructor(private readonly kind: 'insert' | 'delete' | 'highlight' | 'sub-old' | 'sub-new') {
+    super();
+  }
+  eq(other: WidgetType) {
+    return other instanceof EmptyCmBodyWidget && other.kind === this.kind;
+  }
+  toDOM() {
+    const s = document.createElement('span');
+    s.className = `cm-cm-empty cm-cm-${this.kind}`;
+    s.setAttribute('aria-hidden', 'true');
+    s.textContent = '·';
+    return s;
+  }
+  ignoreEvent() { return true; }
+}
+
 class CommentPillWidget extends WidgetType {
   constructor(private readonly cmFrom: number, private readonly preview: string) {
     super();
@@ -223,16 +247,25 @@ function buildDecorations(state: EditorState): DecorationSet {
     }
     if (span.kind === 'substitution') {
       // Hide the opening `{~~`, mark old as strike, replace `~>` with arrow,
-      // mark new as underline, hide closing `~~}`.
+      // mark new as underline, hide closing `~~}`. v0.2.14: when an empty old
+      // or new side is detected (parser emits no CmSubOld/CmSubNew element),
+      // insert a tiny `EmptyCmBodyWidget` placeholder before/after the arrow
+      // so the operator stays visible in Document mode.
       ranges.push(
         Decoration.replace({ widget: new HiddenMarkWidget() }).range(
           span.openFrom,
           span.openTo,
         ),
       );
-      if (span.oldFrom !== undefined && span.oldTo !== undefined) {
+      if (span.oldFrom !== undefined && span.oldTo !== undefined && span.oldTo > span.oldFrom) {
         ranges.push(
           Decoration.mark({ class: 'cm-cm-sub-old' }).range(span.oldFrom, span.oldTo),
+        );
+      } else if (span.arrowFrom !== undefined) {
+        ranges.push(
+          Decoration.widget({ widget: new EmptyCmBodyWidget('sub-old'), side: -1 }).range(
+            span.arrowFrom,
+          ),
         );
       }
       if (span.arrowFrom !== undefined && span.arrowTo !== undefined) {
@@ -243,9 +276,15 @@ function buildDecorations(state: EditorState): DecorationSet {
           ),
         );
       }
-      if (span.newFrom !== undefined && span.newTo !== undefined) {
+      if (span.newFrom !== undefined && span.newTo !== undefined && span.newTo > span.newFrom) {
         ranges.push(
           Decoration.mark({ class: 'cm-cm-sub-new' }).range(span.newFrom, span.newTo),
+        );
+      } else if (span.arrowTo !== undefined) {
+        ranges.push(
+          Decoration.widget({ widget: new EmptyCmBodyWidget('sub-new'), side: 1 }).range(
+            span.arrowTo,
+          ),
         );
       }
       ranges.push(
@@ -256,16 +295,27 @@ function buildDecorations(state: EditorState): DecorationSet {
       );
       continue;
     }
-    // insert / delete / highlight: hide the marks, mark the inner.
+    // insert / delete / highlight: hide the marks, mark the inner. v0.2.14:
+    // a zero-length body (e.g. `{++++}`) substitutes a tiny placeholder widget
+    // so the styled mark stays visually present in Document mode.
     ranges.push(
       Decoration.replace({ widget: new HiddenMarkWidget() }).range(
         span.openFrom,
         span.openTo,
       ),
     );
-    ranges.push(
-      Decoration.mark({ class: `cm-cm-${span.kind}` }).range(span.openTo, span.closeFrom),
-    );
+    if (span.closeFrom > span.openTo) {
+      ranges.push(
+        Decoration.mark({ class: `cm-cm-${span.kind}` }).range(span.openTo, span.closeFrom),
+      );
+    } else {
+      ranges.push(
+        Decoration.widget({
+          widget: new EmptyCmBodyWidget(span.kind as 'insert' | 'delete' | 'highlight'),
+          side: 1,
+        }).range(span.openTo),
+      );
+    }
     ranges.push(
       Decoration.replace({ widget: new HiddenMarkWidget() }).range(
         span.closeFrom,
@@ -371,5 +421,32 @@ export const criticMarkupTheme = EditorView.theme({
     width: 0,
     height: 0,
     overflow: 'hidden',
+  },
+  '.cm-cm-empty': {
+    display: 'inline-block',
+    padding: '0 3px',
+    margin: '0 1px',
+    borderRadius: '2px',
+    fontSize: '0.85em',
+    opacity: 0.7,
+    background: 'var(--cm-cm-empty-bg, rgba(150, 150, 150, 0.15))',
+  },
+  '.cm-cm-empty.cm-cm-insert': {
+    color: 'var(--cm-cm-insert, #1a7f37)',
+    background: 'var(--cm-cm-empty-insert-bg, rgba(26, 127, 55, 0.12))',
+  },
+  '.cm-cm-empty.cm-cm-delete': {
+    color: 'var(--cm-cm-delete, #d1242f)',
+    background: 'var(--cm-cm-empty-delete-bg, rgba(209, 36, 47, 0.12))',
+  },
+  '.cm-cm-empty.cm-cm-highlight': {
+    color: 'var(--cm-cm-empty-hl, #8a6a00)',
+    background: 'var(--cm-cm-empty-hl-bg, rgba(255, 200, 50, 0.30))',
+  },
+  '.cm-cm-empty.cm-cm-sub-old': {
+    color: 'var(--cm-cm-sub-old, #b08800)',
+  },
+  '.cm-cm-empty.cm-cm-sub-new': {
+    color: 'var(--cm-cm-sub-new, #1a7f37)',
   },
 });
