@@ -471,4 +471,201 @@ test.describe('v0.2 smoke screenshots', () => {
       }
     }
   });
+
+  /**
+   * v0.2.15 expansion — sidebar/dialog UI captures that the editor-content
+   * focused #01–23 set missed. Each capture drives the app into a known UI
+   * state (tab switch, dialog open, theme toggle, etc.), screenshots it,
+   * and where necessary returns to the baseline (Outline tab + Settings
+   * closed + Light theme) before the next capture so subsequent shots are
+   * not contaminated by leftover UI state.
+   *
+   * Skipping policy: if a UI affordance turns out not to exist or requires
+   * external state (AI provider key, BibTeX file) that the e2e environment
+   * does not seed, the capture either falls back to the most representative
+   * adjacent state (e.g. AI tab while the palette is closed) or is skipped
+   * with a console.warn so the orchestrator can spot the gap.
+   */
+  test('capture sidebar + dialog UI shots', async () => {
+    test.setTimeout(180_000);
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-smoke-ui-'));
+    const mdPath = path.join(tmpDir, 'v0.2-smoke-test.md');
+    fs.copyFileSync(FIXTURE_SRC, mdPath);
+    fs.mkdirSync(SHOT_DIR, { recursive: true });
+
+    const { app, page } = await launch();
+    try {
+      await openFixture(app, page, mdPath);
+      // Start every capture from Document mode + scrolled to top so each
+      // shot's editor-area baseline matches #01.
+      await setWysiwygMode(app, page);
+      await scrollToTop(page);
+
+      // ---- 24 — Memo panel: focus a specific card (the v0.2 fixture's
+      // "reviewer note: this is a memo" item) so the card pulses and the
+      // memo panel's selection-driven UI is visible. We click in the editor
+      // on the memo's line — useMemoCaretFocus then marks the corresponding
+      // card as focused (pulse class, smooth-scrolled into view).
+      const reviewerMemoLine = await findLine(page, 'reviewer note: this is a memo');
+      if (reviewerMemoLine > 0) {
+        await caretToLine(page, reviewerMemoLine);
+        await scrollCaretIntoView(page);
+        // Give the caret-focus hook a tick to mark the matching card.
+        await page.waitForTimeout(300);
+        // Also click directly on the memo card DOM (data-memo-from) so its
+        // textarea takes focus and the card chrome is clearly emphasised.
+        try {
+          const cardHandle = await page.$('.cm-memo-card');
+          if (cardHandle) await cardHandle.click({ position: { x: 80, y: 20 } });
+        } catch {
+          /* card may not be clickable if the panel is scrolled — best effort */
+        }
+        await page.waitForTimeout(200);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke] could not locate reviewer-note memo line for shot 24');
+      }
+      await snap(page, '24-memo-panel-detail.png');
+
+      // ---- 25 — Right sidebar References tab (empty-state: no .bib loaded
+      // in the e2e env). The right sidebar defaults to hidden so we use the
+      // showReferences menu command to both reveal it AND activate the
+      // References tab in one shot. The tab body renders the
+      // "no bibliography file" empty UI.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showReferences');
+      });
+      await page
+        .waitForSelector('[data-testid="right-sidebar-tab-references"]', { timeout: 4000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(300);
+      await snap(page, '25-right-sidebar-references-tab.png');
+
+      // ---- 26 — Right sidebar AI tab (provider-not-configured state in
+      // e2e env — the panel renders commands disabled). The AI palette
+      // proper is shot in #27 separately.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showAi');
+      });
+      await page
+        .waitForSelector('[data-testid="right-sidebar-tab-ai"]', { timeout: 4000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(300);
+      await snap(page, '26-right-sidebar-ai-tab.png');
+
+      // ---- 27 — AI command palette overlay.
+      //
+      // v0.2.16 closed the preload-contract gap that previously stopped the
+      // palette from mounting: `window.api.aiHasKey()` now exists, so the
+      // menu IPC `openAiPalette` reliably mounts the `<AiCommandPalette>`
+      // overlay. The e2e env still has no provider key configured, which is
+      // the expected production path for first-run users — the palette
+      // therefore renders in the `ai-palette-no-key` empty state. That
+      // empty state is the meaningful capture: it shows users the exact
+      // copy + framing they'll see before configuring a key.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'openAiPalette');
+      });
+      const paletteAppeared = await page
+        .waitForSelector('[data-testid="ai-palette"]', { timeout: 2000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!paletteAppeared) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[smoke] AI palette did not mount — capturing whatever framing is on screen for shot 27',
+        );
+      }
+      await snap(page, '27-ai-command-palette-open.png');
+      // Close the palette before moving on.
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+
+      // ---- 28 — Left sidebar Search tab. The tab auto-focuses the search
+      // input on mount; we type a couple of letters so the empty-results vs
+      // populated-results UI is visible. The workspace is unset in the e2e
+      // env so hits will be 0 — still a real capture of the search chrome.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showSearch');
+      });
+      await page.waitForTimeout(200);
+      const searchInput = await page.$('.cm-search-input');
+      if (searchInput) {
+        await searchInput.fill('memo');
+        // Let the 250ms debounce + result render settle.
+        await page.waitForTimeout(500);
+      }
+      await snap(page, '28-search-tab.png');
+
+      // ---- 29 — Left sidebar Outline tab. The fixture has H1–H6 in
+      // Section F so the outline tree is visually rich. Switch back to the
+      // outline tab via the menu command for parity with how a user gets
+      // there.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showOutline');
+      });
+      await page.waitForTimeout(250);
+      await snap(page, '29-outline-tab-with-headings.png');
+
+      // ---- 30 — Settings dialog. Dispatched via the openSettings menu
+      // command; the dialog is React.lazy so we wait for the dialog node.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'openSettings');
+      });
+      await page
+        .waitForSelector('[data-testid="settings-dialog"]', { timeout: 4000 })
+        .catch(() => undefined);
+      // Give styles + lazy-loaded section subcomponents time to layout.
+      await page.waitForTimeout(500);
+      await snap(page, '30-settings-dialog.png');
+      // Close before the theme toggle so the next capture isn't the dialog.
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+
+      // ---- 31 — Dark theme. The `toggleTheme` menu command flips light
+      // ↔ dark based on the *currently resolved* theme. On a test machine
+      // whose system theme is already dark, the resolved theme is dark on
+      // launch (themePreference 'system'), so a single toggle would flip
+      // to light and #31 would NOT be a dark capture. Check the current
+      // `<html data-theme>` attribute first and only toggle if we need to.
+      const beforeTheme = await page.evaluate(() =>
+        document.documentElement.getAttribute('data-theme'),
+      );
+      if (beforeTheme !== 'dark') {
+        await app.evaluate(({ BrowserWindow }) => {
+          const w = BrowserWindow.getAllWindows()[0];
+          w?.webContents.send('menu:command', 'toggleTheme');
+        });
+        // Theme cascade + CodeMirror re-decoration take a moment.
+        await page.waitForTimeout(500);
+      }
+      await snap(page, '31-dark-theme.png');
+      // Restore the original theme for cleanliness so the temp userData
+      // dir doesn't leak a sticky preference back into the orchestrator.
+      const afterTheme = await page.evaluate(() =>
+        document.documentElement.getAttribute('data-theme'),
+      );
+      if (afterTheme !== beforeTheme) {
+        await app.evaluate(({ BrowserWindow }) => {
+          const w = BrowserWindow.getAllWindows()[0];
+          w?.webContents.send('menu:command', 'toggleTheme');
+        });
+        await page.waitForTimeout(200);
+      }
+    } finally {
+      await shutdown(app);
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+    }
+  });
 });

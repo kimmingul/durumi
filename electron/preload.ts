@@ -111,6 +111,7 @@ const api: IpcApi = {
     ipcRenderer.invoke('bibliography:importFile', sourcePath),
   aiSetApiKey: (provider, plainKey) => ipcRenderer.invoke('ai:setApiKey', provider, plainKey),
   aiKeyStatus: (provider) => ipcRenderer.invoke('ai:keyStatus', provider),
+  aiHasKey: (provider) => ipcRenderer.invoke('ai:hasKey', provider),
   aiEncryptionAvailable: () => ipcRenderer.invoke('ai:encryptionAvailable'),
   aiVerify: () => ipcRenderer.invoke('ai:verify'),
   aiChat: (messages, options) => ipcRenderer.invoke('ai:chat', messages, options),

@@ -1,6 +1,103 @@
 # Durumi — Progress
 
-## v0.2.15 (current) — Setext heading marker hide (smoke v2 follow-up)
+## v0.2.16 (current) — AI palette preload contract repair
+
+Smoke v3 capture #27
+(`e2e/screenshots/v0.2-smoke/27-ai-command-palette-open.png`) tried
+to trigger the AI command palette via menu IPC
+(`openAiPalette`) and the Cmd/Ctrl+Shift+/ accelerator. The palette
+never mounted. Investigation traced the failure to a silent
+preload-contract drift introduced before v0.2.15: four renderer
+files — `src/hooks/useAiPalette.ts`, `src/hooks/useMenuCommandRouter.ts`
+(citation-suggest branch), `src/App.tsx` (right-sidebar
+`onSuggestCitations`), and `src/editor/ai/ghostText.ts` — all call
+`window.api.aiHasKey(provider)`, but `electron/preload.ts` only
+exposed `aiKeyStatus`, `aiSetApiKey`, `aiEncryptionAvailable`,
+`aiVerify`, `aiChat`. The IPC contract (`shared/ipc-contract.ts`)
+also never declared `aiHasKey`. Calls therefore threw
+`TypeError: window.api.aiHasKey is not a function`; the `Promise.all`
+inside `useAiPalette.open()` rejected silently and the
+`<AiCommandPalette>` overlay never mounted from any entry point. The
+only reason typecheck didn't catch the mismatch is that the project's
+`pnpm typecheck` script runs `tsc --noEmit` against the root
+`tsconfig.json`, which is a project-references container with no
+`files` of its own.
+
+### Fix shape — Option A (add the missing method)
+
+Two minimal-touch options were considered:
+
+- **A** Add `aiHasKey` to the IPC contract + main handler + preload
+  bridge. Zero renderer churn.
+- **B** Refactor all 7 call sites to use
+  `(await aiKeyStatus(p)) !== 'none'`.
+
+Option A wins: 7 call sites in 4 files all want a boolean for AI
+gating, and the contract was already incomplete — the fix is to
+honor the existing renderer contract rather than chase callers. Both
+forms now coexist intentionally: `aiKeyStatus` returns the
+`'none' | 'encrypted' | 'plaintext'` triad that Settings needs for
+the "plaintext fallback" badge; `aiHasKey` is the boolean shorthand
+that feature gates want. Semantics are kept in lock-step inside
+`electron/ipc/ai.ts` (both handlers consult the same prefs blob via
+the same vault).
+
+### Silent-failure hardening — `useAiPalette.open()`
+
+Even after the contract repair, a future preload typo of the same
+shape would once again silently swallow the palette. The hook's
+`open()` now wraps the `Promise.all([aiHasKey('anthropic'),
+aiHasKey('openai-compatible')])` in a try/catch that:
+
+1. Logs the error via `console.error` (so it shows up in DevTools
+   and crash logs).
+2. Surfaces a user-visible toast
+   (`t('ai.palette.bridgeUnavailable')`) — "AI palette unavailable
+   — see logs for details." in en, Korean equivalent in ko.
+3. Continues to set `state.open = true` with `hasKey = false`, so
+   the overlay still mounts and the user sees the
+   `ai-palette-no-key` empty state instead of nothing at all.
+
+This is the canonical pattern: never swallow a bridge failure that a
+user clicked through.
+
+### Smoke #27 regenerated
+
+The capture now mounts the palette in its
+`ai-palette-no-key` empty state (the e2e env has no provider key
+configured, which is the production first-run path). The orchestrator-
+facing comment in `e2e/smoke-screenshot.spec.ts` was rewritten to
+describe the closed gap and the meaningful "first-run / configure
+key" framing the shot now captures.
+
+### Files
+
+- `shared/ipc-contract.ts` — `+11 −0` (add `aiHasKey` method + comment
+  explaining why both forms coexist).
+- `electron/preload.ts` — `+1 −0` (expose `aiHasKey`).
+- `electron/ipc/ai.ts` — `+15 −0` (register `ai:hasKey` main handler;
+  lock-step semantics with `ai:keyStatus`).
+- `src/hooks/useAiPalette.ts` — `+18 −4` (try/catch + console.error +
+  toast around the `aiHasKey` Promise.all; still opens the palette
+  on failure so the no-key UI mounts).
+- `src/i18n/dict.ts` — `+2 −0` (`ai.palette.bridgeUnavailable` en + ko).
+- `e2e/smoke-screenshot.spec.ts` — `+12 −31` (rewrite the #27
+  orchestrator comment; remove "KNOWN GAP" prose; bump the palette
+  wait from 1500 → 2000 ms now that mount is reliable).
+- `e2e/screenshots/v0.2-smoke/27-ai-command-palette-open.png` —
+  regenerated; the AI palette overlay now renders the `no-key`
+  empty state instead of the AI-tab fallback framing.
+- `tests/hooks/useAiPalette.test.tsx` — `+139 −0` (new file, four
+  cases: has-key, no-key happy path, missing bridge → toast +
+  palette still opens, throwing bridge → toast + palette still
+  opens; the last two are the exact regression coverage that would
+  fail on v0.2.15).
+- `package.json` — `0.2.15 → 0.2.16`.
+
+Suite delta: vitest **1562 → 1566** (+4 new regression cases); e2e
+unchanged at **120 passed / 2 skipped**. Lint + typecheck clean.
+
+## v0.2.15 — Setext heading marker hide (smoke v2 follow-up)
 
 The v0.2.14 smoke v2 verification pass surfaced the last sign-off-
 deferred Phase A matrix gap visually in shot

@@ -655,6 +655,17 @@ export interface IpcApi {
    */
   aiKeyStatus: (provider: 'anthropic' | 'openai-compatible') => Promise<AiKeyStatus>;
   /**
+   * Boolean shorthand for `aiKeyStatus(provider) !== 'none'`. Exists as a
+   * dedicated bridge entry because multiple call sites (useAiPalette,
+   * useMenuCommandRouter, the ghost-text autocomplete) need a fast boolean
+   * for "should we even attempt an AI call" gating and were silently failing
+   * pre-v0.2.16 when the renderer expected this method but the preload only
+   * exposed the richer `aiKeyStatus`. Keeping both is intentional — the
+   * status form is needed by Settings (to render the "plaintext fallback"
+   * badge) while the boolean form is what feature gates want.
+   */
+  aiHasKey: (provider: 'anthropic' | 'openai-compatible') => Promise<boolean>;
+  /**
    * Whether the main process can encrypt a new key via the OS keychain.
    * Renderer reads this before showing the API-key input so the save
    * button can be labelled "Save (plaintext)" up front on systems where

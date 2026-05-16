@@ -75,6 +75,22 @@ export function registerAiHandlers(vault: KeyVault): void {
     },
   );
 
+  // Boolean shorthand for "is this provider usable right now". Mirrors the
+  // gating used by useAiPalette / useMenuCommandRouter / ghost-text — keep
+  // it identical in semantics to `keyStatus !== 'none'` so the two stay in
+  // lock-step if either is changed.
+  ipcMain.handle(
+    'ai:hasKey',
+    async (_e, provider: 'anthropic' | 'openai-compatible') => {
+      const prefs = await getPreferences();
+      const stored =
+        provider === 'anthropic' ? prefs.ai?.anthropicKey : prefs.ai?.openaiKey;
+      if (!stored) return false;
+      if (vault.decrypt(stored).length === 0) return false;
+      return true;
+    },
+  );
+
   ipcMain.handle('ai:encryptionAvailable', async () => isEncryptionAvailable());
 
   ipcMain.handle('ai:verify', async () => {
