@@ -1,6 +1,93 @@
 # Durumi — Progress
 
-## v0.2.17 (current) — Typecheck full coverage (meta-bug fix)
+## v0.2.18 (current) — Round-trip test reality check (Pandoc actually ran)
+
+### What was found
+
+The v0.2.10 round-trip e2e (`e2e/round-trip.spec.ts`) self-skipped
+when `pandoc` wasn't on PATH. The author's machine never had Pandoc
+installed during the entire v0.2.8 → v0.2.17 cycle, so the assertions
+inside that test were never validated against the real Pandoc
+binary's output — they were written from documentation, not
+verification.
+
+v0.2.18 installed Pandoc 3.9.0.2 locally and ran the test for the
+first time. Most assertions held; one failed because reality
+diverged from the comment-only-validated expectation.
+
+### Round-trip survival, confirmed by actual run
+
+These features SURVIVE Pandoc DOCX export → markdown re-import
+verbatim or with documented graceful degradation:
+
+- Headings H1-H3 (literal text + `#` syntax)
+- Bold, italic, strikethrough, inline code
+- `==highlight==`, `H~2~O`, `X^2^` (v0.2.9 marks survive their
+  Markdown shorthand)
+- Bulleted lists, numbered lists, **task lists (with `[ ]`/`[x]`)**
+- Blockquote (plain blockquote preserved)
+- GitHub alert callout `> [!NOTE]` (preserved as literal — styling
+  becomes plain blockquote on re-import, expected v0.2.9 lossy)
+- Fenced code block as indented code (`const x: number = 1;`)
+- Inline link target (`example.com`)
+- Footnote reference `[^1]` + definition body
+- Tables (Pandoc grid format)
+- Inline citation rendered ("Smith 2020") + bibliography appended
+  at end ("Smith, J. 2020. Round-trip survival...")
+- CriticMarkup `{++inserted++}` accepted as `inserted`
+- CriticMarkup `{~~old~>new~~}` resolved to `new`
+- CriticMarkup `{==marked==}` survives as `marked`
+- CriticMarkup `{--deleted--}` correctly removed (accept default)
+- Inline math `$x^2 + y^2 = z^2$` and block math `$$\int_0^\infty$$`
+  (LaTeX syntax preserved)
+- Mermaid block source `graph TD; A-->B;` (as text, diagram lost
+  per documented limitation)
+- Memo body stripped (default `exportIncludeComments=false`)
+
+### Diverged from documentation — test fix only
+
+YAML front matter `title:` + `author:` do NOT round-trip into the
+re-imported markdown body. Pandoc's DOCX writer correctly places
+them into Word's document-properties metadata (Word's Title / Author
+fields, visible in File → Properties or via `unzip -p file.docx
+docProps/core.xml`), but `pandoc -f docx -t markdown` reads body
+content only by default — so re-import sees the body but not the
+metadata.
+
+This is a Pandoc design choice, not a Durumi bug. The v0.2.10
+PROGRESS already noted YAML metadata as a known lossy item. The
+test had a stale assertion (`expect(reimported).toContain('round-
+trip kitchen sink')`) that contradicted the documentation —
+inverted to assert the negative (`not.toMatch(/^title:/m)`) so
+the test stays correct if a future Pandoc version changes the
+DOCX writer behavior.
+
+### Why no production bug surfaced
+
+Round-trip itself is FINE. The DOCX file preserves title/author
+in Word metadata, so opening it in Word/LibreOffice shows the
+document title correctly. The only "loss" is when the re-import
+shape is expected to mirror the source markdown 1:1, which Pandoc
+never claimed. Documents going Durumi → DOCX → Word reach the
+user exactly as intended.
+
+### Test deltas
+
+- vitest: 1566/1566 unchanged (no source change)
+- e2e: **120 → 121 passed** (round-trip was self-skip, now runs).
+  Total 121 passed / 3 skipped (3 SMOKE-gated smoke screenshot
+  blocks — pure manual visual harness)
+- pnpm lint, typecheck, build: clean
+
+### Files touched
+
+- `e2e/round-trip.spec.ts` (assertion fix)
+- `package.json` (version bump)
+- `docs/PROGRESS.md` (this entry)
+
+---
+
+## v0.2.17 — Typecheck full coverage (meta-bug fix)
 
 ### What was broken
 
