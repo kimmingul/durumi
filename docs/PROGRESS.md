@@ -1,6 +1,187 @@
 # Durumi — Progress
 
-## v0.2.18 (current) — Round-trip test reality check (Pandoc actually ran)
+## v0.2.19 (current) — Toolbar list multi-line + link interactivity
+
+### What was broken (v0.2.18 manual-test report)
+
+A Document-mode walkthrough on v0.2.18 surfaced five real bugs.
+
+1. **Bullet button (`-`)** applied `- ` only to the first line of a
+   multi-line selection. Root cause: `EditorToolbar.toggleBulletList`
+   read `view.state.doc.lineAt(head)` and never inspected the range.
+2. **Numbered button (`1.`)** had the same single-line bug.
+3. **Numbered button continuity** — toggling line N then moving to
+   line N+1 and clicking again applied `1. ` instead of `2. `. Root
+   cause: no check against the previous non-blank line.
+4. **Checklist button (`[ ]`)** also only touched the first line.
+5. **Inline link** `[text](url)` had no hover tooltip, no click
+   behaviour (Cmd+click did nothing), and no edit affordance after
+   insertion. The renderer's `shellOpenExternal` allowlist was also
+   restricted to a three-host whitelist (pandoc.org / github.com)
+   for legacy install-dialog reasons, so even a fixed click handler
+   would have been rejected.
+
+### Fix shape — bugs 1-4 (shared)
+
+Lifted the bullet / numbered / task toggles out of `EditorToolbar.tsx`
+into a new `src/editor/keymap/listToggle.ts` shared helper with three
+exports. Each:
+
+- Expands the selection line-wise (first line .. last line) so a
+  selection that starts/ends mid-line still covers the full range.
+- Visits every non-blank line and applies / removes / swaps the
+  prefix in one `view.dispatch` (single undo step).
+- Toggle-off when EVERY non-blank line already carries the target
+  marker (Typora / VS Code semantics).
+- Skips blank lines.
+
+Numbered-list continuity is implemented by `previousNonBlank()`:
+before applying `1.` we walk upward from the first selected line;
+if that line matches `^\d+([.)])\s` we continue from `prev + 1`
+and increment from there for the rest of the selection.
+
+`toggleTask` keymap (Mod-Enter, the check/uncheck shortcut) is
+unchanged — that semantic is `[ ]` ↔ `[x]`, not add/remove. The
+toolbar button now uses the new multi-line `toggleTaskList`.
+
+### Fix shape — bug 5 (link interactivity)
+
+Two pieces:
+
+- New `src/editor/decorations/linkInteract.ts` exports
+  `linkHoverTooltip()` and `linkClickHandler()` (bundled as
+  `linkInteractivity()` in `decorations/index.ts`).
+  - Hover: CodeMirror's `hoverTooltip` (same pattern as the
+    v0.1.7 citation tooltip). Walks the lezer `Link` node via
+    the new `findLinkAt(state, pos)` helper; resolves URL,
+    optional title, and the visible label.
+  - Click: `EditorView.domEventHandlers({ mousedown })` gated on
+    `target.closest('.cm-md-link')` that calls
+    `window.api.shellOpenExternal(url)`. The class is only emitted
+    by the WYSIWYG-aware `linkDecoration`, so plain-click-follows
+    naturally limits itself to Document/Live mode; Source mode
+    keeps plain click as caret placement.
+  - Edit affordance: the tooltip renders "Open" + "Edit" buttons.
+    "Edit" dispatches `durumi:edit-link` with `{ from, to, text,
+    url, title }`; `EditorToolbar` listens, pre-fills
+    `InsertLinkDialog` via two new optional props (`initialUrl`,
+    `initialTitle`), and `confirmLink` replaces the range instead
+    of inserting at the caret when the dialog was opened in edit
+    mode.
+- `electron/ipc/_shared.ts::isExternalUrlAllowed` broadened from a
+  three-host whitelist to a protocol-based check:
+  `http: | https: | mailto:` accepted (any host); `javascript:` /
+  `vbscript:` / `data:` / `file:` rejected up front
+  (case-insensitive prefix check) AND a second-line URL-parse +
+  protocol check for defence-in-depth. Trim + lowercase the input
+  so `  JavaScript:alert(1)  ` is still rejected.
+
+### UX decision recorded (deliberate)
+
+Plain click — not Cmd+Click — follows the link in **both
+Document AND Live mode**. This is what the user asked for in the
+v0.2.18 install feedback. Trade-off: caret placement in Live
+mode now requires clicking BETWEEN links rather than on them; if
+users find this disruptive in practice we will switch Live mode
+to Cmd+Click in a future release. Source mode is unaffected —
+plain click there is still caret placement because the
+`.cm-md-link` class isn't emitted in markdown mode. The "edit
+existing link" path goes through the tooltip's "Edit" button so
+plain-click → open never conflicts with editing.
+
+### Tests added (+47)
+
+- `tests/editor/listToggle.test.ts` — 20 tests covering bullet /
+  numbered / task multi-line, mid-line selection boundaries,
+  blank-line skipping, toggle-off, and numbered continuity
+  (top-of-doc, through a blank line, with a bullet predecessor).
+- `tests/editor/linkInteract.test.ts` — 8 tests covering
+  `findLinkAt` (label, title, no-URL shortcut), click handler
+  firing `shellOpenExternal`, non-link clicks NOT firing it, and
+  the `durumi:edit-link` CustomEvent payload.
+- `tests/electron/shellOpen.test.ts` — updated to pin the new
+  protocol-based contract: +2 net cases on the v0.2.18 baseline
+  (mailto, multiple http(s) hosts, vbscript / data rejected,
+  case / whitespace robustness).
+- `tests/electron/shellOpen.test.ts` — **post-codex review
+  hardening: +17 defensive regression cases** locking down the
+  widened allowlist against encoding tricks
+  (`javascript%3Aalert(1)`, `javascript%00:alert(1)`,
+  `JaVaSCriPt:` mixed case), whitespace prefixes (tab / newline
+  / space), and adjacent custom schemes that must NOT be opened
+  (`chrome://`, `vscode://`, `tel:`, `magnet:`, `ssh://`,
+  `feed://`, `app://`). Re-confirms the three accepted protocols
+  (http / https / mailto, with and without query) still work.
+
+Each new list-toggle assertion was verified to fail without its
+targeted source change (temporarily reverted `toggleBulletList`
+to the v0.2.18 single-line shape — 6 of the 20 listToggle tests
+failed immediately, then restored).
+
+### Post-codex review
+
+Codex review returned no BLOCKING issues. One non-blocking
+suggestion was applied as defensive hardening: the +17 allowlist
+regression cases above. Codex confirmed the implementation
+already handles all of them correctly; the purpose of pinning
+them is so a future refactor of `isExternalUrlAllowed`
+(e.g. swapping `URL` parsing for a lighter check) breaks the
+suite immediately instead of silently relaxing the security
+gate.
+
+### Deferred to v0.2.20+ (codex non-blocking findings)
+
+- **Reference / shortcut link click-open.** `findLinkAt` only
+  matches inline `[text](url)` links with a URL child;
+  `[text][id]` and `[id]` constructs are not currently
+  click-openable. The fix chases the matching `LinkReference`
+  definition and re-uses the same `shellOpenExternal` path.
+- **Tooltip Open / Edit button race coverage.** The tooltip's
+  `addEventListener('click')` handlers fire synchronously and
+  the tooltip is dismissed by CodeMirror's
+  `hoverTooltip({ hideOnChange: true })`, but we don't have a
+  unit test confirming the "click during a doc change" path
+  doesn't double-fire or NPE. Adding a fake-timer test is
+  low-risk follow-up.
+- **`durumi:edit-link` range validation (defence-in-depth).**
+  The CustomEvent payload `{ from, to }` is consumed by
+  `EditorToolbar` without bounds-checking against the live
+  document length. The current dispatcher is internal (only
+  `linkInteract.ts` fires it), so trusting the payload is
+  fine; the defence-in-depth upgrade is to clamp `from` /
+  `to` to `[0, doc.length]` in the receiver, which guards
+  against a future external caller passing stale ranges.
+
+### Test deltas
+
+- vitest: **1566 → 1613 passed** (+47)
+- pnpm lint, typecheck: clean
+- e2e: unchanged from v0.2.18 (no new e2e — bugs 1-4 exercised by
+  the unit tests on the underlying helper, and bug 5's click
+  handler is unit-tested via a `shellOpenExternal` mock)
+
+### Files touched
+
+- `src/editor/keymap/listToggle.ts` (new)
+- `src/editor/decorations/linkInteract.ts` (new)
+- `src/components/EditorToolbar.tsx` (delete in-file list
+  helpers, wire to new shared helper, add `durumi:edit-link`
+  listener, add edit-range state for `confirmLink`)
+- `src/components/InsertLinkDialog.tsx` (add `initialUrl` /
+  `initialTitle` props)
+- `src/editor/decorations/index.ts` (register
+  `linkInteractivity()`)
+- `src/styles/global.css` (link tooltip styling)
+- `electron/ipc/_shared.ts` (broaden `isExternalUrlAllowed`)
+- `tests/editor/listToggle.test.ts` (new)
+- `tests/editor/linkInteract.test.ts` (new)
+- `tests/electron/shellOpen.test.ts` (updated contract)
+- `package.json` (version bump)
+- `docs/PROGRESS.md` (this entry)
+
+---
+
+## v0.2.18 — Round-trip test reality check (Pandoc actually ran)
 
 ### What was found
 

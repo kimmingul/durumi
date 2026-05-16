@@ -5,6 +5,16 @@ export interface InsertLinkDialogProps {
   open: boolean;
   /** Pre-filled display text (e.g. the editor selection). */
   initialText?: string;
+  /**
+   * v0.2.19 — pre-filled URL. Used by the "Edit link" flow (tooltip on a
+   * `[text](url)`) to populate the form with the current target.
+   */
+  initialUrl?: string;
+  /**
+   * v0.2.19 — pre-filled title. Used by the "Edit link" flow when the
+   * existing link has a `"title"` suffix.
+   */
+  initialTitle?: string;
   onClose: () => void;
   /**
    * Confirm callback. The toolbar inserts `[text](url)` (or
@@ -26,23 +36,25 @@ export interface InsertLinkDialogProps {
  * Esc closes.
  */
 export function InsertLinkDialog(props: InsertLinkDialogProps) {
-  const { open, initialText = '', onClose, onConfirm } = props;
+  const { open, initialText = '', initialUrl = '', initialTitle = '', onClose, onConfirm } = props;
   const [text, setText] = useState(initialText);
-  const [url, setUrl] = useState('');
-  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState(initialUrl);
+  const [title, setTitle] = useState(initialTitle);
   const urlInputRef = useRef<HTMLInputElement>(null);
 
   // Reset state every time the dialog opens. Pre-fill the display text with
-  // whatever the editor passed in (typically the current selection).
+  // whatever the editor passed in (typically the current selection). v0.2.19
+  // also pre-fills the URL and title when the dialog was opened to EDIT an
+  // existing `[text](url)` from the link tooltip.
   useEffect(() => {
     if (!open) return;
     setText(initialText);
-    setUrl('');
-    setTitle('');
+    setUrl(initialUrl);
+    setTitle(initialTitle);
     // Defer focus to the URL field — that's the only required input, and the
     // user can tab back to display text if they want to change it.
     setTimeout(() => urlInputRef.current?.focus(), 0);
-  }, [open, initialText]);
+  }, [open, initialText, initialUrl, initialTitle]);
 
   // Esc closes.
   useEffect(() => {

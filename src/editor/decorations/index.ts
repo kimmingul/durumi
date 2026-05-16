@@ -15,6 +15,7 @@ import { htmlInlineDecoration, htmlInlineTheme } from './htmlInline';
 import { inlineCodeDecoration } from './inlineCode';
 import { lineBreakDecoration, lineBreakTheme } from './lineBreak';
 import { linkDecoration, linkReferenceDecoration } from './link';
+import { linkInteractivity } from './linkInteract';
 import { imageDecoration } from './image';
 import { codeBlockDecoration } from './codeBlock';
 import { codeHighlight } from './codeHighlight';
@@ -56,6 +57,7 @@ export const liveDecorations = [
   lineBreakTheme,
   linkDecoration(),
   linkReferenceDecoration(),
+  linkInteractivity(),
   autolinkDecoration(),
   autolinkTheme,
   imageDecoration(),

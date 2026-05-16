@@ -4,25 +4,55 @@ import { type MemoSidecar, parseSidecar } from '@shared/memoSidecar';
 import { writeFileAtomic } from '../fs';
 
 /**
- * Allowlist for `shell:openExternal`. Renderer code is untrusted by default;
- * we only let it open the small set of URLs the install dialog needs. URLs
- * must parse, must be `https:`, and the hostname must be in the allowlist.
+ * Allowlist for `shell:openExternal`. Renderer code is untrusted by default,
+ * so we gate every URL handed to `shell.openExternal` here.
+ *
+ * Pre-v0.2.19 this allowlist was restricted to a tiny set of hostnames
+ * (pandoc.org / github.com) because the only caller was the install dialog
+ * and the DOI hover tooltip. v0.2.19 adds in-editor link clicks for
+ * `[text](url)` constructs, so the allowlist now accepts:
+ *
+ *   - `http:` / `https:` — any host. This is the markdown link contract;
+ *     the user already typed the URL into their own document, so we treat
+ *     it the same way a browser would.
+ *   - `mailto:` — anything parseable. Letting users click `mailto:` links
+ *     hands the message off to the OS mail client; same trust model.
+ *
+ * Explicitly REJECTED protocols (these are the dangerous ones a compromised
+ * renderer could try to abuse):
+ *   - `javascript:` — executes script in whatever process opens it.
+ *   - `file:` — could escape the document tree (and `shell.openExternal`
+ *     would happily launch the system handler for the file).
+ *   - `data:` — embedded payloads.
+ *   - `vbscript:` — IE-era script protocol still respected by some shells.
+ *
+ * If a NEW protocol needs adding in future, add it to the allowlist below
+ * AFTER auditing whether `shell.openExternal` can be tricked into doing
+ * something it shouldn't with that scheme.
  */
-const SHELL_OPEN_HOST_ALLOWLIST: ReadonlyArray<string> = [
-  'pandoc.org',
-  'www.pandoc.org',
-  'github.com',
-];
+const ALLOWED_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
 
 export function isExternalUrlAllowed(rawUrl: string): boolean {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) return false;
+  // Quick reject for the dangerous schemes BEFORE handing to `new URL`,
+  // since some malformed inputs can still parse but the protocol check below
+  // will catch them. The redundancy is intentional defence-in-depth.
+  const lowered = rawUrl.trim().toLowerCase();
+  if (
+    lowered.startsWith('javascript:') ||
+    lowered.startsWith('vbscript:') ||
+    lowered.startsWith('data:') ||
+    lowered.startsWith('file:')
+  ) {
+    return false;
+  }
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
     return false;
   }
-  if (parsed.protocol !== 'https:') return false;
-  return SHELL_OPEN_HOST_ALLOWLIST.includes(parsed.hostname);
+  return ALLOWED_PROTOCOLS.has(parsed.protocol);
 }
 
 /**

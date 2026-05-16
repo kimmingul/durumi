@@ -5,7 +5,11 @@ import { toggleWrap, toggleSup, toggleSub } from '../editor/keymap/toggleWrap';
 import { setHeading, clearHeading } from '../editor/keymap/setHeading';
 import { insertTable } from '../editor/keymap/insertTable';
 import { insertCodeBlock } from '../editor/keymap/insertCodeBlock';
-import { toggleTask } from '../editor/keymap/toggleTask';
+import {
+  toggleBulletList as toggleBulletListMulti,
+  toggleNumberedList as toggleNumberedListMulti,
+  toggleTaskList as toggleTaskListMulti,
+} from '../editor/keymap/listToggle';
 import { wrapComment } from '../editor/keymap/wrapComment';
 import {
   wrapCmInsert,
@@ -116,54 +120,12 @@ function toggleBlockquote(view: EditorView): boolean {
   return true;
 }
 
-/** Toggle a bullet (`- `) marker at the start of the current line. */
-function toggleBulletList(view: EditorView): boolean {
-  const head = view.state.selection.main.head;
-  const line = view.state.doc.lineAt(head);
-  const text = line.text;
-  if (/^[-*+] /.test(text)) {
-    view.dispatch({
-      changes: { from: line.from, to: line.from + 2, insert: '' },
-    });
-    return true;
-  }
-  const ordered = /^\d+\.\s/.exec(text);
-  if (ordered) {
-    view.dispatch({
-      changes: { from: line.from, to: line.from + ordered[0].length, insert: '- ' },
-    });
-    return true;
-  }
-  view.dispatch({
-    changes: { from: line.from, to: line.from, insert: '- ' },
-  });
-  return true;
-}
-
-/** Toggle a numbered (`1. `) marker at the start of the current line. */
-function toggleNumberedList(view: EditorView): boolean {
-  const head = view.state.selection.main.head;
-  const line = view.state.doc.lineAt(head);
-  const text = line.text;
-  const numbered = /^\d+\.\s/.exec(text);
-  if (numbered) {
-    view.dispatch({
-      changes: { from: line.from, to: line.from + numbered[0].length, insert: '' },
-    });
-    return true;
-  }
-  const bullet = /^[-*+] /.exec(text);
-  if (bullet) {
-    view.dispatch({
-      changes: { from: line.from, to: line.from + bullet[0].length, insert: '1. ' },
-    });
-    return true;
-  }
-  view.dispatch({
-    changes: { from: line.from, to: line.from, insert: '1. ' },
-  });
-  return true;
-}
+// v0.2.19 — bullet / numbered list toggles now live in `editor/keymap/listToggle.ts`
+// and handle multi-line selections + numbered-list continuity. The toolbar
+// uses `toggleBulletListMulti` / `toggleNumberedListMulti` aliases below so
+// existing inline call sites keep their old names.
+const toggleBulletList = toggleBulletListMulti;
+const toggleNumberedList = toggleNumberedListMulti;
 
 /** Insert a `$$ ... $$` math block at the caret with the caret on the middle line. */
 function insertMathBlock(view: EditorView): boolean {
@@ -320,6 +282,13 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
   });
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkInitialText, setLinkInitialText] = useState('');
+  // v0.2.19 - when set, confirmLink replaces this range (an existing
+  // `[text](url)`) instead of inserting at the current selection. Cleared
+  // on dialog close. The init fields come from the durumi:edit-link
+  // CustomEvent dispatched by the link tooltip.
+  const [linkEditRange, setLinkEditRange] = useState<{ from: number; to: number } | null>(null);
+  const [linkInitialUrl, setLinkInitialUrl] = useState('');
+  const [linkInitialTitle, setLinkInitialTitle] = useState('');
   const [tablePopover, setTablePopover] = useState<DOMRect | null>(null);
   const tableButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -382,6 +351,24 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     return () => el.removeEventListener('keydown', onKey);
   }, []);
 
+  // v0.2.19 - listen for the link tooltip's "Edit" button. The decoration
+  // overlay fires `durumi:edit-link` with the existing link's range +
+  // current text/url/title; we pre-fill the dialog and remember the range
+  // so confirmLink replaces it instead of inserting at the current caret.
+  useEffect(() => {
+    function onEdit(event: Event): void {
+      const detail = (event as CustomEvent<{ from: number; to: number; text: string; url: string; title: string }>).detail;
+      if (!detail) return;
+      setLinkEditRange({ from: detail.from, to: detail.to });
+      setLinkInitialText(detail.text ?? '');
+      setLinkInitialUrl(detail.url ?? '');
+      setLinkInitialTitle(detail.title ?? '');
+      setLinkOpen(true);
+    }
+    window.addEventListener('durumi:edit-link', onEdit as EventListener);
+    return () => window.removeEventListener('durumi:edit-link', onEdit as EventListener);
+  }, []);
+
   if (!visible) return null;
 
   const disabled = !view;
@@ -412,21 +399,33 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     if (!view) return;
     const { from, to } = view.state.selection.main;
     const text = view.state.sliceDoc(from, to);
+    setLinkEditRange(null);
     setLinkInitialText(text);
+    setLinkInitialUrl('');
+    setLinkInitialTitle('');
     setLinkOpen(true);
+  }
+
+  function closeLinkDialog() {
+    setLinkOpen(false);
+    setLinkEditRange(null);
   }
 
   function confirmLink({ text, url, title }: { text: string; url: string; title: string }) {
     if (!view) return;
-    const { from, to } = view.state.selection.main;
+    // When linkEditRange is set we are REPLACING an existing `[text](url)`
+    // (the user clicked "Edit" in the tooltip). Otherwise we insert at the
+    // current selection.
+    const range = linkEditRange ?? view.state.selection.main;
     const safeTitle = title.replace(/"/g, '\\"');
     const insert = title
       ? `[${text}](${url} "${safeTitle}")`
       : `[${text}](${url})`;
     view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from + insert.length },
+      changes: { from: range.from, to: range.to, insert },
+      selection: { anchor: range.from + insert.length },
     });
+    setLinkEditRange(null);
     view.focus();
   }
 
@@ -627,7 +626,7 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
             <ToolButton
               label={t('toolbar.task')}
               disabled={disabled}
-              onClick={() => run((v) => toggleTask(v))}
+              onClick={() => run((v) => toggleTaskListMulti(v))}
               testId="toolbar-task"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -932,7 +931,9 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
           <InsertLinkDialog
             open={linkOpen}
             initialText={linkInitialText}
-            onClose={() => setLinkOpen(false)}
+            initialUrl={linkInitialUrl}
+            initialTitle={linkInitialTitle}
+            onClose={closeLinkDialog}
             onConfirm={confirmLink}
           />
         )}
