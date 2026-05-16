@@ -5,7 +5,7 @@ import { commentDecoration, commentTheme } from './comment';
 import { criticMarkupDecoration, criticMarkupTheme } from './criticMarkup';
 import { footnoteDecoration, footnoteTheme } from './footnote';
 import { frontMatterDecoration, frontMatterTheme } from './frontMatter';
-import { headingDecoration } from './heading';
+import { headingDecoration, setextHeadingTheme } from './heading';
 import { highlightExtras } from './highlight';
 import { tocDecoration, tocTheme } from './toc';
 import { emphasisDecoration } from './emphasis';
@@ -43,6 +43,7 @@ export const liveDecorations = [
   tocDecoration(),
   tocTheme,
   headingDecoration(),
+  setextHeadingTheme,
   emphasisDecoration(),
   escapeDecoration(),
   htmlInlineDecoration(),

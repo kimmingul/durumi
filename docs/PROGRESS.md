@@ -1,6 +1,110 @@
 # Durumi — Progress
 
-## v0.2.14 (current) — Empty-container rendering + smoke v2 infra
+## v0.2.15 (current) — Setext heading marker hide (smoke v2 follow-up)
+
+The v0.2.14 smoke v2 verification pass surfaced the last sign-off-
+deferred Phase A matrix gap visually in shot
+`e2e/screenshots/v0.2-smoke/14-document-headings-h1-h6.png`: ATX H1–
+H6 rendered cleanly with `# ` markers hidden in Document mode, but
+the Setext form left the raw `=========` / `---------` underline
+visible underneath every styled heading. Per `docs/editor-modes.md`
+§2.1, Document mode must hide markdown markers everywhere — including
+on the active line. v0.2.15 closes that gap.
+
+### Root cause
+
+`src/editor/decorations/heading.ts:33-36` (pre-v0.2.15) had an
+explicit guard:
+
+> Setext markers live on a separate line (`===` / `---` underneath)
+> and shouldn't be replaced — leave them visible.
+
+The guard predates the v0.1.11 Document mode introduction and was
+historically defensive: a naïve hide of `---` could collide with
+horizontal-rule rendering. But `@lezer/markdown` already
+disambiguates Setext-vs-HR at parse time — a `---` standing alone
+after a blank line is a `HorizontalRule` node, a `---` directly
+under a non-blank line is a `SetextHeading2` node. Hiding the
+underline of a confirmed `SetextHeading*` node therefore cannot
+affect HR rendering. The explicit skip was overly conservative.
+
+### The fix — `heading.ts`
+
+The visitor now treats Setext underlines as marker content,
+mode-aware via the canonical `shouldHideMarker(state, lineActive)`
+helper:
+
+- **Document mode:** the underline is always hidden (matches the
+  WYSIWYG "uniform Word-like rendering" invariant).
+- **Live (typora):** the underline is hidden ONLY when the caret is
+  off the entire SetextHeading node (so editing the source on the
+  active line still works).
+- **Source (markdown):** decorations are off — raw markdown shown.
+
+Two cooperating decorations collapse the underline line:
+
+1. `Decoration.line({ class: 'cm-md-setext-underline-hidden' })` —
+   tags the line wrapper for the new theme rule
+   `'.cm-md-setext-underline-hidden { display: none }'`, so the
+   line takes zero visual space.
+2. `Decoration.replace({ widget: HiddenMarkerWidget })` over just
+   the `HeaderMark` run — keeps the `=========` / `---------`
+   characters out of any rendered fallback and clean for copy-from-
+   DOM.
+
+The HeaderMark child of a `SetextHeading*` node is the underline
+run itself; we locate it via a small `findSetextUnderlineRange`
+helper that walks node children.
+
+The framework `decorationPlugin` was already mode-flip safe via the
+`rebuildOn` hook (added for image's `setDocPath` in earlier work).
+We thread `rebuildOn: [setEditMode]` through `headingDecoration()`
+so a bare `setEditMode.of('wysiwyg')` (no doc / no selection change)
+forces a rebuild — the canonical v0.2.8 listener pattern.
+
+### Why `Decoration.line` + inline `Decoration.replace` instead of `block: true`
+
+The first attempt used `Decoration.replace({ block: true })` over
+the underline line, mirroring `frontMatter.ts` / `table.ts`. That
+threw `RangeError: Block decorations may not be specified via
+plugins`: block decorations are restricted to StateFields, and
+`headingDecoration()` is a ViewPlugin via the shared decoration
+framework. Migrating heading to a StateField just for one line-hide
+felt heavier than the line-decoration + CSS approach, which is the
+same shape the table delimiter row uses (`display:none` on the
+delimiter line wrapper) and is fully ViewPlugin-compatible.
+
+### HR safety
+
+The new `tests/editor/setextHeading.test.ts` adds an explicit
+negative test: a `para\n\n---\n\nmore` document parses to
+`Paragraph + HorizontalRule + Paragraph`, the heading visitor
+never sees a SetextHeading node, and the HR plugin's widget
+replace continues to produce the rendered `<hr>` — no
+`cm-md-setext-underline-hidden` decoration is added.
+
+### Files
+
+- `src/editor/decorations/heading.ts` — `+62 −15` (remove the
+  Setext skip guard, add `findSetextUnderlineRange`, line +
+  inline-replace pair, `setextHeadingTheme`, `rebuildOn:
+  [setEditMode]`).
+- `src/editor/decorations/index.ts` — `+2 −1` (export +
+  register `setextHeadingTheme`).
+- `tests/editor/setextHeading.test.ts` — `+121 −10` (six new
+  regression tests: Document-mode hide for `===` and `---`, Live-
+  off-line hide, Live-on-line + Live-on-underline-line show, HR
+  safety negative, mode-only transaction rebuild guard; one
+  existing "never hide" assertion inverted).
+- `e2e/screenshots/v0.2-smoke/14-document-headings-h1-h6.png` —
+  regenerated; Setext H1 / H2 now read as styled headings with the
+  underline collapsed.
+- `package.json` — `0.2.14 → 0.2.15`.
+
+Suite delta: vitest **1556 → 1562** (+6 net new regression cases);
+e2e unchanged at **120 passed / 2 skipped**. Lint + typecheck clean.
+
+## v0.2.14 — Empty-container rendering + smoke v2 infra
 
 A third visual smoke verification pass — this time with the expanded
 Section F–O fixture and the new `parkLineAtTop` helper — caught two
