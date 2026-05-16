@@ -668,4 +668,398 @@ test.describe('v0.2 smoke screenshots', () => {
       }
     }
   });
+
+  /**
+   * v0.2.17 — deeper interaction scenarios (smoke v4 expansion, shots #32+).
+   *
+   * What this block adds over #01–31:
+   *  - Explicit Light vs Dark theme captures driven through the Settings
+   *    dialog's RadioGroup (not the toggleTheme menu command, which depends
+   *    on the resolved system theme — #31 may have been inconclusive on a
+   *    machine whose system theme is already dark).
+   *  - Table editing surface (v0.2.4–v0.2.7): cell focus mid-edit, cell
+   *    blurred back to render mode, the hover overlay with +row/+col
+   *    controls, and the table-style popover preset picker.
+   *  - Memo panel reply composer + hide-resolved toggle (multi-memo path).
+   *  - Workspace folder open (programmatic via prefsSet + reload to skip
+   *    the OS picker dialog) so the file tree shows real entries, plus a
+   *    right-click context menu shot.
+   *  - Crossref search empty state in the right-sidebar References tab.
+   *
+   * Each capture restores enough state for the next shot to start from
+   * a known baseline (Document mode, scrolled appropriately, dialogs/
+   * popovers closed). Where an affordance is hard to drive deterministically
+   * we log and snap whatever is on-screen so the orchestrator still gets
+   * a frame to triage.
+   */
+  test('capture deeper interaction scenarios', async () => {
+    test.setTimeout(240_000);
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-smoke-v4-'));
+    const mdPath = path.join(tmpDir, 'v0.2-smoke-test.md');
+    fs.copyFileSync(FIXTURE_SRC, mdPath);
+    fs.mkdirSync(SHOT_DIR, { recursive: true });
+
+    // Workspace folder for shots #40-41 — seeded with a few markdown files
+    // so the file tree has visible entries (the e2e launch otherwise opens
+    // with no workspace folder).
+    const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-smoke-v4-ws-'));
+    fs.writeFileSync(path.join(wsDir, 'alpha.md'), '# alpha\n\nBody A\n');
+    fs.writeFileSync(path.join(wsDir, 'beta.md'), '# beta\n\nBody B\n');
+    fs.writeFileSync(path.join(wsDir, 'notes.md'), '# notes\n\nBody C\n');
+    fs.mkdirSync(path.join(wsDir, 'subdir'));
+    fs.writeFileSync(path.join(wsDir, 'subdir', 'inner.md'), '# inner\n\nNested\n');
+
+    /**
+     * Open the Settings dialog, select a theme radio (Light/Dark/System),
+     * close the dialog, then wait for the `data-theme` attribute on <html>
+     * to actually reflect the new value. Using the dialog (not the
+     * toggleTheme menu command) makes the capture deterministic regardless
+     * of system theme.
+     */
+    async function setThemeViaSettings(
+      app: ElectronApplication,
+      page: Page,
+      theme: 'light' | 'dark' | 'system',
+    ): Promise<void> {
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'openSettings');
+      });
+      await page
+        .waitForSelector('[data-testid="settings-dialog"]', { timeout: 4000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(200);
+      const radio = page.locator(`[data-testid="settings-theme-${theme}"]`).first();
+      const visible = await radio
+        .isVisible({ timeout: 2000 })
+        .catch(() => false);
+      if (visible) {
+        await radio.check({ force: true });
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`[smoke] settings-theme-${theme} radio not visible — capturing as-is`);
+      }
+      // Close the dialog so the editor area is on screen for the capture.
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('[data-testid="settings-dialog"]', {
+        state: 'detached',
+        timeout: 2000,
+      }).catch(() => undefined);
+      // Let the theme cascade through.
+      await page.waitForTimeout(400);
+    }
+
+    const { app, page } = await launch();
+    try {
+      await openFixture(app, page, mdPath);
+      await setWysiwygMode(app, page);
+      await scrollToTop(page);
+
+      // ---- 32 — Light theme explicitly set via Settings (independent of
+      // system theme; differs from #01 which inherits whatever resolved
+      // theme the launch picked up). Compare against #33 to verify the
+      // theme switch actually re-paints.
+      await setThemeViaSettings(app, page, 'light');
+      await scrollToTop(page);
+      await snap(page, '32-light-theme-explicit.png');
+
+      // ---- 33 — Dark theme explicitly set via Settings. Unlike #31
+      // (which used the toggleTheme menu and may have been a no-op on
+      // dark-system test machines), this radio-set path forces dark.
+      await setThemeViaSettings(app, page, 'dark');
+      await scrollToTop(page);
+      await snap(page, '33-dark-theme-explicit.png');
+
+      // Restore light theme for the remaining shots so the orchestrator
+      // can compare them visually against the existing light-mode #01-31.
+      await setThemeViaSettings(app, page, 'light');
+
+      // ---- 34 — Table cell focused (mid-edit). The Section C fixture
+      // table is on lines 47-50. We park it near the top, then click the
+      // first body cell so the contentEditable cell takes focus and the
+      // cell-edit visual state (per invariant #12) is on screen.
+      await setWysiwygMode(app, page);
+      const tableLine34 = await findLine(page, 'Center');
+      if (tableLine34 > 0) {
+        await parkLineAtTop(page, tableLine34, 80);
+      }
+      const cellFocus = await page
+        .$('.cm-table-row-body .cm-table-cell[contenteditable="true"]');
+      if (cellFocus) {
+        try {
+          await cellFocus.click();
+          // Settle the focus ring + any toolbar.
+          await page.waitForTimeout(250);
+        } catch {
+          /* fall through — capture whatever's visible */
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke] could not find table body cell for shot 34');
+      }
+      await snap(page, '34-table-cell-focused.png');
+
+      // ---- 35 — Table cell blurred (back to render mode). Click the
+      // editor body well below the table to drop the cell's contentEditable
+      // focus, then snap. Should show the rendered (non-edit) appearance.
+      await page.locator('.cm-content').click({ position: { x: 10, y: 350 } });
+      await page.waitForTimeout(200);
+      // Re-park the table near the top in case the click scrolled us.
+      if (tableLine34 > 0) {
+        await parkLineAtTop(page, tableLine34, 80);
+      }
+      await snap(page, '35-table-cell-blurred.png');
+
+      // ---- 36 — Table hover toolbar (v0.2.5 floating action overlay).
+      // Hover a body cell to surface the +row/+col/delete buttons. The
+      // overlay testids are `table-action-row-below`, `-row-above`,
+      // `-col-left`, `-col-right`, `-row-delete`, `-col-delete`.
+      if (tableLine34 > 0) {
+        await parkLineAtTop(page, tableLine34, 80);
+      }
+      const hoverCell = page
+        .locator('.cm-table-row-body .cm-table-cell[contenteditable="true"]')
+        .first();
+      const hoverVisible = await hoverCell
+        .isVisible({ timeout: 1500 })
+        .catch(() => false);
+      if (hoverVisible) {
+        await hoverCell.hover();
+        await page
+          .waitForSelector('[data-testid="table-action-row-below"]', { timeout: 2000 })
+          .catch(() => {
+            // eslint-disable-next-line no-console
+            console.warn('[smoke] table action overlay did not appear for shot 36');
+          });
+        await page.waitForTimeout(200);
+      }
+      await snap(page, '36-table-hover-toolbar.png');
+      // Move the mouse away so the overlay clears before the next shot.
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(150);
+
+      // ---- 37 — Table style popover (v0.2.6 preset picker). The gear
+      // icon lives on the header row; click it to surface the popover.
+      if (tableLine34 > 0) {
+        await parkLineAtTop(page, tableLine34, 80);
+      }
+      // Hover the header row to make the gear discoverable.
+      const headerCell = page
+        .locator('.cm-table-row-header .cm-table-cell')
+        .first();
+      const headerVisible = await headerCell
+        .isVisible({ timeout: 1500 })
+        .catch(() => false);
+      if (headerVisible) {
+        await headerCell.hover();
+      }
+      const gear = page.locator('[data-testid="table-style-gear"]').first();
+      const gearVisible = await gear
+        .isVisible({ timeout: 1500 })
+        .catch(() => false);
+      if (gearVisible) {
+        await gear.click({ force: true });
+        await page
+          .waitForSelector('[data-testid="table-style-popover"]', { timeout: 2000 })
+          .catch(() => {
+            // eslint-disable-next-line no-console
+            console.warn('[smoke] table-style-popover did not open for shot 37');
+          });
+        await page.waitForTimeout(200);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke] table-style-gear not visible for shot 37 — snapping fallback');
+      }
+      await snap(page, '37-table-style-popover.png');
+      // Close the popover via Escape before subsequent shots.
+      await page.keyboard.press('Escape');
+      await page
+        .waitForSelector('[data-testid="table-style-popover"]', {
+          state: 'detached',
+          timeout: 2000,
+        })
+        .catch(() => undefined);
+
+      // ---- 38 — Memo reply input. Open the Memos panel, click the
+      // first visible memo card's "Reply" button to open the composer,
+      // then focus the textarea so the capture shows the input ready
+      // for typing. Avoid moving the caret beforehand — the memo cards
+      // get repositioned in absolute layout when the active line changes,
+      // which can race with the button click.
+      await scrollToTop(page);
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showMemos');
+      });
+      await page
+        .waitForSelector('[data-testid="memo-card-reply-open"]', { timeout: 4000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(400);
+      // Use the LAST reply-open button (the lower one is less likely to
+      // be clipped if the panel's absolute layout pushes the first one
+      // above the visible area). Both belong to legitimate memo cards.
+      const replyOpen = page.locator('[data-testid="memo-card-reply-open"]').last();
+      const replyOpenCount = await page
+        .locator('[data-testid="memo-card-reply-open"]')
+        .count();
+      if (replyOpenCount > 0) {
+        // scrollIntoViewIfNeeded so the absolute-positioned card is in
+        // the visible viewport before clicking.
+        await replyOpen.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(() => undefined);
+        await replyOpen.click({ force: true }).catch(() => undefined);
+        await page
+          .waitForSelector('[data-testid="memo-card-reply-input"]', { timeout: 2000 })
+          .catch(() => undefined);
+        const replyInput = page.locator('[data-testid="memo-card-reply-input"]').last();
+        const inputVisible = await replyInput
+          .isVisible({ timeout: 1500 })
+          .catch(() => false);
+        if (inputVisible) {
+          await replyInput.click({ force: true }).catch(() => undefined);
+          await page.keyboard.type('Thanks for the note.', { delay: 5 });
+          await page.waitForTimeout(150);
+        } else {
+          // eslint-disable-next-line no-console
+          console.warn('[smoke] memo-card-reply-input not visible after open for shot 38');
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke] no memo-card-reply-open found for shot 38');
+      }
+      await snap(page, '38-memo-reply-input.png');
+
+      // ---- 39 — Memo "Hide resolved" toggle in the panel header.
+      // The fixture has a couple of memos; mark the first one resolved
+      // via its checkbox, then capture the panel state showing the
+      // resolved styling (strikethrough + lower opacity) on that card.
+      const resolvedCheckbox = page
+        .locator('[data-testid="memo-card-resolved"]')
+        .first();
+      const resolvedVisible = await resolvedCheckbox
+        .isVisible({ timeout: 1500 })
+        .catch(() => false);
+      if (resolvedVisible) {
+        await resolvedCheckbox.check({ force: true }).catch(() => undefined);
+        // Toggle hide-resolved OFF so the resolved card is still visible
+        // in the capture (default is hidden).
+        const hideResolved = page
+          .locator('[data-testid="memo-panel-hide-resolved"]')
+          .first();
+        const hrVisible = await hideResolved
+          .isVisible({ timeout: 1000 })
+          .catch(() => false);
+        if (hrVisible) {
+          await hideResolved.uncheck({ force: true }).catch(() => undefined);
+        }
+        await page.waitForTimeout(250);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke] memo-card-resolved checkbox not visible for shot 39');
+      }
+      await snap(page, '39-memo-resolved-toggle.png');
+
+      // ---- 40 — File tree with a real workspace folder. We seed the
+      // folder list via prefsSet + reload (same pattern as
+      // workspaces.spec.ts) because window.api.dialogOpenFolder would
+      // otherwise spawn an OS picker the e2e harness can't drive. The
+      // path-guard accepts tmpdir paths under DURUMI_E2E=1.
+      await page.evaluate(async (wsPath: string) => {
+        const api = (window as unknown as {
+          api: {
+            prefsSet: (x: {
+              workspaceFolders: string[];
+              sidebar?: { visible: boolean; activeTab: 'files'; width: number };
+            }) => Promise<void>;
+          };
+        }).api;
+        await api.prefsSet({
+          workspaceFolders: [wsPath],
+          sidebar: { visible: true, activeTab: 'files', width: 315 },
+        });
+      }, wsDir);
+      await page.reload();
+      await page.waitForSelector('.cm-content', { timeout: 5000 });
+      // Re-open the fixture (reload reset the open document).
+      await openFixture(app, page, mdPath);
+      await setWysiwygMode(app, page);
+      await page
+        .waitForSelector('.cm-tree-root-label', { timeout: 5000 })
+        .catch(() => {
+          // eslint-disable-next-line no-console
+          console.warn('[smoke] cm-tree-root-label not visible for shot 40');
+        });
+      await page.waitForTimeout(300);
+      await snap(page, '40-file-tree-with-folder.png');
+
+      // ---- 41 — File tree context menu. Right-click the first file row
+      // to surface the rename/delete/etc context menu (testid
+      // `cm-context-menu`).
+      const fileRow = page.locator('.cm-tree-row-file').first();
+      const fileRowVisible = await fileRow
+        .isVisible({ timeout: 1500 })
+        .catch(() => false);
+      if (fileRowVisible) {
+        await fileRow.click({ button: 'right' }).catch(() => undefined);
+        await page
+          .waitForSelector('[data-testid="cm-context-menu"]', { timeout: 2000 })
+          .catch(() => {
+            // eslint-disable-next-line no-console
+            console.warn('[smoke] cm-context-menu did not appear for shot 41');
+          });
+        await page.waitForTimeout(200);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke] no file row visible for shot 41');
+      }
+      await snap(page, '41-file-tree-context-menu.png');
+      // Dismiss the context menu.
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(150);
+
+      // ---- 42 — Crossref search with a query typed. Open the right
+      // sidebar References tab, type a couple of letters into the search
+      // input — depending on network connectivity in the e2e env this
+      // will land on either the offline badge, the empty-results state,
+      // or the loading spinner. All three are useful captures of the
+      // search chrome that #25 (which had no query typed) missed.
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showReferences');
+      });
+      await page
+        .waitForSelector('[data-testid="references-search-input"]', { timeout: 4000 })
+        .catch(() => undefined);
+      const searchInput = page.locator('[data-testid="references-search-input"]').first();
+      const searchInputVisible = await searchInput
+        .isVisible({ timeout: 1500 })
+        .catch(() => false);
+      if (searchInputVisible) {
+        // The input is disabled when offline; in that case typing is a no-op
+        // but the capture still shows the offline UI.
+        const disabled = await searchInput.getAttribute('disabled').catch(() => null);
+        if (disabled === null) {
+          await searchInput.fill('CRISPR systematic review');
+          // Let the debounced search hit either loading or results state.
+          await page.waitForTimeout(900);
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke] references-search-input not visible for shot 42');
+      }
+      await snap(page, '42-crossref-search-empty.png');
+    } finally {
+      await shutdown(app);
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+      try {
+        fs.rmSync(wsDir, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+    }
+  });
 });
