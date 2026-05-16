@@ -12,6 +12,8 @@
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "outDir": "out",
+    "noEmit": true,
+    "composite": true,
     "types": ["node"],
     "baseUrl": ".",
     "paths": { "@shared/*": ["shared/*"] }

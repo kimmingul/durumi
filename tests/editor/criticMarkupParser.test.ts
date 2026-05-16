@@ -49,7 +49,7 @@ describe('CriticMarkupExtension parser', () => {
     const v = setup('hello {-- gone --} world');
     const del = nodesOfType(v, 'CmDelete');
     expect(del).toHaveLength(1);
-    expect(del[0].from).toBe(6);
+    expect(del[0]!.from).toBe(6);
     v.destroy();
   });
 
@@ -72,7 +72,7 @@ describe('CriticMarkupExtension parser', () => {
     const plain = nodesOfType(v, 'Highlight');
     expect(cm).toHaveLength(1);
     expect(plain).toHaveLength(1);
-    expect(cm[0].from).toBeGreaterThan(plain[0].to);
+    expect(cm[0]!.from).toBeGreaterThan(plain[0]!.to);
     v.destroy();
   });
 
@@ -194,8 +194,8 @@ describe('CriticMarkupExtension parser', () => {
 
   it('substitution arrow lands inside the substitution range', () => {
     const v = setup('start {~~old~>new~~} end');
-    const sub = nodesOfType(v, 'CmSubstitution')[0];
-    const arr = nodesOfType(v, 'CmSubArrow')[0];
+    const sub = nodesOfType(v, 'CmSubstitution')[0]!;
+    const arr = nodesOfType(v, 'CmSubArrow')[0]!;
     expect(arr.from).toBeGreaterThan(sub.from);
     expect(arr.to).toBeLessThan(sub.to);
     v.destroy();

@@ -38,8 +38,10 @@ export function collectCitationKeys(markdown: string): string[] {
   const seen = new Set<string>();
   for (const m of markdown.matchAll(CITATION_BLOCK_RE)) {
     const inner = m[1];
+    if (!inner) continue;
     for (const k of inner.matchAll(KEY_IN_BLOCK_RE)) {
       const key = k[1];
+      if (!key) continue;
       if (!seen.has(key)) {
         seen.add(key);
         order.push(key);
@@ -63,6 +65,7 @@ export function applyCitations(
     let unknown = false;
     for (const k of inner.matchAll(KEY_IN_BLOCK_RE)) {
       const key = k[1];
+      if (!key) continue;
       const num = numberMap.get(key);
       if (num !== undefined) {
         numbers.push(`<a href="#ref-${escapeHref(key)}" class="citation-ref">${num}</a>`);
@@ -140,7 +143,7 @@ function formatOneAuthor(name: string): string {
   let firsts = '';
   if (trimmed.includes(',')) {
     const [l, ...rest] = trimmed.split(',');
-    last = l.trim();
+    last = (l ?? '').trim();
     firsts = rest.join(',').trim();
   } else {
     const tokens = trimmed.split(/\s+/);

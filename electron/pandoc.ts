@@ -64,7 +64,7 @@ async function probe(bin: string): Promise<PandocInfo | null> {
   if (!result.ok) return null;
   const firstLine = result.stdout.split('\n')[0]?.trim() ?? '';
   const m = /^pandoc(?:\.exe)?\s+(\S+)/i.exec(firstLine);
-  if (!m) return null;
+  if (!m || m[1] === undefined) return null;
   return { binary: bin, version: m[1] };
 }
 

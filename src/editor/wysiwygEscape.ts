@@ -139,6 +139,7 @@ export function wysiwygEscapeFilter(): Extension {
     if (bail || !mutated || specs.length === 0) return tr;
 
     const last = specs[specs.length - 1];
+    if (!last) return tr;
     const caret = last.from + last.insert.length;
     return {
       changes: specs,

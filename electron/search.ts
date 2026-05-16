@@ -130,6 +130,7 @@ async function scanFile(
   for (let i = 0; i < lines.length; i++) {
     if (hits.length >= MAX_HITS) return;
     const line = lines[i];
+    if (line === undefined) continue;
     for (const m of line.matchAll(matcher)) {
       const idx = m.index ?? 0;
       hits.push({

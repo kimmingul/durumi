@@ -4,18 +4,69 @@ import { createRoot, type Root } from 'react-dom/client';
 import { SettingsDialog } from '../../src/components/SettingsDialog';
 import type { Preferences } from '@shared/ipc-contract';
 
+const styleSpec = (size: number, weight = 400) => ({
+  fontFamily: 'sans-serif',
+  fontSizePx: size,
+  fontWeight: weight,
+  color: null,
+  lineHeight: 1.5,
+});
+
 const DEFAULT_PREFS: Preferences = {
   theme: 'system',
   language: 'system',
   lastWindow: { width: 980, height: 720 },
   recentFiles: [],
   sidebar: { visible: true, activeTab: 'files', width: 240 },
+  rightSidebar: { visible: false, activeTab: 'references', width: 320 },
+  memoPanel: { width: 320, hideResolvedDefault: false, groupBy: 'line' },
+  author: { name: 'tester' },
   workspaceFolders: [],
+  recentFolders: [],
   pandocPath: null,
   docxStyleReference: null,
   latexTemplate: null,
   spellCheckLanguages: ['en-US'],
   spellCheckCustomWords: [],
+  exportPreserveAnnotations: false,
+  exportIncludeComments: false,
+  exportInlineImages: false,
+  editor: {
+    defaultMode: 'wysiwyg',
+    activePreset: null,
+    styles: {
+      body: styleSpec(16),
+      h1: styleSpec(28, 700),
+      h2: styleSpec(24, 700),
+      h3: styleSpec(20, 700),
+      h4: styleSpec(18, 600),
+      h5: styleSpec(16, 600),
+      h6: styleSpec(15, 600),
+      blockquote: styleSpec(16),
+      code: { ...styleSpec(14), fontFamily: 'monospace' },
+      tableHeader: styleSpec(16, 600),
+    },
+    tableStyleFormat: 'pandoc',
+  },
+  bibliography: {
+    email: null,
+    ncbiApiKey: null,
+    orcidId: null,
+    insertCitationOnAdd: false,
+    autoSaveAbstract: false,
+    sortBy: 'addedDesc',
+  },
+  ai: {
+    provider: 'anthropic',
+    anthropicKey: '',
+    anthropicModel: 'claude-3-5-sonnet-20241022',
+    openaiKey: '',
+    openaiBaseUrl: '',
+    openaiModel: '',
+    ghostTextEnabled: false,
+    ghostTextIdleMs: 1000,
+    ghostTextSessionCap: 50,
+  },
 };
 
 interface ApiMock {

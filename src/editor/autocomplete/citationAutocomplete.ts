@@ -29,7 +29,7 @@ export function citationSource(context: CompletionContext): CompletionResult | n
     context.pos,
   );
   const m = TRIGGER_RE.exec(beforeCaret);
-  if (!m) return null;
+  if (!m || m[1] === undefined) return null;
   const entries = useBibliographyStore.getState().entries;
   if (entries.length === 0) return null;
 

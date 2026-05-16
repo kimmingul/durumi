@@ -69,9 +69,12 @@ export function findCitationSpan(line: string, col: number): CitationSpan | null
     const end = start + m[0].length;
     if (col >= start && col <= end) {
       const inner = m[1];
+      if (inner === undefined) continue;
       const keyRe = /-?@([A-Za-z0-9_:.\-+/]+)/g;
       const keys: string[] = [];
-      for (const k of inner.matchAll(keyRe)) keys.push(k[1]);
+      for (const k of inner.matchAll(keyRe)) {
+        if (k[1] !== undefined) keys.push(k[1]);
+      }
       return { start, end, keys };
     }
   }

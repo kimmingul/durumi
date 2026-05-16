@@ -31,7 +31,7 @@ export function fuzzyMatch(query: string, target: string): FuzzyResult | null {
     if (t[i] !== q[qi]) continue;
     indices.push(i);
     score += 16;
-    const prev = i > 0 ? t[i - 1] : '';
+    const prev = i > 0 ? t[i - 1] ?? '' : '';
     if (i === 0 || BOUND_CHARS.has(prev)) score += 12;
     if (lastMatch === i - 1) score += 8;
     if (lastMatch !== -1) score -= i - lastMatch - 1;
@@ -41,9 +41,10 @@ export function fuzzyMatch(query: string, target: string): FuzzyResult | null {
   if (qi < q.length) return null;
   // Bonus when the first matched index sits at the start of the basename.
   const baseStart = lastSlash(target) + 1;
-  if (indices[0] === baseStart) score += 20;
+  const firstIdx = indices[0] ?? 0;
+  if (firstIdx === baseStart) score += 20;
   // Penalise leading skip distance.
-  score -= indices[0] * 1.5;
+  score -= firstIdx * 1.5;
   return { score, indices };
 }
 

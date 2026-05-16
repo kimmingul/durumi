@@ -5,28 +5,28 @@ describe('parseCmAnnotations', () => {
   it('parses an insertion', () => {
     const a = parseCmAnnotations('hello {++ added ++} world');
     expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ kind: 'insert', line: 1, text: 'added' });
+    expect(a[0]!).toMatchObject({ kind: 'insert', line: 1, text: 'added' });
   });
 
   it('parses a deletion', () => {
     const a = parseCmAnnotations('foo {-- gone --} bar');
     expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ kind: 'delete', text: 'gone' });
+    expect(a[0]!).toMatchObject({ kind: 'delete', text: 'gone' });
   });
 
   it('parses a substitution and exposes oldText / newText', () => {
     const a = parseCmAnnotations('say {~~ hi ~> hello ~~} now');
     expect(a).toHaveLength(1);
-    expect(a[0].kind).toBe('substitution');
-    expect(a[0].oldText).toBe('hi');
-    expect(a[0].newText).toBe('hello');
-    expect(a[0].text).toBe('hi → hello');
+    expect(a[0]!.kind).toBe('substitution');
+    expect(a[0]!.oldText).toBe('hi');
+    expect(a[0]!.newText).toBe('hello');
+    expect(a[0]!.text).toBe('hi → hello');
   });
 
   it('parses a highlight (distinct from ==text==)', () => {
     const a = parseCmAnnotations('a {== marked ==} b');
     expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ kind: 'highlight', text: 'marked' });
+    expect(a[0]!).toMatchObject({ kind: 'highlight', text: 'marked' });
     // Plain `==text==` does not get matched as a CM highlight.
     expect(parseCmAnnotations('a ==plain== b')).toEqual([]);
   });
@@ -34,20 +34,20 @@ describe('parseCmAnnotations', () => {
   it('parses a comment', () => {
     const a = parseCmAnnotations('a {>> note <<} b');
     expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ kind: 'comment', text: 'note' });
+    expect(a[0]!).toMatchObject({ kind: 'comment', text: 'note' });
   });
 
   it('captures correct line numbers', () => {
     const a = parseCmAnnotations('first\nsecond {++ x ++}\nthird');
     expect(a).toHaveLength(1);
-    expect(a[0].line).toBe(2);
+    expect(a[0]!.line).toBe(2);
   });
 
   it('skips runs inside fenced code', () => {
     const src = '```\n{++ ignored ++}\n```\nreal {-- x --} here';
     const a = parseCmAnnotations(src);
     expect(a).toHaveLength(1);
-    expect(a[0].kind).toBe('delete');
+    expect(a[0]!.kind).toBe('delete');
   });
 
   it('rejects multi-line bodies (closer must be on the same line)', () => {
@@ -74,7 +74,7 @@ describe('parseCmAnnotations', () => {
     const src = 'first line\nhello {++ x ++} world';
     const a = parseCmAnnotations(src);
     expect(a).toHaveLength(1);
-    expect(src.slice(a[0].from, a[0].to)).toBe('{++ x ++}');
+    expect(src.slice(a[0]!.from, a[0]!.to)).toBe('{++ x ++}');
   });
 });
 

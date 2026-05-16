@@ -38,7 +38,7 @@ export const FrontMatterExtension: MarkdownConfig = {
         // freshly advanced line's text (matches the FencedCode / Blockquote
         // implementations in @lezer/markdown).
         while (cx.nextLine()) {
-          const text = line.text;
+          const text: string = line.text;
           const lineStart = cx.lineStart;
           if (text === '---' || text === '...') {
             const closeLen = text.length;

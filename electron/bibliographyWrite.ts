@@ -102,8 +102,17 @@ export interface AppendResult {
   path: string;
 }
 
+/**
+ * v0.2.17 — the catch-all error variant. Carries `kind: 'generic'` so that
+ * discriminated-union narrowing prefers the literal arms below (which carry
+ * `kind: 'duplicate-doi'` / `'duplicate-weak'`) and only falls through to
+ * here when neither matches. Without the `kind` tag, `error: string`
+ * overlapped `'duplicate-doi'` / `'duplicate-weak'` and erased the
+ * `existingKey` / `normalizedTitle` fields on the more specific arms.
+ */
 export interface AppendError {
   ok: false;
+  kind?: 'generic';
   error: string;
 }
 
@@ -115,6 +124,7 @@ export interface AppendError {
  */
 export interface AppendDuplicateDoi {
   ok: false;
+  kind: 'duplicate-doi';
   error: 'duplicate-doi';
   existingKey: string;
 }
@@ -126,6 +136,7 @@ export interface AppendDuplicateDoi {
  */
 export interface AppendDuplicateWeak {
   ok: false;
+  kind: 'duplicate-weak';
   error: 'duplicate-weak';
   existingKey: string;
   normalizedTitle: string;
@@ -170,7 +181,12 @@ export async function appendEntry(
       for (const existingEntry of parsed.entries) {
         const existingDoi = normalizeDoi(existingEntry.fields.doi ?? '');
         if (existingDoi.length > 0 && existingDoi === incomingDoi) {
-          return { ok: false, error: 'duplicate-doi', existingKey: existingEntry.key };
+          return {
+            ok: false,
+            kind: 'duplicate-doi',
+            error: 'duplicate-doi',
+            existingKey: existingEntry.key,
+          };
         }
       }
     } else {
@@ -178,6 +194,7 @@ export async function appendEntry(
       if (weak) {
         return {
           ok: false,
+          kind: 'duplicate-weak',
           error: 'duplicate-weak',
           existingKey: weak.existingKey,
           normalizedTitle: weak.normalizedTitle,
@@ -339,7 +356,7 @@ export async function upsertEntry(
     const r = await appendEntry(filePath, entry, { force: true });
     if (r.ok) return r;
     // With force=true neither duplicate-* path can fire — narrow to AppendError.
-    if (r.error === 'duplicate-doi' || r.error === 'duplicate-weak') {
+    if (r.kind === 'duplicate-doi' || r.kind === 'duplicate-weak') {
       return { ok: false, error: r.error };
     }
     return r;

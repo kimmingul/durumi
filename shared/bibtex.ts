@@ -45,7 +45,7 @@ export function parseBibTeX(source: string): ParseResult {
     }
     i++;
     const typeStart = i;
-    while (i < n && /[A-Za-z]/.test(source[i])) i++;
+    while (i < n && /[A-Za-z]/.test(source[i] ?? '')) i++;
     const type = source.slice(typeStart, i).toLowerCase();
     if (!type) continue;
     i = skipWhitespace(source, i);
@@ -64,7 +64,7 @@ export function parseBibTeX(source: string): ParseResult {
     // Citation key.
     i = skipWhitespace(source, i);
     const keyStart = i;
-    while (i < n && source[i] !== ',' && source[i] !== closer && !/\s/.test(source[i])) i++;
+    while (i < n && source[i] !== ',' && source[i] !== closer && !/\s/.test(source[i] ?? '')) i++;
     const key = source.slice(keyStart, i).trim();
     if (!key) {
       warnings.push(`empty citation key in @${type} near offset ${keyStart}`);
@@ -80,7 +80,7 @@ export function parseBibTeX(source: string): ParseResult {
       }
       if (source[i] === closer) break;
       const fieldNameStart = i;
-      while (i < n && /[A-Za-z0-9_-]/.test(source[i])) i++;
+      while (i < n && /[A-Za-z0-9_-]/.test(source[i] ?? '')) i++;
       const fieldName = source.slice(fieldNameStart, i).toLowerCase();
       if (!fieldName) {
         i++;
@@ -125,14 +125,14 @@ function readValue(source: string, start: number, _closer: string): ValueRead {
       const r = readQuoted(source, i);
       parts.push(r.text);
       i = r.endIdx;
-    } else if (/[0-9]/.test(source[i])) {
+    } else if (/[0-9]/.test(source[i] ?? '')) {
       const numStart = i;
-      while (i < source.length && /[0-9]/.test(source[i])) i++;
+      while (i < source.length && /[0-9]/.test(source[i] ?? '')) i++;
       parts.push(source.slice(numStart, i));
-    } else if (/[A-Za-z_]/.test(source[i])) {
+    } else if (/[A-Za-z_]/.test(source[i] ?? '')) {
       // String reference (e.g. macro). We don't resolve; just include as-is.
       const idStart = i;
-      while (i < source.length && /[A-Za-z0-9_-]/.test(source[i])) i++;
+      while (i < source.length && /[A-Za-z0-9_-]/.test(source[i] ?? '')) i++;
       parts.push(source.slice(idStart, i));
     } else {
       break;
@@ -197,7 +197,7 @@ function stripBraces(s: string): string {
 }
 
 function skipWhitespace(source: string, i: number): number {
-  while (i < source.length && /\s/.test(source[i])) i++;
+  while (i < source.length && /\s/.test(source[i] ?? '')) i++;
   return i;
 }
 

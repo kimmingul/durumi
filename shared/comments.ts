@@ -55,7 +55,7 @@ export function parseComments(src: string): Comment[] {
     let acc = 0;
     for (let i = 0; i < lines.length; i++) {
       lineStart[i] = acc;
-      acc += lines[i].length + 1; // +1 for the newline we split on
+      acc += (lines[i] ?? '').length + 1; // +1 for the newline we split on
     }
   }
 
@@ -63,6 +63,10 @@ export function parseComments(src: string): Comment[] {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+    if (line === undefined) {
+      i++;
+      continue;
+    }
     if (FENCE_RE.test(line.trimStart())) {
       inFence = !inFence;
       i++;
@@ -77,7 +81,7 @@ export function parseComments(src: string): Comment[] {
     if (line.trim() === '%%') {
       const openLine = i;
       let j = i + 1;
-      while (j < lines.length && lines[j].trim() !== '%%') j++;
+      while (j < lines.length && (lines[j] ?? '').trim() !== '%%') j++;
       if (j < lines.length) {
         // Closer found.
         const innerLines = lines.slice(openLine + 1, j);
@@ -85,8 +89,8 @@ export function parseComments(src: string): Comment[] {
         if (innerJoined.length > 0) {
           const { tag, text } = extractTag(innerJoined);
           out.push({
-            from: lineStart[openLine],
-            to: lineStart[j] + lines[j].length,
+            from: lineStart[openLine] ?? 0,
+            to: (lineStart[j] ?? 0) + (lines[j] ?? '').length,
             line: openLine + 1,
             tag,
             text,
@@ -101,7 +105,7 @@ export function parseComments(src: string): Comment[] {
     }
 
     // Inline form on this line.
-    parseInlineRun(line, lineStart[i], i + 1, out);
+    parseInlineRun(line, lineStart[i] ?? 0, i + 1, out);
     i++;
   }
 
@@ -174,7 +178,7 @@ function parseInlineRun(
 
 function extractTag(inner: string): { tag: string | null; text: string } {
   const m = inner.match(TAG_RE);
-  if (!m) return { tag: null, text: inner };
+  if (!m || !m[1]) return { tag: null, text: inner };
   const tag = m[1].toLowerCase();
   const text = inner.slice(m[0].length).trimStart();
   return { tag, text: text.length > 0 ? text : inner };
@@ -287,6 +291,7 @@ function rewriteComments(src: string, transform: (memo: Comment) => string): str
   let result = src;
   for (let i = memos.length - 1; i >= 0; i--) {
     const m = memos[i];
+    if (!m) continue;
     const replacement = transform(m);
     const from = m.from;
     let to = m.to;

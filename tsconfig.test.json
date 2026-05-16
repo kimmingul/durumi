@@ -1,4 +1,10 @@
 {
+  // Leaf project — runs explicitly from `pnpm typecheck` after `tsc --build`.
+  // Not composite: composite project boundaries require every imported file
+  // to be enumerated, which is intractable for tests that touch src/,
+  // electron/, and shared/. Without composite, TS transitively type-checks
+  // any imported file under THIS config's options, so renderer/main bugs
+  // surfaced via test imports are caught too.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -14,9 +20,9 @@
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "noEmit": true,
-    "composite": true,
+    "types": ["node"],
     "baseUrl": ".",
     "paths": { "@shared/*": ["shared/*"] }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "shared/**/*.ts"]
+  "include": ["tests/**/*.ts", "tests/**/*.tsx", "e2e/**/*.ts"]
 }

@@ -61,6 +61,7 @@ export function tableNextCell(view: EditorView): boolean {
   const idx = cells.findIndex((c) => c.from === cell.from);
   if (idx < cells.length - 1) {
     const nextCell = cells[idx + 1];
+    if (!nextCell) return false;
     view.dispatch({ selection: { anchor: nextCell.from } });
     return true;
   }
@@ -97,7 +98,9 @@ export function tablePrevCell(view: EditorView): boolean {
   const cells = rowCells(row);
   const idx = cells.findIndex((c) => c.from === cell.from);
   if (idx > 0) {
-    view.dispatch({ selection: { anchor: cells[idx - 1].from } });
+    const prevCell = cells[idx - 1];
+    if (!prevCell) return false;
+    view.dispatch({ selection: { anchor: prevCell.from } });
     return true;
   }
   const table = findTableAt(view, head);

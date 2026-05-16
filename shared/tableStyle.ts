@@ -244,7 +244,7 @@ export function parseHtmlWrapper(divHtml: string): TableStyle | null {
   // Match the opening `<div ... >` only.
   const m = divHtml.match(/<div\b([^>]*)>/i);
   if (!m) return null;
-  const attrs = m[1];
+  const attrs = m[1] ?? '';
   if (!/class\s*=\s*["'][^"']*\bdurumi-table\b/i.test(attrs)) return null;
   // Pull each data-* attribute via a small attribute scan.
   return parseDataAttributePairs(attrs);
@@ -260,7 +260,9 @@ function parseDataAttributePairs(input: string): TableStyle {
   const re = /data-([a-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(input)) !== null) {
-    const key = match[1].toLowerCase();
+    const rawKey = match[1];
+    if (!rawKey) continue;
+    const key = rawKey.toLowerCase();
     const value = (match[2] ?? match[3] ?? '').trim();
     applyDataAttr(style, key, value);
   }

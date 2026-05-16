@@ -16,7 +16,7 @@ import {
   type StyleSpec,
 } from '../styles/journalPresets';
 import { applyStyleSet } from '../styles/applyStyles';
-import type { AiKeyStatus, Preferences } from '@shared/ipc-contract';
+import type { AiKeyStatus, Preferences, PreferencesPatch } from '@shared/ipc-contract';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -601,7 +601,7 @@ function FilePathRow({ value, onPick, onClear, onChange, placeholder, testId }: 
 
 interface StylesSectionProps {
   prefs: Preferences;
-  update: (patch: Partial<Preferences>) => Promise<void>;
+  update: (patch: PreferencesPatch) => Promise<void>;
 }
 
 const FONT_WEIGHTS: Array<{ value: number; label: string }> = [

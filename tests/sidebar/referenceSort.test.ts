@@ -80,7 +80,7 @@ describe('sortReferences', () => {
   it('citationOrder uses first appearance in docText; uncited go last (addedDesc fallback)', () => {
     // charlie cited first, then alpha. bravo + delta uncited -> addedDesc fallback.
     const doc = 'See [@charlie2022] and later [@alpha2020] for details.';
-    expect(run(SAMPLE, 'citationOrder', { doc, docText: doc })).toEqual([
+    expect(run(SAMPLE, 'citationOrder', { docText: doc })).toEqual([
       'charlie2022',
       'alpha2020',
       // uncited, addedDesc fallback over [bravo2018, delta] (append order alpha,bravo,charlie,delta)

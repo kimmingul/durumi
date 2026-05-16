@@ -106,7 +106,9 @@ function findCellRangeImpl(
   const physicalRows: number[] = [];
   let delimIdx = -1;
   for (let i = 0; i < lines.length; i++) {
-    const text = lines[i].text;
+    const ln = lines[i];
+    if (!ln) continue;
+    const text = ln.text;
     if (delimRe.test(text.trim())) {
       delimIdx = i;
       continue;
@@ -128,10 +130,13 @@ function findCellRangeImpl(
   }
   if (row < 0 || row >= logicalToPhysical.length) return null;
   const lineIdx = logicalToPhysical[row];
+  if (lineIdx === undefined) return null;
   const line = lines[lineIdx];
+  if (!line) return null;
   const cells = splitCellSpansEscapeAware(line.text, fullSpan);
   if (col < 0 || col >= cells.length) return null;
   const span = cells[col];
+  if (!span) return null;
   return {
     from: line.from + span.from,
     to: line.from + span.to,
@@ -237,14 +242,18 @@ function splitCellSpansEscapeAware(
   const cellEnds: number[] = [];
   for (let i = 0; i < pipes.length; i++) {
     if (i === 0 && leadingPipe) continue;
-    cellEnds.push(pipes[i]);
+    const p = pipes[i];
+    if (p === undefined) continue;
+    cellEnds.push(p);
   }
   if (!trailingPipe) cellEnds.push(rowText.length);
-  const prev = leadingPipe ? pipes[0] : start;
+  const prev = leadingPipe ? pipes[0] ?? start : start;
   // Build start positions to align with cellEnds.
   cellStarts.push(prev + 1);
   for (let i = leadingPipe ? 1 : 0; i < pipes.length - (trailingPipe ? 1 : 0); i++) {
-    cellStarts.push(pipes[i] + 1);
+    const p = pipes[i];
+    if (p === undefined) continue;
+    cellStarts.push(p + 1);
   }
   // Per-cell range. In `fullSpan` mode we keep the raw between-pipes bytes
   // (including padding spaces); otherwise we trim whitespace.
@@ -252,14 +261,15 @@ function splitCellSpansEscapeAware(
   for (let i = 0; i < cellEnds.length; i++) {
     const rawFrom = cellStarts[i];
     const rawTo = cellEnds[i];
+    if (rawFrom === undefined || rawTo === undefined) continue;
     if (fullSpan) {
       out.push({ from: rawFrom, to: rawTo });
       continue;
     }
     let f = rawFrom;
     let t = rawTo;
-    while (f < t && /\s/.test(rowText[f])) f++;
-    while (t > f && /\s/.test(rowText[t - 1])) t--;
+    while (f < t && /\s/.test(rowText[f] ?? '')) f++;
+    while (t > f && /\s/.test(rowText[t - 1] ?? '')) t--;
     out.push({ from: f, to: t });
   }
   return out;

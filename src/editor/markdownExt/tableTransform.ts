@@ -133,7 +133,9 @@ function parseTable(src: string): ParsedTable | null {
   // Locate delimiter row.
   let delimIdx = -1;
   for (let i = 0; i < rawLines.length; i++) {
-    const stripped = rawLines[i].trim().replace(/^\|/, '').replace(/\|$/, '');
+    const ln = rawLines[i];
+    if (ln === undefined) continue;
+    const stripped = ln.trim().replace(/^\|/, '').replace(/\|$/, '');
     if (stripped.length === 0) continue;
     const parts = stripped.split('|');
     if (parts.length > 0 && parts.every((p) => DELIM_CELL_RE.test(p))) {
@@ -145,11 +147,11 @@ function parseTable(src: string): ParsedTable | null {
   // Header is the line immediately before delimiter; body is everything
   // after (only rows that contain a `|`).
   let headerIdx = delimIdx - 1;
-  while (headerIdx >= 0 && !rawLines[headerIdx].includes('|')) headerIdx--;
+  while (headerIdx >= 0 && !(rawLines[headerIdx] ?? '').includes('|')) headerIdx--;
   if (headerIdx < 0) return null;
   const bodyIdx: number[] = [];
   for (let i = delimIdx + 1; i < rawLines.length; i++) {
-    if (rawLines[i].includes('|')) bodyIdx.push(i);
+    if ((rawLines[i] ?? '').includes('|')) bodyIdx.push(i);
   }
   return {
     lines: rawLines,
@@ -175,7 +177,7 @@ function newRowFor(cols: number, text: string): { cells: string[] } {
 }
 
 function colCount(parsed: ParsedTable): number {
-  const headerCells = splitRowRaw(parsed.lines[parsed.headerIdx]).cells;
+  const headerCells = splitRowRaw(parsed.lines[parsed.headerIdx] ?? '').cells;
   return headerCells.length;
 }
 
@@ -205,7 +207,7 @@ export function addTableRow(
   const cols = colCount(p);
   const text = opts.newCellText ?? '';
   const { cells } = newRowFor(cols, text);
-  const headerInfo = splitRowRaw(p.lines[p.headerIdx]);
+  const headerInfo = splitRowRaw(p.lines[p.headerIdx] ?? '');
   const newLine = joinRow(cells, headerInfo.leadingPipe, headerInfo.trailingPipe);
   // Resolve insertion *physical* index in `p.lines`.
   let insertPhysical: number;
@@ -220,8 +222,8 @@ export function addTableRow(
       // Out of range — append to end as a safe fallback.
       insertPhysical = p.lines.length;
     } else {
-      insertPhysical =
-        where === 'above' ? p.bodyIdx[bodyArrayIdx] : p.bodyIdx[bodyArrayIdx] + 1;
+      const target = p.bodyIdx[bodyArrayIdx] ?? p.lines.length;
+      insertPhysical = where === 'above' ? target : target + 1;
     }
   }
   const out = [...p.lines];
@@ -285,6 +287,7 @@ export function removeTableRow(tableMarkdown: string, rowIndex: number): string 
   const bodyArrayIdx = rowIndex - 1;
   if (bodyArrayIdx < 0 || bodyArrayIdx >= p.bodyIdx.length) return tableMarkdown;
   const removeAt = p.bodyIdx[bodyArrayIdx];
+  if (removeAt === undefined) return tableMarkdown;
   const out = [...p.lines];
   out.splice(removeAt, 1);
   return out.join(p.lineEnding) + p.trailingNewline;

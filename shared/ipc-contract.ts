@@ -225,6 +225,23 @@ export interface Preferences {
 }
 
 /**
+ * v0.2.17 — deep-partial of {@link Preferences} used as the patch shape for
+ * `prefsSet`. Arrays and primitives stay optional-but-whole; nested objects
+ * recurse so callers can supply e.g. `{ editor: { defaultMode: 'wysiwyg' } }`
+ * without enumerating sibling fields. Matches the recursive merge that
+ * `electron/preferences.ts#assertPrefsPatchAllowed` already performs.
+ */
+export type PreferencesPatch = {
+  [K in keyof Preferences]?: Preferences[K] extends unknown[]
+    ? Preferences[K]
+    : Preferences[K] extends object | undefined
+      ? Preferences[K] extends object
+        ? { [P in keyof Preferences[K]]?: Preferences[K][P] }
+        : Preferences[K]
+      : Preferences[K];
+};
+
+/**
  * v0.1.11 Phase 3 — single style entry. `color: null` means "inherit the
  * theme foreground"; the renderer translates that to `inherit` when it
  * writes the CSS custom property.
@@ -315,7 +332,14 @@ export interface IpcApi {
   ) => Promise<{ path: string } | null>;
   confirmDiscard: (filename: string) => Promise<DiscardChoice>;
   prefsGet: () => Promise<Preferences>;
-  prefsSet: (patch: Partial<Preferences>) => Promise<void>;
+  /**
+   * v0.2.17: `DeepPartial<Preferences>` (vs the previous `Partial`) so
+   * patches that touch a nested object (e.g.
+   * `{ editor: { defaultMode: 'wysiwyg' } }`) don't have to repeat the
+   * sibling fields. Main-side `assertPrefsPatchAllowed` already merges
+   * recursively; the type now matches the runtime contract.
+   */
+  prefsSet: (patch: PreferencesPatch) => Promise<void>;
   windowSetTitle: (title: string) => Promise<void>;
   onMenuCommand: (cb: (cmd: MenuCommand) => void) => () => void;
   onThemeChanged: (cb: (theme: 'light' | 'dark') => void) => () => void;
@@ -475,9 +499,20 @@ export interface IpcApi {
     opts?: { force?: boolean },
   ) => Promise<
     | { ok: true; key: string; path: string }
-    | { ok: false; error: 'duplicate-doi'; existingKey: string }
-    | { ok: false; error: 'duplicate-weak'; existingKey: string; normalizedTitle: string }
-    | { ok: false; error: string }
+    // v0.2.17: carry the discriminator on both sides of the field so
+    // renderer code can narrow via either `appended.kind === 'duplicate-doi'`
+    // OR `appended.error === 'duplicate-doi'`. Without the `kind` tag, the
+    // free-form `error: string` arm overlapped the literal arms and erased
+    // their extra fields (`existingKey`, `normalizedTitle`).
+    | { ok: false; kind: 'duplicate-doi'; error: 'duplicate-doi'; existingKey: string }
+    | {
+        ok: false;
+        kind: 'duplicate-weak';
+        error: 'duplicate-weak';
+        existingKey: string;
+        normalizedTitle: string;
+      }
+    | { ok: false; kind?: 'generic'; error: string }
   >;
   /** Read + parse `.bib` so the renderer doesn't reimplement BibTeX parsing. */
   bibliographyReadEntries: (

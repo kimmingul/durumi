@@ -1,4 +1,10 @@
 import MarkdownIt from 'markdown-it';
+// markdown-it@14 ships its types via `export = MarkdownIt` where MarkdownIt
+// is BOTH a constructor (the default import) AND a namespace (plugins, Token,
+// Options, etc.). Under `moduleResolution: bundler` the default `import X`
+// only resolves the value, so namespace members like `X.PluginSimple` fail
+// with TS2702. The dist file directly exports the merged namespace.
+import type * as MarkdownItNs from 'markdown-it/dist/index.cjs.js';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error - markdown-it-task-lists ships no type declarations
 import taskListsPlugin from 'markdown-it-task-lists';
@@ -36,7 +42,7 @@ import {
   formatBibliography,
 } from '../../shared/citation';
 
-const taskLists = taskListsPlugin as unknown as MarkdownIt.PluginWithOptions<{
+const taskLists = taskListsPlugin as unknown as MarkdownItNs.PluginWithOptions<{
   enabled?: boolean;
   label?: boolean;
   labelAfter?: boolean;
@@ -56,16 +62,16 @@ const md = new MarkdownIt({
   },
 })
   .use(taskLists, { enabled: false, label: false })
-  .use(footnotePlugin as MarkdownIt.PluginSimple)
-  .use(markPlugin as MarkdownIt.PluginSimple)
-  .use(subPlugin as MarkdownIt.PluginSimple)
-  .use(supPlugin as MarkdownIt.PluginSimple)
-  .use(githubAlertsPlugin as unknown as MarkdownIt.PluginSimple)
+  .use(footnotePlugin as MarkdownItNs.PluginSimple)
+  .use(markPlugin as MarkdownItNs.PluginSimple)
+  .use(subPlugin as MarkdownItNs.PluginSimple)
+  .use(supPlugin as MarkdownItNs.PluginSimple)
+  .use(githubAlertsPlugin as unknown as MarkdownItNs.PluginSimple)
   // v0.2.6 — Pandoc-style `{.class data-foo="bar"}` attributes on block
   // elements. Used by the per-table line-styling feature so a
   // `{.durumi-table data-top-rule="2px solid"}` line above a markdown
   // table promotes the rendered `<table>` to carry those attributes.
-  .use(attrsPlugin as MarkdownIt.PluginWithOptions, {
+  .use(attrsPlugin as MarkdownItNs.PluginWithOptions, {
     leftDelimiter: '{',
     rightDelimiter: '}',
     allowedAttributes: [], // empty = allow all
@@ -88,6 +94,7 @@ md.core.ruler.push('durumi-table-style', (state) => {
       const tok = tokens[i];
       if (tok?.type !== 'table_open') continue;
       const pairs = queue[qi++];
+      if (!pairs) continue;
       tok.attrJoin('class', 'durumi-table');
       for (const [k, v] of pairs) tok.attrSet(k, v);
     }
@@ -114,11 +121,11 @@ md.core.ruler.push('durumi-table-style', (state) => {
 });
 
 function rewriteTableStyleAttrs(
-  tokens: import('markdown-it/lib/token').default[],
+  tokens: MarkdownItNs.Token[],
   tableOpenIdx: number,
   id: string,
 ): boolean {
-  const tok = tokens[tableOpenIdx];
+  const tok = tokens[tableOpenIdx]!;
   const attrs = tok.attrs ?? [];
   const get = (name: string): string | null => {
     for (const [k, v] of attrs) {
@@ -156,7 +163,7 @@ function rewriteTableStyleAttrs(
       type: string,
       tag: string,
       nesting: number,
-    ) => import('markdown-it/lib/token').default)('html_block', '', 0);
+    ) => MarkdownItNs.Token)('html_block', '', 0);
     styleTok.content = `<style>${css.join(' ')}</style>\n`;
     tokens.splice(tableOpenIdx, 0, styleTok);
     return true;
@@ -224,7 +231,7 @@ md.core.ruler.push('durumi-heading-anchors', (state) => {
       .trim();
     if (!text) continue;
     const id = slugify(text, seen);
-    tokens[i].attrSet('id', id);
+    tokens[i]!.attrSet('id', id);
   }
 });
 

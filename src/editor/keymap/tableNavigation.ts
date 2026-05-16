@@ -96,7 +96,7 @@ export function navigateNextCell(cell: HTMLElement, view: EditorView): boolean {
   }
   // Next row, col 0.
   const nextRowCells = cellsInRow(view, addr.tableFrom, addr.row + 1);
-  if (nextRowCells.length > 0) {
+  if (nextRowCells.length > 0 && nextRowCells[0]) {
     focusCell(nextRowCells[0], false);
     return true;
   }
@@ -117,8 +117,11 @@ export function navigatePrevCell(cell: HTMLElement, view: EditorView): boolean {
   if (addr.row > 0) {
     const prevRowCells = cellsInRow(view, addr.tableFrom, addr.row - 1);
     if (prevRowCells.length > 0) {
-      focusCell(prevRowCells[prevRowCells.length - 1], true);
-      return true;
+      const last = prevRowCells[prevRowCells.length - 1];
+      if (last) {
+        focusCell(last, true);
+        return true;
+      }
     }
   }
   return false;

@@ -85,12 +85,17 @@ export async function attachContextMenu(win: BrowserWindow): Promise<void> {
         items.push(
           new MenuItem({
             label: tr('context.changes'),
+            // v0.2.17: pass plain constructor-options objects to `submenu`.
+            // Electron typings reject `MenuItem[]` here — the property is
+            // `MenuItemConstructorOptions[] | Menu`. Runtime accepted both,
+            // but the strict types are correct (a `MenuItem` instance has a
+            // different shape internally). No behavior change.
             submenu: [
-              new MenuItem({ label: tr('context.cm.insert'), click: () => sendCommand('cmInsert') }),
-              new MenuItem({ label: tr('context.cm.delete'), click: () => sendCommand('cmDelete') }),
-              new MenuItem({ label: tr('context.cm.substitute'), click: () => sendCommand('cmSubstitute') }),
-              new MenuItem({ label: tr('context.cm.highlight'), click: () => sendCommand('cmHighlight') }),
-              new MenuItem({ label: tr('context.cm.comment'), click: () => sendCommand('cmComment') }),
+              { label: tr('context.cm.insert'), click: () => sendCommand('cmInsert') },
+              { label: tr('context.cm.delete'), click: () => sendCommand('cmDelete') },
+              { label: tr('context.cm.substitute'), click: () => sendCommand('cmSubstitute') },
+              { label: tr('context.cm.highlight'), click: () => sendCommand('cmHighlight') },
+              { label: tr('context.cm.comment'), click: () => sendCommand('cmComment') },
             ],
           }),
         );

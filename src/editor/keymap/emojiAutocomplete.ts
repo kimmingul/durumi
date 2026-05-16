@@ -100,7 +100,7 @@ function detectActive(view: EditorView): ActiveState | null {
   const line = view.state.doc.lineAt(head);
   const before = line.text.slice(0, head - line.from);
   const m = before.match(TRIGGER_RE);
-  if (!m) return null;
+  if (!m || m[1] === undefined) return null;
   const queryWithColon = m[0];
   const query = m[1];
   const from = head - queryWithColon.length;

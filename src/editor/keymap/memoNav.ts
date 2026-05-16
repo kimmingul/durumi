@@ -13,6 +13,7 @@ export function nextMemo(view: EditorView): boolean {
   if (memos.length === 0) return false;
   const head = view.state.selection.main.head;
   const target = memos.find((m) => m.from > head) ?? memos[0];
+  if (!target) return false;
   view.dispatch({
     selection: { anchor: target.from },
     effects: EditorView.scrollIntoView(target.from, { y: 'center' }),
@@ -35,12 +36,13 @@ export function prevMemo(view: EditorView): boolean {
   const head = view.state.selection.main.head;
   // Find the LAST memo whose entire range ends at-or-before the caret. This
   // skips the memo the caret may currently sit inside.
-  let target = null as null | typeof memos[number];
+  let target: (typeof memos)[number] | null = null;
   for (const m of memos) {
     if (m.to <= head) target = m;
     else break;
   }
-  if (!target) target = memos[memos.length - 1];
+  if (!target) target = memos[memos.length - 1] ?? null;
+  if (!target) return false;
   view.dispatch({
     selection: { anchor: target.from },
     effects: EditorView.scrollIntoView(target.from, { y: 'center' }),

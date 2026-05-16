@@ -192,5 +192,5 @@ export async function openFolderDialog(): Promise<string | null> {
   if (!win) return null;
   const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
   if (r.canceled || r.filePaths.length === 0) return null;
-  return r.filePaths[0];
+  return r.filePaths[0] ?? null;
 }

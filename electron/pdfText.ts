@@ -90,12 +90,16 @@ async function loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.m
 export const defaultParser: PdfParser = {
   async parsePages(buf, maxPages) {
     const pdfjs = await loadPdfjs();
+    // v0.2.17: `disableWorker` was removed from the public typings in
+    // pdfjs-dist v5; we still pass it because the legacy build honors it at
+    // runtime and main-process PDF parsing can't reach the worker thread.
+    // Cast through an extended type rather than relying on `any`.
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buf),
-      disableWorker: true,
       useSystemFonts: false,
       // Suppress the noisy "no font" warnings; we only care about text.
       verbosity: 0,
+      ...({ disableWorker: true } as { disableWorker?: boolean }),
     });
     const doc = await loadingTask.promise;
     const pageCount = Math.min(doc.numPages, maxPages);

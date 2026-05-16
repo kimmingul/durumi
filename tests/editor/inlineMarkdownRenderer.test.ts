@@ -95,21 +95,21 @@ describe('inlineMarkdownRenderer — emphasis parsing', () => {
     const spans = splitEmphasis('hello *world*');
     expect(spans).toHaveLength(2);
     expect(spans[0]).toEqual({ kind: 'text', text: 'hello ' });
-    expect(spans[1].kind).toBe('em');
+    expect(spans[1]!.kind).toBe('em');
   });
 
   it('parses simple strong', () => {
     const spans = splitEmphasis('**bold**');
     expect(spans).toHaveLength(1);
-    expect(spans[0].kind).toBe('strong');
-    expect((spans[0].inner ?? [])[0]).toEqual({ kind: 'text', text: 'bold' });
+    expect(spans[0]!.kind).toBe('strong');
+    expect((spans[0]!.inner ?? [])[0]).toEqual({ kind: 'text', text: 'bold' });
   });
 
   it('parses nested strong-with-em', () => {
     const spans = splitEmphasis('**bold *italic***');
     expect(spans).toHaveLength(1);
-    expect(spans[0].kind).toBe('strong');
-    const inner = spans[0].inner ?? [];
+    expect(spans[0]!.kind).toBe('strong');
+    const inner = spans[0]!.inner ?? [];
     expect(inner.some((s) => s.kind === 'em')).toBe(true);
   });
 
@@ -129,7 +129,7 @@ describe('inlineMarkdownRenderer — emphasis parsing', () => {
   it('parses strikethrough', () => {
     const spans = splitEmphasis('~~gone~~');
     expect(spans).toHaveLength(1);
-    expect(spans[0].kind).toBe('strike');
+    expect(spans[0]!.kind).toBe('strike');
   });
 
   it('rejects empty emphasis (e.g. `**` adjacent)', () => {

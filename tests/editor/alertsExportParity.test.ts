@@ -53,7 +53,10 @@ function exportKindsInOrder(html: string): string[] {
   const out: string[] = [];
   const re = /markdown-alert markdown-alert-(note|tip|important|warning|caution)/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) out.push(m[1]);
+  while ((m = re.exec(html)) !== null) {
+    const k = m[1];
+    if (k) out.push(k);
+  }
   return out;
 }
 

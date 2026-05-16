@@ -64,13 +64,21 @@ export function registerBibliographyHandlers(): void {
       const r = await appendBibEntry(filePath, entry, { force: opts?.force });
       if (r.ok) return { ok: true as const, key: r.key, path: r.path };
       // v0.1.10: surface the dedup variants alongside their existingKey so
-      // the renderer can highlight / focus the duplicate row.
-      if (r.error === 'duplicate-doi') {
-        return { ok: false as const, error: 'duplicate-doi' as const, existingKey: r.existingKey };
-      }
-      if (r.error === 'duplicate-weak') {
+      // the renderer can highlight / focus the duplicate row. v0.2.17:
+      // narrow on the `kind` discriminator (introduced for typecheck full
+      // coverage) so the duplicate arms keep their extra fields visible.
+      if (r.kind === 'duplicate-doi') {
         return {
           ok: false as const,
+          kind: 'duplicate-doi' as const,
+          error: 'duplicate-doi' as const,
+          existingKey: r.existingKey,
+        };
+      }
+      if (r.kind === 'duplicate-weak') {
+        return {
+          ok: false as const,
+          kind: 'duplicate-weak' as const,
           error: 'duplicate-weak' as const,
           existingKey: r.existingKey,
           normalizedTitle: r.normalizedTitle,

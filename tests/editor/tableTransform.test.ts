@@ -52,7 +52,7 @@ describe('addTableRow', () => {
     const out = addTableRow(T_ALIGN, 1, 'below');
     const L = lines(out);
     // 4-column table: new row should have 4 cells.
-    const last = L[L.length - 1];
+    const last = L[L.length - 1] ?? '';
     // 5 pipes for a 4-col bordered row.
     const pipes = last.match(/\|/g) ?? [];
     expect(pipes.length).toBe(5);

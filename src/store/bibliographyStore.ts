@@ -499,14 +499,16 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
     if (!fetched.ok) return { ok: false, code: fetched.code, message: fetched.message };
     const appended = await window.api.bibliographyAppendEntry(filePath, fetched.entry);
     if (!appended.ok) {
-      if (appended.error === 'duplicate-doi') {
+      // v0.2.17: narrow on the `kind` discriminator (instead of `error`)
+      // so the duplicate arms keep their `existingKey` / `normalizedTitle`.
+      if (appended.kind === 'duplicate-doi') {
         // Surface "이미 추가된 참고문헌입니다 ([key])" + flash the existing row.
         // eslint-disable-next-line no-alert
         window.alert(t('toast.bibliography.duplicateDoi', { key: appended.existingKey }));
         get().setHighlightedKey(appended.existingKey);
         return { ok: false, code: 'duplicate-doi', message: appended.existingKey };
       }
-      if (appended.error === 'duplicate-weak') {
+      if (appended.kind === 'duplicate-weak') {
         // eslint-disable-next-line no-alert
         const ok = window.confirm(
           t('confirm.bibliography.duplicateWeak', { key: appended.existingKey }),
@@ -546,8 +548,9 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
     }
     const appended = await window.api.bibliographyAppendEntry(filePath, entry);
     if (!appended.ok) {
-      if (appended.error === 'duplicate-doi' || appended.error === 'duplicate-weak') {
-        return { ok: false, code: appended.error, message: appended.existingKey };
+      // v0.2.17: narrow on `kind` (see ipc-contract comment).
+      if (appended.kind === 'duplicate-doi' || appended.kind === 'duplicate-weak') {
+        return { ok: false, code: appended.kind, message: appended.existingKey };
       }
       return { ok: false, code: 'write-failed', message: appended.error };
     }
@@ -568,13 +571,14 @@ export const useBibliographyStore = create<BibliographyState>((set, get) => ({
       force: opts?.force === true,
     });
     if (!appended.ok) {
-      if (appended.error === 'duplicate-doi') {
+      // v0.2.17: narrow on `kind` (see ipc-contract comment).
+      if (appended.kind === 'duplicate-doi') {
         // eslint-disable-next-line no-alert
         window.alert(t('toast.bibliography.duplicateDoi', { key: appended.existingKey }));
         get().setHighlightedKey(appended.existingKey);
         return { ok: false, code: 'duplicate-doi', existingKey: appended.existingKey };
       }
-      if (appended.error === 'duplicate-weak') {
+      if (appended.kind === 'duplicate-weak') {
         // eslint-disable-next-line no-alert
         const ok = window.confirm(
           t('confirm.bibliography.duplicateWeak', { key: appended.existingKey }),

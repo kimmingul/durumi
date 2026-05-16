@@ -96,12 +96,12 @@ function parseAlignment(delimiterLine: string): Alignment[] {
 
 function computeColWidths(rowCells: string[][]): string {
   if (rowCells.length === 0) return '';
-  const cols = rowCells[0].length;
+  const cols = rowCells[0]?.length ?? 0;
   const longest = new Array<number>(cols).fill(1);
   for (const row of rowCells) {
     for (let i = 0; i < cols; i++) {
       const cell = row[i] ?? '';
-      if (cell.length > longest[i]) longest[i] = Math.max(1, cell.length);
+      if (cell.length > (longest[i] ?? 0)) longest[i] = Math.max(1, cell.length);
     }
   }
   return longest.map((n) => `minmax(80px, ${n}fr)`).join(' ');
@@ -532,7 +532,14 @@ class TableRowWidget extends WidgetType {
       return row;
     }
     for (let i = 0; i < this.cells.length; i++) {
-      const c = buildCellElement(this.cells[i], i, this.row, this.tableFrom, this.alignment[i], view);
+      const c = buildCellElement(
+        this.cells[i] ?? '',
+        i,
+        this.row,
+        this.tableFrom,
+        this.alignment[i],
+        view,
+      );
       row.appendChild(c);
     }
     if (this.isFirstRow) {
@@ -560,12 +567,14 @@ class TableRowWidget extends WidgetType {
     }
     for (let i = 0; i < this.cells.length; i++) {
       const cell = existingCells[i];
+      if (!cell) continue;
+      const incoming = this.cells[i] ?? '';
       // Don't trample the cell the user is actively composing in.
       if (cell.dataset.composing === 'true') continue;
       // Read the cell's logical text. In raw mode this returns the live
       // DOM text; in rendered mode the cached `dataset.cellText`.
       const textNow = cellTextOnly(cell);
-      if (textNow !== this.cells[i]) {
+      if (textNow !== incoming) {
         // The source changed externally (or our own dispatch round-tripped).
         // If the cell is currently focused in raw mode, just update the
         // cached source without rebuilding the DOM — the user's caret +
@@ -574,9 +583,9 @@ class TableRowWidget extends WidgetType {
         // differs from the cached text by more than just normalisation,
         // we still rebuild (a rare cross-edit scenario).
         if (cell.dataset.cellMode === 'raw' && document.activeElement === cell) {
-          cell.dataset.cellText = this.cells[i];
+          cell.dataset.cellText = incoming;
         } else {
-          setCellText(cell, this.cells[i]);
+          setCellText(cell, incoming);
         }
       }
       cell.dataset.row = String(this.row);

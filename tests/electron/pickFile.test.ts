@@ -92,7 +92,7 @@ describe('dialog:pickFile IPC handler', () => {
     });
     const handler = handlers['dialog:pickFile'];
     expect(handler).toBeDefined();
-    const result = await handler({ sender: {} }, {
+    const result = await handler!({ sender: {} }, {
       title: 'Pick a file',
       filters: [{ name: 'Word', extensions: ['docx'] }],
     });

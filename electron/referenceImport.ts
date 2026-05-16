@@ -116,7 +116,7 @@ async function extractDoiFromMd(absPath: string): Promise<ExtractDoiResult> {
     if (end > 0) {
       const fm = raw.slice(3, end);
       const m = /^\s*doi\s*:\s*([^\s]+)/im.exec(fm);
-      if (m) return { doi: cleanDoi(m[1]), source: 'md-frontmatter' };
+      if (m && m[1]) return { doi: cleanDoi(m[1]), source: 'md-frontmatter' };
     }
   }
   const m = DOI_RE.exec(raw);

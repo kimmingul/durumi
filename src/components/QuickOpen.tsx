@@ -129,10 +129,11 @@ function highlight(text: string, indices: number[]) {
   const set = new Set(indices);
   const out: Array<JSX.Element | string> = [];
   for (let i = 0; i < text.length; i++) {
+    const ch = text[i] ?? '';
     if (set.has(i)) {
-      out.push(<mark key={i}>{text[i]}</mark>);
+      out.push(<mark key={i}>{ch}</mark>);
     } else {
-      out.push(text[i]);
+      out.push(ch);
     }
   }
   return <>{out}</>;

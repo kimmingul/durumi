@@ -106,7 +106,7 @@ describe('listDirectory', () => {
     readdirMock.mockResolvedValueOnce([dirent('a.md', false)]);
     statMock.mockResolvedValue({ mtimeMs: 42 });
     const out = await listDirectory('/Users/me/notes');
-    expect(out[0].path).toBe('/Users/me/notes/a.md');
+    expect(out[0]!.path).toBe('/Users/me/notes/a.md');
   });
 });
 

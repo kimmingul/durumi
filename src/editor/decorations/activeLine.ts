@@ -71,7 +71,7 @@ export const userActiveField = StateField.define<boolean>({
 });
 
 export function hasActiveLine(state: EditorState): boolean {
-  return state.field(userActiveField, false);
+  return state.field(userActiveField, false) ?? false;
 }
 
 export function userActiveExtension(): Extension {

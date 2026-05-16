@@ -98,10 +98,10 @@ describe('customCss', () => {
   it('watchCustomCss debounces and forwards new content', async () => {
     vi.useFakeTimers();
     let firedCb: (() => void) | null = null;
-    watchFn.mockImplementationOnce((_p: string, cb: () => void) => {
+    watchFn.mockImplementationOnce(((_p: string, cb: () => void) => {
       firedCb = cb;
       return { close: vi.fn() };
-    });
+    }) as unknown as () => { close: ReturnType<typeof vi.fn> });
     fileStore.set(CSS_PATH, '/* initial */');
     const { watchCustomCss } = await import('../../electron/customCss');
     const received: string[] = [];

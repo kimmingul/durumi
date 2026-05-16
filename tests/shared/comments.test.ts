@@ -123,7 +123,7 @@ describe('promoteComments', () => {
 describe('replaceMemo', () => {
   it('rewrites an inline memo body in place (inline → inline)', () => {
     const src = 'before %% @ai old body %% after';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { body: 'new body' });
     expect(r.newSrc).toBe('before %% @ai new body %% after');
     expect(r.newRange.from).toBe(memo.from);
@@ -132,49 +132,49 @@ describe('replaceMemo', () => {
 
   it('promotes inline → block when the new body contains a newline', () => {
     const src = 'before %% @ai short %% after';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { body: 'line one\nline two' });
     expect(r.newSrc).toBe('before %%\n@ai\nline one\nline two\n%% after');
   });
 
   it('demotes block → inline when newlines are removed from the body', () => {
     const src = '%%\n@reviewer multi\nline body\n%%';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { body: 'now a single line' });
     expect(r.newSrc).toBe('%% @reviewer now a single line %%');
   });
 
   it('adds a tag when none was present', () => {
     const src = 'a %% bare %% b';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { tag: 'todo', body: 'bare' });
     expect(r.newSrc).toBe('a %% @todo bare %% b');
   });
 
   it('removes the tag when edit.tag is null', () => {
     const src = 'a %% @ai stuff %% b';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { tag: null, body: 'stuff' });
     expect(r.newSrc).toBe('a %% stuff %% b');
   });
 
   it('changes the tag', () => {
     const src = 'a %% @ai stuff %% b';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { tag: 'reviewer', body: 'stuff' });
     expect(r.newSrc).toBe('a %% @reviewer stuff %% b');
   });
 
   it('normalizes a sloppy tag input ("@AI:" → "ai")', () => {
     const src = 'a %% bare %% b';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { tag: '@AI:', body: 'bare' });
     expect(r.newSrc).toBe('a %% @ai bare %% b');
   });
 
   it('rejects an empty body and returns the original', () => {
     const src = 'before %% @ai keep %% after';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { body: '   ' });
     expect(r.newSrc).toBe(src);
     expect(r.newRange).toEqual({ from: memo.from, to: memo.to });
@@ -184,7 +184,7 @@ describe('replaceMemo', () => {
     const prefix = 'lorem ipsum dolor sit amet ';
     const suffix = ' consectetur adipiscing elit';
     const src = `${prefix}%% @ai before %%${suffix}`;
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { body: 'after' });
     expect(r.newSrc.startsWith(prefix)).toBe(true);
     expect(r.newSrc.endsWith(suffix)).toBe(true);
@@ -197,7 +197,7 @@ describe('replaceMemo', () => {
 
   it('keeps the existing tag when edit.tag is omitted', () => {
     const src = '%% @reviewer original %%';
-    const memo = parseComments(src)[0];
+    const memo = parseComments(src)[0]!;
     const r = replaceMemo(src, memo, { body: 'changed' });
     expect(r.newSrc).toBe('%% @reviewer changed %%');
   });

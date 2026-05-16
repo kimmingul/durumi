@@ -63,14 +63,14 @@ describe('_splitCellSpansEscapeAwareForTest', () => {
     const spans = _splitCellSpansEscapeAwareForTest('| a\\|b | c |');
     expect(spans).toHaveLength(2);
     // first span covers `a\|b`
-    expect('| a\\|b | c |'.slice(spans[0].from, spans[0].to)).toBe('a\\|b');
-    expect('| a\\|b | c |'.slice(spans[1].from, spans[1].to)).toBe('c');
+    expect('| a\\|b | c |'.slice(spans[0]!.from, spans[0]!.to)).toBe('a\\|b');
+    expect('| a\\|b | c |'.slice(spans[1]!.from, spans[1]!.to)).toBe('c');
   });
   it('handles row without trailing pipe', () => {
     const spans = _splitCellSpansEscapeAwareForTest('H1 | H2');
     expect(spans).toHaveLength(2);
-    expect('H1 | H2'.slice(spans[0].from, spans[0].to)).toBe('H1');
-    expect('H1 | H2'.slice(spans[1].from, spans[1].to)).toBe('H2');
+    expect('H1 | H2'.slice(spans[0]!.from, spans[0]!.to)).toBe('H1');
+    expect('H1 | H2'.slice(spans[1]!.from, spans[1]!.to)).toBe('H2');
   });
 });
 

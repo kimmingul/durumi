@@ -26,7 +26,7 @@ describe('taskList decoration', () => {
     const view = makeView(doc, doc.length);
     const boxes = readWidgets(view);
     expect(boxes.length).toBe(1);
-    expect(boxes[0].checked).toBe(false);
+    expect(boxes[0]!.checked).toBe(false);
     view.destroy();
   });
 
@@ -35,7 +35,7 @@ describe('taskList decoration', () => {
     const view = makeView(doc, doc.length);
     const boxes = readWidgets(view);
     expect(boxes.length).toBe(1);
-    expect(boxes[0].checked).toBe(true);
+    expect(boxes[0]!.checked).toBe(true);
     view.destroy();
   });
 
@@ -49,7 +49,7 @@ describe('taskList decoration', () => {
   it('mousedown on checkbox dispatches [ ] -> [x] transaction', () => {
     const doc = '- [ ] foo\nnext';
     const view = makeView(doc, doc.length);
-    const box = readWidgets(view)[0];
+    const box = readWidgets(view)[0]!;
     const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     box.dispatchEvent(ev);
     expect(view.state.doc.toString()).toBe('- [x] foo\nnext');
@@ -59,7 +59,7 @@ describe('taskList decoration', () => {
   it('mousedown on checked checkbox dispatches [x] -> [ ] transaction', () => {
     const doc = '- [x] foo\nnext';
     const view = makeView(doc, doc.length);
-    const box = readWidgets(view)[0];
+    const box = readWidgets(view)[0]!;
     box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
     expect(view.state.doc.toString()).toBe('- [ ] foo\nnext');
     view.destroy();

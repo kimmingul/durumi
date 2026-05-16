@@ -29,7 +29,7 @@ type ReactHandlers = Partial<{
 function getReactProps(el: Element): ReactHandlers {
   const key = Object.keys(el).find((k) => k.startsWith('__reactProps$'));
   if (!key) throw new Error('react props not found on element');
-  return (el as unknown as Record<string, ReactHandlers>)[key];
+  return (el as unknown as Record<string, ReactHandlers>)[key]!;
 }
 
 function fakeEvent(opts: { currentTarget: Element; clientY?: number }) {
@@ -63,6 +63,7 @@ describe('Outline drag-to-reorder UI', () => {
     const rows = container.querySelectorAll('.cm-outline-row');
     expect(rows.length).toBe(3);
     const [rowA, rowB] = rows;
+    if (!rowA || !rowB) throw new Error('expected 2+ outline rows');
     // Force the bounding rect so classifyDropZone picks 'after'.
     Object.defineProperty(rowB, 'getBoundingClientRect', {
       value: () => ({ top: 0, height: 20, left: 0, right: 100, bottom: 20, width: 100, x: 0, y: 0, toJSON: () => ({}) }),

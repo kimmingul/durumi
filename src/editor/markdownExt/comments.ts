@@ -118,9 +118,9 @@ export const CommentsExtension: MarkdownConfig = {
             const closerStart = cx.lineStart;
             const closerEnd = closerStart + cur.length;
             const children = [...startChildren];
-            if (innerLines.length > 0) {
-              const innerStart = innerLines[0].from;
-              const innerEnd = innerLines[innerLines.length - 1].to;
+            if (innerLines.length > 0 && innerLines[0] && innerLines[innerLines.length - 1]) {
+              const innerStart = innerLines[0]!.from;
+              const innerEnd = innerLines[innerLines.length - 1]!.to;
               const innerText = innerLines.map((l) => l.text).join('\n');
               const trimmed = innerText.replace(/^\s+/, '');
               const leadingWs = innerText.length - trimmed.length;

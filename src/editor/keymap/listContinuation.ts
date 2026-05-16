@@ -23,24 +23,38 @@ export function enterListContinuation(): KeyBinding {
 
       const taskMatch = text.match(TASK_RE);
       if (taskMatch) {
-        return continueOrExit(view, line.from, line.to, taskMatch[1], `${taskMatch[2]} [ ] `, taskMatch[3]);
-      }
-
-      const bulletMatch = text.match(BULLET_RE);
-      if (bulletMatch) {
-        return continueOrExit(view, line.from, line.to, bulletMatch[1], `${bulletMatch[2]} `, bulletMatch[3]);
-      }
-
-      const orderedMatch = text.match(ORDERED_RE);
-      if (orderedMatch) {
-        const next = String(Number(orderedMatch[2]) + 1);
         return continueOrExit(
           view,
           line.from,
           line.to,
-          orderedMatch[1],
-          `${next}${orderedMatch[3]} `,
-          orderedMatch[4],
+          taskMatch[1] ?? '',
+          `${taskMatch[2] ?? ''} [ ] `,
+          taskMatch[3] ?? '',
+        );
+      }
+
+      const bulletMatch = text.match(BULLET_RE);
+      if (bulletMatch) {
+        return continueOrExit(
+          view,
+          line.from,
+          line.to,
+          bulletMatch[1] ?? '',
+          `${bulletMatch[2] ?? ''} `,
+          bulletMatch[3] ?? '',
+        );
+      }
+
+      const orderedMatch = text.match(ORDERED_RE);
+      if (orderedMatch) {
+        const next = String(Number(orderedMatch[2] ?? '0') + 1);
+        return continueOrExit(
+          view,
+          line.from,
+          line.to,
+          orderedMatch[1] ?? '',
+          `${next}${orderedMatch[3] ?? ''} `,
+          orderedMatch[4] ?? '',
         );
       }
 

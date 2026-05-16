@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
-import type { DiscardChoice, Preferences } from '@shared/ipc-contract';
+import type { DiscardChoice, Preferences, PreferencesPatch } from '@shared/ipc-contract';
 import { getPreferences, setPreferences } from '../preferences';
 import { getCustomCss } from '../customCss';
 import { getMacros } from '../macros';
@@ -8,7 +8,7 @@ import { assertPrefsPatchAllowed } from '../pathGuard';
 
 export function registerPreferencesHandlers(): void {
   ipcMain.handle('prefs:get', async (): Promise<Preferences> => getPreferences());
-  ipcMain.handle('prefs:set', async (_e, patch: Partial<Preferences>) => {
+  ipcMain.handle('prefs:set', async (_e, patch: PreferencesPatch) => {
     // Prevent a compromised renderer from smuggling untrusted paths into the
     // path-guard allowlist by injecting them into preferences. Existing
     // entries (loaded from prior sessions) pass through; new entries must

@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { promises as fs } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
-import type { Preferences, StyleSet } from '@shared/ipc-contract';
+import type { Preferences, PreferencesPatch, StyleSet } from '@shared/ipc-contract';
 
 /**
  * v0.1.11 Phase 3 — Durumi-default StyleSet, duplicated from
@@ -142,10 +142,10 @@ export function onPreferencesChanged(cb: PrefsChangedCb): () => void {
 // Migrate legacy `lastFolder: string | null` -> `workspaceFolders: string[]`.
 // Idempotent: safe to apply on every read of preferences.
 function migrateLegacy(
-  loaded: Partial<Preferences> & { lastFolder?: string | null },
-): Partial<Preferences> {
+  loaded: PreferencesPatch & { lastFolder?: string | null },
+): PreferencesPatch {
   const { lastFolder, ...rest } = loaded;
-  let next: Partial<Preferences> = rest;
+  let next: PreferencesPatch = rest;
   if (next.workspaceFolders === undefined && typeof lastFolder === 'string' && lastFolder.length > 0) {
     next = { ...next, workspaceFolders: [lastFolder] };
   }
@@ -170,7 +170,7 @@ function migrateLegacy(
   return next;
 }
 
-function mergeDefaults(loaded: Partial<Preferences>): Preferences {
+function mergeDefaults(loaded: PreferencesPatch): Preferences {
   const migrated = migrateLegacy(loaded);
   return {
     ...DEFAULTS,
@@ -225,16 +225,45 @@ export async function getPreferences(): Promise<Preferences> {
   if (cache) return cache;
   try {
     const raw = await fs.readFile(FILE(), 'utf8');
-    cache = mergeDefaults(JSON.parse(raw) as Partial<Preferences>);
+    cache = mergeDefaults(JSON.parse(raw) as PreferencesPatch);
   } catch {
     cache = mergeDefaults({});
   }
   return cache;
 }
 
-export async function setPreferences(patch: Partial<Preferences>): Promise<void> {
+export async function setPreferences(patch: PreferencesPatch): Promise<void> {
   const current = await getPreferences();
-  cache = { ...current, ...patch };
+  // v0.2.17 — the patch is `DeepPartial<Preferences>` (PreferencesPatch),
+  // so nested sub-objects must be merged one level deep rather than
+  // overwritten (a shallow `{...current, ...patch}` would erase sibling
+  // fields when callers supplied e.g. `{ editor: { defaultMode: 'wysiwyg' } }`).
+  // Arrays + primitives still overwrite wholesale; only top-level keys whose
+  // current value is a non-array object get merged.
+  const merged: Preferences = { ...current };
+  for (const k of Object.keys(patch) as (keyof PreferencesPatch)[]) {
+    const incoming = patch[k];
+    if (incoming === undefined) continue;
+    const cur = current[k];
+    if (
+      cur !== null &&
+      typeof cur === 'object' &&
+      !Array.isArray(cur) &&
+      incoming !== null &&
+      typeof incoming === 'object' &&
+      !Array.isArray(incoming)
+    ) {
+      // Object-typed pref — recursive shallow merge (one level is enough; no
+      // pref currently nests deeper than 2 levels).
+      (merged as unknown as Record<string, unknown>)[k as string] = {
+        ...(cur as object),
+        ...(incoming as object),
+      };
+    } else {
+      (merged as unknown as Record<string, unknown>)[k as string] = incoming;
+    }
+  }
+  cache = merged;
   for (const cb of listeners) cb(cache);
   if (writeTimer) clearTimeout(writeTimer);
   writeTimer = setTimeout(() => {

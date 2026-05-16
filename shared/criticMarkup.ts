@@ -69,6 +69,7 @@ function nextMatch(line: string, cursor: number): RawMatch | null {
   const tryAt = (openIdx: number): RawMatch | null => {
     const a = line[openIdx + 1];
     const b = line[openIdx + 2];
+    if (a === undefined || b === undefined) return null;
     if (a !== b) return null;
     if (a === '+') return findCloser(line, openIdx, '+', 'insert');
     if (a === '-') return findCloser(line, openIdx, '-', 'delete');
@@ -83,7 +84,12 @@ function nextMatch(line: string, cursor: number): RawMatch | null {
     if (open < 0) return best;
     const m = tryAt(open);
     if (m) {
-      if (!best || m.open < best.open) best = m;
+      const curBest = best as RawMatch | null;
+      if (curBest === null) {
+        best = m;
+      } else if (m.open < curBest.open) {
+        best = m;
+      }
       // First valid match wins (we scan left-to-right).
       return best;
     }
@@ -130,12 +136,14 @@ export function parseCmAnnotations(src: string): CmAnnotation[] {
     let acc = 0;
     for (let i = 0; i < lines.length; i++) {
       lineStart[i] = acc;
-      acc += lines[i].length + 1;
+      acc += (lines[i] ?? '').length + 1;
     }
   }
   let inFence = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue;
+    const ls = lineStart[i] ?? 0;
     if (FENCE_RE.test(line.trimStart())) {
       inFence = !inFence;
       continue;
@@ -152,8 +160,8 @@ export function parseCmAnnotations(src: string): CmAnnotation[] {
         const newText = line.slice(m.arrow + 2, close).trim();
         out.push({
           kind: 'substitution',
-          from: lineStart[i] + m.open,
-          to: lineStart[i] + close + 3,
+          from: ls + m.open,
+          to: ls + close + 3,
           line: i + 1,
           text: `${oldText} → ${newText}`,
           oldText,
@@ -163,8 +171,8 @@ export function parseCmAnnotations(src: string): CmAnnotation[] {
         const inner = line.slice(bodyStart, close).trim();
         out.push({
           kind: m.kind,
-          from: lineStart[i] + m.open,
-          to: lineStart[i] + close + 3,
+          from: ls + m.open,
+          to: ls + close + 3,
           line: i + 1,
           text: inner,
         });
@@ -203,6 +211,7 @@ export function transformCm(
   let out = src;
   for (let i = ann.length - 1; i >= 0; i--) {
     const a = ann[i];
+    if (!a) continue;
     const replacement = renderCm(a, mode, target);
     out = out.slice(0, a.from) + replacement + out.slice(a.to);
   }

@@ -303,7 +303,7 @@ function BorderRow(props: BorderRowProps): JSX.Element {
 function parseWidthPx(width: string | undefined): number {
   if (!width) return 1;
   const m = /^([0-9]+(?:\.[0-9]+)?)px$/.exec(width.trim());
-  if (m) return Math.round(parseFloat(m[1]));
+  if (m && m[1]) return Math.round(parseFloat(m[1]));
   if (width === '0') return 0;
   return 1;
 }

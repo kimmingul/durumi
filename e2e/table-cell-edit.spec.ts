@@ -163,7 +163,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       expect(doc).toContain('a\\|b');
       // And the row must still parse as 2 columns (no extra cell from
       // an unescaped pipe).
-      const headerLine = doc.split('\n')[0];
+      const headerLine = doc.split('\n')[0] ?? '';
       // Count unescaped pipes; should be 3 (outer + outer + inner separator).
       const pipes = headerLine.match(/(?<!\\)\|/g) ?? [];
       expect(pipes.length).toBe(3);

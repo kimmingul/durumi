@@ -106,7 +106,7 @@ function collectAlerts(state: EditorState): AlertSpan[] {
       const firstLine = state.doc.lineAt(node.from);
       const stripped = firstLine.text.replace(/^[ \t]*(?:>[ \t]?)+/, '');
       const m = ALERT_HEADER_RE.exec(stripped);
-      if (!m) return;
+      if (!m || !m[1]) return;
       const kind = m[1].toLowerCase();
       if (!isAlertKind(kind)) return;
       const lastLine = state.doc.lineAt(node.to);

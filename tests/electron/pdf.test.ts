@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  writeFile: vi.fn(async () => undefined),
-  unlink: vi.fn(async () => undefined),
+  writeFile: vi.fn(async (..._args: unknown[]) => undefined),
+  unlink: vi.fn(async (..._args: unknown[]) => undefined),
   tmpdir: vi.fn(() => '/tmp'),
-  loadURL: vi.fn(async () => undefined),
-  printToPDF: vi.fn(async () => Buffer.from('pdf-bytes')),
+  loadURL: vi.fn(async (..._args: unknown[]) => undefined),
+  printToPDF: vi.fn(async (..._args: unknown[]) => Buffer.from('pdf-bytes')),
   destroy: vi.fn(),
 }));
 

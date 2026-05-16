@@ -1,4 +1,12 @@
 {
+  // v0.2.17 (typecheck full-coverage meta-fix): this root config is a
+  // project-references container only. The `pnpm typecheck` script must
+  // run `tsc --build` (walks every referenced project) plus an explicit
+  // `tsc --noEmit -p tsconfig.test.json` (tests aren't a composite leaf).
+  // Without --build, `tsc --noEmit` here would type-check NOTHING because
+  // this config has no `files`/`include` — that hid the v0.2.16 aiHasKey
+  // regression. Add new sub-projects to the `references` list to keep
+  // them covered.
   "files": [],
   "references": [
     { "path": "./tsconfig.node.json" },

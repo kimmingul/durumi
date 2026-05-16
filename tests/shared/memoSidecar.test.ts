@@ -53,9 +53,9 @@ describe('ensureMeta', () => {
     const s0 = emptySidecar();
     const s1 = ensureMeta(s0, 'abc', AUTHOR, NOW);
     expect(s1.memos.abc).toBeDefined();
-    expect(s1.memos.abc.createdBy).toBe(AUTHOR);
-    expect(s1.memos.abc.resolved).toBe(false);
-    expect(s1.memos.abc.thread).toEqual([]);
+    expect(s1.memos.abc!.createdBy).toBe(AUTHOR);
+    expect(s1.memos.abc!.resolved).toBe(false);
+    expect(s1.memos.abc!.thread).toEqual([]);
     expect(s1).not.toBe(s0);
   });
 
@@ -74,19 +74,19 @@ describe('migrateMemoMeta', () => {
     const s3 = migrateMemoMeta(s2, 'old', 'new');
     expect(s3.memos.old).toBeUndefined();
     expect(s3.memos.new).toBeDefined();
-    expect(s3.memos.new.thread).toHaveLength(1);
-    expect(s3.memos.new.thread[0]?.text).toBe('thanks');
-    expect(s3.memos.new.resolved).toBe(true);
-    expect(s3.memos.new.createdBy).toBe(AUTHOR);
+    expect(s3.memos.new!.thread).toHaveLength(1);
+    expect(s3.memos.new!.thread[0]?.text).toBe('thanks');
+    expect(s3.memos.new!.resolved).toBe(true);
+    expect(s3.memos.new!.createdBy).toBe(AUTHOR);
   });
 
   it('clears orphanedAt on migration', () => {
     const s0 = ensureMeta(emptySidecar(), 'old', AUTHOR, NOW);
     // Mark orphaned by pruning against an empty set.
     const s1 = pruneOrphans(s0, new Set(), NOW);
-    expect(s1.memos.old.orphanedAt).toBeDefined();
+    expect(s1.memos.old!.orphanedAt).toBeDefined();
     const s2 = migrateMemoMeta(s1, 'old', 'new');
-    expect(s2.memos.new.orphanedAt).toBeUndefined();
+    expect(s2.memos.new!.orphanedAt).toBeUndefined();
   });
 
   it('is a no-op when oldId === newId', () => {
@@ -105,7 +105,7 @@ describe('migrateMemoMeta', () => {
     s = addReply(s, 'new', reply('r-keep'), NOW);
     const after = migrateMemoMeta(s, 'old', 'new');
     expect(after).toBe(s);
-    expect(after.memos.new.thread[0]?.id).toBe('r-keep');
+    expect(after.memos.new!.thread[0]?.id).toBe('r-keep');
   });
 });
 
@@ -116,13 +116,13 @@ describe('pruneOrphans', () => {
     const s0 = ensureMeta(emptySidecar(), 'a', AUTHOR, NOW);
     const s1 = pruneOrphans(s0, new Set(['a']), NOW);
     expect(s1.memos.a).toBeDefined();
-    expect(s1.memos.a.orphanedAt).toBeUndefined();
+    expect(s1.memos.a!.orphanedAt).toBeUndefined();
   });
 
   it('marks orphans with orphanedAt on first prune', () => {
     const s0 = ensureMeta(emptySidecar(), 'a', AUTHOR, NOW);
     const s1 = pruneOrphans(s0, new Set(), NOW);
-    expect(s1.memos.a.orphanedAt).toBe(NOW.toISOString());
+    expect(s1.memos.a!.orphanedAt).toBe(NOW.toISOString());
   });
 
   it('keeps orphans within the 7-day grace window', () => {
@@ -144,9 +144,9 @@ describe('pruneOrphans', () => {
   it('clears orphanedAt when the source memo comes back', () => {
     const s0 = ensureMeta(emptySidecar(), 'a', AUTHOR, NOW);
     const s1 = pruneOrphans(s0, new Set(), NOW);
-    expect(s1.memos.a.orphanedAt).toBeDefined();
+    expect(s1.memos.a!.orphanedAt).toBeDefined();
     const s2 = pruneOrphans(s1, new Set(['a']), NOW);
-    expect(s2.memos.a.orphanedAt).toBeUndefined();
+    expect(s2.memos.a!.orphanedAt).toBeUndefined();
   });
 
   it('returns the same reference when nothing changed', () => {
@@ -161,13 +161,13 @@ describe('addReply / removeReply', () => {
     let s = ensureMeta(emptySidecar(), 'a', AUTHOR, NOW);
     s = addReply(s, 'a', reply('r1', 'first'), NOW);
     s = addReply(s, 'a', reply('r2', 'second'), NOW);
-    expect(s.memos.a.thread.map((r) => r.text)).toEqual(['first', 'second']);
+    expect(s.memos.a!.thread.map((r) => r.text)).toEqual(['first', 'second']);
   });
 
   it('lazy-creates the entry on addReply', () => {
     const s = addReply(emptySidecar(), 'a', reply('r1'), NOW);
     expect(s.memos.a).toBeDefined();
-    expect(s.memos.a.thread).toHaveLength(1);
+    expect(s.memos.a!.thread).toHaveLength(1);
   });
 
   it('removes a reply by id', () => {
@@ -175,7 +175,7 @@ describe('addReply / removeReply', () => {
     s = addReply(s, 'a', reply('r1'), NOW);
     s = addReply(s, 'a', reply('r2'), NOW);
     s = removeReply(s, 'a', 'r1');
-    expect(s.memos.a.thread.map((r) => r.id)).toEqual(['r2']);
+    expect(s.memos.a!.thread.map((r) => r.id)).toEqual(['r2']);
   });
 
   it('removeReply is a no-op when the memo or reply is missing', () => {
@@ -189,9 +189,9 @@ describe('setResolved', () => {
   it('toggles resolved state', () => {
     const s0 = ensureMeta(emptySidecar(), 'a', AUTHOR, NOW);
     const s1 = setResolved(s0, 'a', true, NOW);
-    expect(s1.memos.a.resolved).toBe(true);
+    expect(s1.memos.a!.resolved).toBe(true);
     const s2 = setResolved(s1, 'a', false, NOW);
-    expect(s2.memos.a.resolved).toBe(false);
+    expect(s2.memos.a!.resolved).toBe(false);
   });
 
   it('is a no-op when state is unchanged', () => {
@@ -203,7 +203,7 @@ describe('setResolved', () => {
   it('lazy-creates the entry when called on a missing id', () => {
     const s = setResolved(emptySidecar(), 'a', true, NOW);
     expect(s.memos.a).toBeDefined();
-    expect(s.memos.a.resolved).toBe(true);
+    expect(s.memos.a!.resolved).toBe(true);
   });
 });
 

@@ -222,7 +222,7 @@ export function MemoPanel({ view, content, visible, onClose }: MemoPanelProps) {
                 key={`${memo.from}-${memo.to}`}
                 memo={memo}
                 view={view}
-                topPx={positions[idx]}
+                topPx={positions[idx] ?? null}
                 focused={focusedFrom === memo.from}
                 onFocusHandled={() => setFocusedFrom(null)}
               />

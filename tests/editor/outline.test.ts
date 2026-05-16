@@ -81,8 +81,8 @@ describe('buildOutlineTree', () => {
       { level: 2, text: 'B', line: 2 },
     ]);
     expect(tree.length).toBe(2);
-    expect(tree[0].text).toBe('A');
-    expect(tree[1].text).toBe('B');
+    expect(tree[0]!.text).toBe('A');
+    expect(tree[1]!.text).toBe('B');
   });
 
   it('handles a level jump (H1 to H3)', () => {

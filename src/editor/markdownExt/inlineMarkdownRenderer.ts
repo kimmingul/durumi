@@ -117,7 +117,7 @@ function tokenizeAtoms(src: string): AtomToken[] {
     // current text buffer keeps surrounding emphasis intact.
     if (ch === '\\' && i + 1 < src.length) {
       const next = src[i + 1];
-      if (isEscapable(next)) {
+      if (next !== undefined && isEscapable(next)) {
         flushText();
         out.push({ kind: 'literal', value: next });
         i += 2;
@@ -196,7 +196,7 @@ function matchInlineMath(src: string, start: number): { tex: string; end: number
   let i = start + 1;
   if (i >= src.length) return null;
   // No leading whitespace inside math.
-  if (/\s/.test(src[i])) return null;
+  if (/\s/.test(src[i] ?? '')) return null;
   while (i < src.length) {
     const ch = src[i];
     if (ch === '\n') return null;
@@ -207,7 +207,7 @@ function matchInlineMath(src: string, start: number): { tex: string; end: number
     if (ch === '$') {
       // Body chars span [start+1, i). Reject if empty or trailing-whitespace.
       if (i === start + 1) return null;
-      if (/\s/.test(src[i - 1])) return null;
+      if (/\s/.test(src[i - 1] ?? '')) return null;
       return { tex: src.slice(start + 1, i), end: i + 1 };
     }
     i++;
@@ -404,7 +404,7 @@ function splitEmphasis(src: string): EmphSpan[] {
 
 function findClosingDouble(src: string, from: number, ch: string): number {
   if (from >= src.length) return -1;
-  if (/\s/.test(src[from])) return -1;
+  if (/\s/.test(src[from] ?? '')) return -1;
   // Look for a `chch` pair whose start is non-whitespace-preceded. To handle
   // `**bold *italic***`, prefer the FINAL `chch` in any run of trailing
   // marker chars — i.e. when we see `chch` followed by another `ch`, that
@@ -414,7 +414,7 @@ function findClosingDouble(src: string, from: number, ch: string): number {
   // character (or end-of-string).
   for (let i = from; i < src.length - 1; i++) {
     if (src[i] !== ch || src[i + 1] !== ch) continue;
-    if (i > from && /\s/.test(src[i - 1])) continue;
+    if (i > from && /\s/.test(src[i - 1] ?? '')) continue;
     // Advance past any extra `ch` chars so we land at the LAST pair in a
     // run. This makes `***bold***` close on the rightmost `**`.
     let j = i + 2;
@@ -429,16 +429,16 @@ function findClosingDouble(src: string, from: number, ch: string): number {
 
 function findClosingSingle(src: string, from: number, ch: string): number {
   if (from >= src.length) return -1;
-  if (/\s/.test(src[from])) return -1;
+  if (/\s/.test(src[from] ?? '')) return -1;
   for (let i = from; i < src.length; i++) {
     if (src[i] === ch) {
       if (src[i + 1] === ch) continue;
       if (ch === '_') {
-        const before = i > 0 ? src[i - 1] : ' ';
-        const after = i + 1 < src.length ? src[i + 1] : ' ';
+        const before = i > 0 ? src[i - 1] ?? ' ' : ' ';
+        const after = i + 1 < src.length ? src[i + 1] ?? ' ' : ' ';
         if (isWordChar(before) && isWordChar(after)) continue;
       }
-      if (i > from && /\s/.test(src[i - 1])) continue;
+      if (i > from && /\s/.test(src[i - 1] ?? '')) continue;
       return i;
     }
   }
@@ -453,6 +453,7 @@ function findClosingNoSpace(src: string, from: number, ch: string): number {
   if (from >= src.length) return -1;
   for (let i = from; i < src.length; i++) {
     const c = src[i];
+    if (c === undefined) return -1;
     if (c === ch) {
       if (i === from) return -1;
       return i;

@@ -1,6 +1,201 @@
 # Durumi — Progress
 
-## v0.2.16 (current) — AI palette preload contract repair
+## v0.2.17 (current) — Typecheck full coverage (meta-bug fix)
+
+### What was broken
+
+A post-mortem of v0.2.16's silent `aiHasKey` regression revealed that
+`pnpm typecheck` was a no-op against the renderer. The script ran
+`tsc --noEmit` against the root `tsconfig.json`, which is a
+project-references container with `"files": []` and no `include` of
+its own — TypeScript happily processed zero files and exited 0.
+
+The two sub-configs (`tsconfig.web.json` covering `src/**` and
+`shared/**`; `tsconfig.node.json` covering `electron/**` and
+`shared/**`) DO catch errors, but nothing wired them into the script.
+Manually running `pnpm exec tsc -p tsconfig.web.json` on v0.2.15 with
+the missing `aiHasKey` bridge surfaces the regression immediately:
+
+```
+electron/preload.ts(4,7): error TS2741: Property 'aiHasKey' is
+missing in type '{ ... 68 more ...; }' but required in type 'IpcApi'.
+```
+
+So the v0.2.16 contract drift was not the first — it is the first
+that produced a user-visible failure. The same hole has existed since
+the initial commit (`tsconfig.json` shape unchanged since v0.1.0).
+
+### Fix shape — Option A (project references via `tsc --build`)
+
+Three options were weighed:
+
+- **A** — `tsc --build` against the root config, which walks every
+  referenced project. Requires `composite: true` on referenced
+  sub-configs; incremental + cached via `.tsbuildinfo`.
+- **B** — chain explicit invocations (`tsc -p web && tsc -p node`).
+  Simple but fragile when a new sub-config is added.
+- **C** — flatten everything into one `tsconfig.json`. Loses the
+  renderer/main isolation we already have.
+
+Option A wins for renderer + main + shared coverage. Tests are added
+as a leaf (non-composite) project chained explicitly because
+composite mode requires every transitively imported file to be
+enumerated, which is intractable for tests that touch
+`src/`/`electron/`/`shared/` ad-hoc.
+
+Final shape:
+
+- `tsconfig.json` — references `node` + `web` (composite leaves).
+- `tsconfig.web.json` — `composite: true` added.
+- `tsconfig.node.json` — `composite: true` + `noEmit: true` added.
+- `tsconfig.test.json` — NEW; non-composite; covers `tests/**` +
+  `e2e/**`; relies on transitive resolution to reach renderer /
+  main / shared.
+- `package.json` — `typecheck` becomes
+  `tsc --build && tsc --noEmit -p tsconfig.test.json`.
+
+### Verification
+
+Probe 1 — renderer type error in `src/main.tsx`
+(`const x: number = 'abc'`):
+
+- Old `pnpm typecheck` → exit 0 (silent).
+- New `pnpm typecheck` → exit 1, surfaces
+  `src/main.tsx(10,7): error TS2322: Type 'string' is not
+  assignable to type 'number'.`
+
+Probe 2 — remove `aiHasKey` from `electron/preload.ts` (the exact
+v0.2.16-shape regression):
+
+- New `pnpm typecheck` → exit 1, surfaces
+  `electron/preload.ts(4,7): error TS2741: Property 'aiHasKey' is
+  missing in type '{...}' but required in type 'IpcApi'.`
+
+Both probes were removed after verification.
+
+### Lurking error sweep — full clean-up bundled into v0.2.17
+
+Turning on full coverage exposed ~265 pre-existing type errors that
+have accumulated since v0.1.0. These are NOT new — they were always
+present, just hidden. Fixing them all is bundled into this release
+so `pnpm typecheck` ships green from v0.2.17 onward.
+
+**Category 1 — `@types/markdown-it@14` namespace migration**
+(11 errors in `src/export/renderHtml.ts`).
+`import MarkdownIt from 'markdown-it'` resolves only the value side;
+`MarkdownIt.PluginSimple` and friends fail with TS2702. Fix shape: add
+`import type * as MarkdownItNs from 'markdown-it/dist/index.cjs.js'`
+to reach the merged namespace, rewrite five plugin casts + two `Token`
+references. `import('markdown-it/lib/token')` paths (the v13 layout)
+replaced with `MarkdownItNs.Token`. No runtime change.
+
+**Category 2 — `AppendError` discriminated-union widening**
+(17 errors across `electron/bibliographyWrite.ts`,
+`electron/ipc/bibliography.ts`, `shared/ipc-contract.ts`,
+`src/store/bibliographyStore.ts`). `AppendError.error: string`
+overlapped the literal arms `'duplicate-doi'` / `'duplicate-weak'`, so
+narrowing on `r.error === '…'` left `existingKey` /
+`normalizedTitle` invisible. Fix shape: add a `kind` discriminator
+field to all three variants of the union (`AppendError` →
+`kind?: 'generic'`; the duplicate arms get `kind: 'duplicate-doi' |
+'duplicate-weak'`). The IPC contract mirrors the new tag for
+renderer code to narrow on. Producers (the `appendEntry` function +
+the IPC handler) emit the tag; consumers in the store now narrow on
+`appended.kind === 'duplicate-doi'`. No runtime change — the existing
+`error` field is preserved as the user-facing string.
+
+**Category 3 — `Partial<Preferences>` -> `PreferencesPatch`
+(DeepPartial)** (4 errors in `electron/preferences.ts`,
+`src/components/StatusBar.tsx`, `src/hooks/useMenuCommandRouter.ts`).
+Callers like `prefsSet({ editor: { defaultMode: 'wysiwyg' } })`
+failed because `Partial<Preferences>` requires `editor` to be the
+FULL object. Fix shape: introduce
+`PreferencesPatch = { [K]?: Preferences[K] extends object ?
+{ [P]?: Preferences[K][P] } : Preferences[K] }` in `shared/
+ipc-contract.ts`, propagate it through `prefsSet` /
+`setPreferences` / `usePreferences`. **REAL RUNTIME BUG FOUND**:
+the old `setPreferences` did `{ ...current, ...patch }` (shallow
+merge), so existing callers like `prefsSet({ editor: { defaultMode } })`
+silently ERASED `editor.activePreset`, `editor.styles`, and
+`editor.tableStyleFormat` on every mode switch. The type-system was
+trying to flag this; we never listened. Fix replaces the shallow merge
+with a one-level deep merge in BOTH `electron/preferences.ts` AND
+`src/hooks/usePreferences.ts` (the optimistic renderer state had the
+same bug). Tests still 1566/1566 because no test exercised this path
+end-to-end with the affected nested keys.
+
+**Category 5 — Electron MenuItem vs MenuItemConstructorOptions**
+(5 errors in `electron/contextMenu.ts`). The CriticMarkup submenu
+used `submenu: [new MenuItem(...)]`, but `MenuItemConstructorOptions
+.submenu` expects `MenuItemConstructorOptions[] | Menu`, not
+`MenuItem[]`. Runtime accepted both; types are correct. Fix: pass
+plain `{ label, click }` objects to `submenu`. No behavior change.
+
+**Category 4 — `noUncheckedIndexedAccess` cascade** (~230 errors
+across `shared/`, `src/editor/`, `electron/`, tests/e2e). The strict
+option had been enabled in both sub-configs since v0.1.0 but never
+enforced — so the codebase grew a forest of unguarded `arr[i]`,
+`lines[n]`, `match[1]` accesses. Fix shapes (chosen per-site for
+runtime safety):
+
+- `arr[i] ?? defaultValue` where a sensible default exists.
+- `if (!arr[i]) continue;` early-out where the loop body can skip.
+- `arr[i]!` only at sites where surrounding logic (`if
+  (arr.length > 0)`, explicit bound check) makes the access provably
+  safe.
+- For regex matches, `if (!m || !m[1]) continue;` followed by
+  `m[1].length` — TS narrows the truthy branch.
+
+**Real runtime bugs surfaced**: the prefs shallow-merge above is the
+only one. Every other site was a defensive guard against an empty
+input that the calling pattern already prevented (e.g. table parsers
+that bail before the row loop ever runs against empty input).
+
+Two additional small fixes mixed in:
+- `electron/pdfText.ts` — `disableWorker` was dropped from
+  `pdfjs-dist@5` typings but the runtime still honors it in the
+  legacy build (we need it because main-process PDF parsing can't
+  reach the worker thread). Cast through an extended type rather
+  than `any`.
+- `tsconfig.test.json` — switched from composite (which required
+  enumerating every transitively imported file) to a non-composite
+  leaf chained explicitly by `pnpm typecheck`. Tests touch
+  `src/`/`electron/`/`shared/` ad-hoc, so enumeration was
+  intractable.
+
+### Files
+
+Infrastructure (the meta-fix):
+- `tsconfig.json` — `+8 −1` (header comment + references list).
+- `tsconfig.web.json` — `+1 −0` (`composite: true`).
+- `tsconfig.node.json` — `+2 −0` (`composite: true`, `noEmit: true`).
+- `tsconfig.test.json` — NEW (28 lines).
+- `package.json` — `typecheck` script + `0.2.16 → 0.2.17` + add
+  `@lezer/common ^1.5.2` to deps.
+
+Lurking-error sweep — 23 source files + 9 test files touched. All
+edits are type-system safety (`?? default`, `!`, narrowing checks)
+EXCEPT the prefs deep-merge in `electron/preferences.ts` +
+`src/hooks/usePreferences.ts`, which is a deliberate runtime fix
+for the latent partial-overwrite bug described above.
+
+### Effort
+
+- Category 1: 5 min (one file, clear migration).
+- Category 2: 10 min (discriminator pattern, six call sites).
+- Category 3: 15 min (PreferencesPatch type + deep-merge runtime fix).
+- Category 5: 2 min.
+- Category 4: 40 min (~230 sites across 32 files; mostly mechanical).
+- Total: ~72 min vs the 90-min budget.
+
+### Quality gates
+
+- `pnpm typecheck` — exit 0, 0 errors.
+- `pnpm test` — 1566/1566 passing (unchanged).
+- `pnpm test:e2e` — 120 passed / 3 skipped (unchanged).
+- `pnpm lint` — clean.
+
+## v0.2.16 — AI palette preload contract repair
 
 Smoke v3 capture #27
 (`e2e/screenshots/v0.2-smoke/27-ai-command-palette-open.png`) tried

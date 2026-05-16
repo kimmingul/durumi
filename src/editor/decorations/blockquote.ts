@@ -38,8 +38,11 @@ export function blockquoteDecoration(): Extension {
         if (!shouldHideMarker(state, n === activeLineNumber)) continue;
         const match = BLOCKQUOTE_MARKER_RE.exec(line.text);
         if (!match) continue;
-        const replaceFrom = line.from + match[1].length;
-        const replaceTo = replaceFrom + match[2].length + match[3].length;
+        const m1 = match[1] ?? '';
+        const m2 = match[2] ?? '';
+        const m3 = match[3] ?? '';
+        const replaceFrom = line.from + m1.length;
+        const replaceTo = replaceFrom + m2.length + m3.length;
         builder.add(
           replaceFrom,
           replaceTo,

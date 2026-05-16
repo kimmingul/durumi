@@ -108,7 +108,7 @@ export function useCitationInsertFlow(
       const view = editorViewRef.current;
       if (!view) return;
       const single = citation.match(/^\[@([^\]\s;,]+)\]$/);
-      if (single) {
+      if (single && single[1]) {
         const outcome = insertCitationSmart(
           view.state.doc.toString(),
           view.state.selection.main.from,

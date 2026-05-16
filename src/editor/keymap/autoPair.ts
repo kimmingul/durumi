@@ -90,6 +90,7 @@ export function autoPair(): Extension {
     for (let i = 0; i < insertions.length; i++) {
       const ins = insertions[i];
       const sel = tr.startState.selection.ranges[i];
+      if (!ins || !sel) return tr;
       const ch = ins.ch;
       const closing = PAIRS_FULL[ch] ?? WRAP_ONLY[ch];
       const isFullPair = ch in PAIRS_FULL;
