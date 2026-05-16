@@ -1062,4 +1062,588 @@ test.describe('v0.2 smoke screenshots', () => {
       }
     }
   });
+
+  /**
+   * v0.2.18 — smoke v5 stress: large document + multi-workspace.
+   *
+   * What this block adds over #01-42:
+   *  - Stress-renders a programmatically generated ~5000-line, ~170KB markdown
+   *    file with 100+ headings, 50+ citations, 20+ footnotes, 20+ memos,
+   *    CriticMarkup spans of each kind, mermaid + math blocks, and tables.
+   *    This simulates a long-form medical manuscript and exercises every
+   *    decoration-building code path at scale.
+   *  - Measures (and logs) the wall-clock time for:
+   *      • file open → first editor render
+   *      • Document → Live mode switch (requestAnimationFrame proxy)
+   *      • Live → Source switch
+   *      • Source → Document switch
+   *    Timings are diagnostic only — the test does NOT fail on slow rendering.
+   *  - Captures #43-46: top, mid, outline-populated, and workspace search
+   *    against the large doc.
+   *  - Captures #47-48: three workspace folders open simultaneously, then
+   *    a "switching" capture with one of them focused.
+   *  - Decoration-count stability sweep: switches modes 5× and logs each
+   *    pass's decoration count (Document-mode baseline → after 5 flips back).
+   *    A drift between the baseline and the post-sweep count flags potential
+   *    state leaks for the orchestrator to triage.
+   *
+   * Skipping policy: same as the other smoke blocks (set SMOKE=1). Inside
+   * the test, any sub-capture that can't be driven deterministically logs a
+   * warning and snaps whatever is on screen so the orchestrator still gets
+   * a frame.
+   */
+  test('capture large-doc + multi-workspace stress', async () => {
+    test.setTimeout(360_000);
+
+    // Generate the large fixture into a fresh tmpdir so the path-guard's
+    // DURUMI_E2E=1 tmpdir bypass accepts it. We embed the generator inline
+    // so this spec is self-contained (no external script dependency).
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-smoke-v5-'));
+    const largeMdPath = path.join(tmpDir, 'durumi-large-fixture.md');
+    writeLargeFixture(largeMdPath);
+    fs.mkdirSync(SHOT_DIR, { recursive: true });
+
+    // Three workspace folders for shots #47-48. Each gets a small handful
+    // of markdown files so the file-tree has visible entries.
+    const ws1 = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-smoke-v5-ws1-'));
+    const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-smoke-v5-ws2-'));
+    const ws3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durumi-smoke-v5-ws3-'));
+    fs.writeFileSync(path.join(ws1, 'patient-cases.md'), '# Patient cases\n\nA\n');
+    fs.writeFileSync(path.join(ws1, 'protocol.md'), '# Protocol\n\nB\n');
+    fs.writeFileSync(path.join(ws2, 'literature.md'), '# Literature\n\nC\n');
+    fs.writeFileSync(path.join(ws2, 'figures.md'), '# Figures\n\nD\n');
+    fs.writeFileSync(path.join(ws2, 'tables.md'), '# Tables\n\nE\n');
+    fs.writeFileSync(path.join(ws3, 'drafts.md'), '# Drafts\n\nF\n');
+    fs.writeFileSync(path.join(ws3, 'submission.md'), '# Submission\n\nG\n');
+
+    const { app, page } = await launch();
+    try {
+      // ---- LARGE DOC OPEN — time from IPC dispatch to "doc visible" ----
+      const fileStat = fs.statSync(largeMdPath);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[smoke v5] large fixture: ${fileStat.size} bytes, ` +
+          `${fs.readFileSync(largeMdPath, 'utf8').split('\n').length} lines`,
+      );
+
+      const openStart = Date.now();
+      await app.evaluate(async ({ BrowserWindow }, p: string) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('menu:command', { type: 'openRecent', path: p });
+      }, largeMdPath);
+      // Wait for the title heading from the fixture to appear in the editor DOM.
+      await page.waitForFunction(
+        () => {
+          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+          return cm?.innerText.includes('Large Stress Fixture') ?? false;
+        },
+        undefined,
+        { timeout: 30_000 },
+      );
+      const openMs = Date.now() - openStart;
+      // eslint-disable-next-line no-console
+      console.log(`[smoke v5] open file → doc visible: ${openMs}ms`);
+      if (openMs > 2000) {
+        // eslint-disable-next-line no-console
+        console.log(`[smoke v5] PERF FLAG: open > 2s (${openMs}ms)`);
+      }
+
+      // Settle pending decorations + layout before measuring.
+      await page.waitForTimeout(500);
+
+      // ---- 43 — Large doc, scrolled to top, Document mode.
+      await setWysiwygMode(app, page);
+      await scrollToTop(page);
+      await snap(page, '43-large-doc-top.png');
+
+      // ---- 44 — Large doc scrolled to ~50% (~line 2525).
+      const middleLine = await page.evaluate(() => {
+        const root = document.querySelector('.cm-editor') as HTMLElement | null;
+        const content = root?.querySelector('.cm-content') as HTMLElement | null;
+        type ViewLike = { state: { doc: { lines: number } } };
+        const tile = (content ?? root) as unknown as { cmTile?: { root?: { view?: ViewLike } } };
+        const view = tile.cmTile?.root?.view;
+        return view ? Math.floor(view.state.doc.lines / 2) : 2500;
+      });
+      await caretToLine(page, middleLine);
+      await scrollCaretIntoView(page);
+      await page.waitForTimeout(200);
+      await snap(page, '44-large-doc-middle.png');
+
+      // ---- 45 — Outline tab populated with 100+ headings.
+      await scrollToTop(page);
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showOutline');
+      });
+      await page.waitForSelector('.cm-outline', { timeout: 4000 }).catch(() => undefined);
+      await page.waitForTimeout(500);
+      const outlineCount = await page.locator('.cm-outline-row').count();
+      // eslint-disable-next-line no-console
+      console.log(`[smoke v5] outline rows visible: ${outlineCount}`);
+      await snap(page, '45-large-doc-outline-populated.png');
+
+      // ---- 46 — Search for "lorem ipsum" (must seed a workspace so the
+      // workspace search index has files to match against; otherwise the
+      // search tab shows "0 matches" regardless of input).
+      await page.evaluate(async (wsPath: string) => {
+        const api = (window as unknown as {
+          api: {
+            prefsSet: (x: {
+              workspaceFolders: string[];
+              sidebar?: { visible: boolean; activeTab: 'search'; width: number };
+            }) => Promise<void>;
+          };
+        }).api;
+        await api.prefsSet({
+          workspaceFolders: [wsPath],
+          sidebar: { visible: true, activeTab: 'search', width: 360 },
+        });
+      }, tmpDir); // tmpDir contains the large fixture
+      await page.reload();
+      await page.waitForSelector('.cm-content', { timeout: 8000 });
+      await page.waitForTimeout(400);
+      const searchInput46 = await page.$('.cm-search-input');
+      if (searchInput46) {
+        await searchInput46.fill('Lorem ipsum');
+        // Workspace search debounce + I/O for a 170KB file.
+        await page.waitForTimeout(1500);
+        const status46 = await page.locator('.cm-search-status').textContent();
+        // eslint-disable-next-line no-console
+        console.log(`[smoke v5] search status: ${status46}`);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[smoke v5] cm-search-input not visible for shot 46');
+      }
+      await snap(page, '46-large-doc-search-result.png');
+
+      // ---- Re-open large doc + measure mode-switch timings. The reload
+      // above cleared the open document.
+      const reopenStart = Date.now();
+      await app.evaluate(async ({ BrowserWindow }, p: string) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('menu:command', { type: 'openRecent', path: p });
+      }, largeMdPath);
+      await page.waitForFunction(
+        () => {
+          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+          return cm?.innerText.includes('Large Stress Fixture') ?? false;
+        },
+        undefined,
+        { timeout: 30_000 },
+      );
+      // eslint-disable-next-line no-console
+      console.log(`[smoke v5] re-open after reload: ${Date.now() - reopenStart}ms`);
+      await page.waitForTimeout(400);
+
+      // Mode-switch timing: dispatch the IPC, then poll via rAF for the next
+      // paint frame as a proxy for "render complete". We also probe the
+      // decoration-set count before + after to feed the state-leak check.
+      const measureModeSwitch = async (
+        mode: 'wysiwyg' | 'typora' | 'markdown',
+      ): Promise<{ ms: number; decoCount: number }> => {
+        // Set up the rAF probe before dispatching.
+        await page.evaluate(() => {
+          (window as unknown as { __renderDoneAt?: number }).__renderDoneAt = undefined;
+        });
+        const startMs = Date.now();
+        await app.evaluate(({ BrowserWindow }, m: string) => {
+          const w = BrowserWindow.getAllWindows()[0];
+          w?.webContents.send('menu:command', { type: 'setEditMode', mode: m });
+        }, mode);
+        // Wait for two rAFs: one for React state to flush, one for CM to
+        // re-paint with the new mode's decorations.
+        await page.evaluate(
+          () =>
+            new Promise<void>((res) => {
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  (window as unknown as { __renderDoneAt: number }).__renderDoneAt = performance.now();
+                  res();
+                }),
+              );
+            }),
+        );
+        const elapsedMs = Date.now() - startMs;
+        // Count decorations by inspecting the rendered DOM as a proxy. We
+        // can't easily reach into CM's facet without leaking internals across
+        // the page boundary; counting DOM `[class*="cm-md-"]` nodes gives a
+        // stable signal of how many decorations are actually painted.
+        const decoCount = await page.evaluate(() => {
+          const cm = document.querySelector('.cm-content');
+          if (!cm) return 0;
+          return cm.querySelectorAll('[class*="cm-md-"], .cm-memo, .cm-cm-insert, .cm-cm-delete').length;
+        });
+        return { ms: elapsedMs, decoCount };
+      };
+
+      // Start from Document mode.
+      await setWysiwygMode(app, page);
+      await page.waitForTimeout(300);
+      const baseline = await measureModeSwitch('wysiwyg');
+      // eslint-disable-next-line no-console
+      console.log(`[smoke v5] baseline Document mode decoCount: ${baseline.decoCount}`);
+
+      const liveTiming = await measureModeSwitch('typora');
+      // eslint-disable-next-line no-console
+      console.log(`[smoke v5] mode switch Document → Live: ${liveTiming.ms}ms (deco=${liveTiming.decoCount})`);
+      if (liveTiming.ms > 2000) {
+        // eslint-disable-next-line no-console
+        console.log(`[smoke v5] PERF FLAG: Live switch > 2s (${liveTiming.ms}ms)`);
+      }
+
+      const sourceTiming = await measureModeSwitch('markdown');
+      // eslint-disable-next-line no-console
+      console.log(`[smoke v5] mode switch Live → Source: ${sourceTiming.ms}ms (deco=${sourceTiming.decoCount})`);
+      if (sourceTiming.ms > 2000) {
+        // eslint-disable-next-line no-console
+        console.log(`[smoke v5] PERF FLAG: Source switch > 2s (${sourceTiming.ms}ms)`);
+      }
+
+      const backToDocTiming = await measureModeSwitch('wysiwyg');
+      // eslint-disable-next-line no-console
+      console.log(
+        `[smoke v5] mode switch Source → Document: ${backToDocTiming.ms}ms (deco=${backToDocTiming.decoCount})`,
+      );
+      if (backToDocTiming.ms > 2000) {
+        // eslint-disable-next-line no-console
+        console.log(`[smoke v5] PERF FLAG: Document return switch > 2s (${backToDocTiming.ms}ms)`);
+      }
+
+      // ---- State-leak detection: switch modes 5× and compare decoration
+      // counts before/after the sweep. Any persistent drift in the Document-
+      // mode decoration count is suspicious.
+      let driftCount = 0;
+      for (let i = 0; i < 5; i++) {
+        await setTyporaMode(app, page);
+        await setMarkdownMode(app, page);
+        await setWysiwygMode(app, page);
+      }
+      await page.waitForTimeout(400);
+      const afterSweep = await measureModeSwitch('wysiwyg');
+      // eslint-disable-next-line no-console
+      console.log(
+        `[smoke v5] after 5× mode flips, Document mode decoCount: ${afterSweep.decoCount} (baseline=${baseline.decoCount})`,
+      );
+      if (Math.abs(afterSweep.decoCount - baseline.decoCount) > 5) {
+        driftCount = afterSweep.decoCount - baseline.decoCount;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[smoke v5] STATE LEAK FLAG: decoration count drifted by ${driftCount} after 5 mode flips`,
+        );
+      }
+
+      // ---- 47 — Multi-workspace: three workspace roots open in the file
+      // tree simultaneously. Seed via prefsSet + reload (same pattern as the
+      // existing workspaces.spec.ts).
+      await page.evaluate(async (paths: string[]) => {
+        const api = (window as unknown as {
+          api: {
+            prefsSet: (x: {
+              workspaceFolders: string[];
+              sidebar?: { visible: boolean; activeTab: 'files'; width: number };
+            }) => Promise<void>;
+          };
+        }).api;
+        await api.prefsSet({
+          workspaceFolders: paths,
+          sidebar: { visible: true, activeTab: 'files', width: 360 },
+        });
+      }, [ws1, ws2, ws3]);
+      await page.reload();
+      await page.waitForSelector('.cm-content', { timeout: 8000 });
+      await page
+        .waitForSelector('.cm-tree-root-label', { timeout: 6000 })
+        .catch(() => {
+          // eslint-disable-next-line no-console
+          console.warn('[smoke v5] cm-tree-root-label not visible for shot 47');
+        });
+      // Re-open the large doc so the editor area shows content (not empty).
+      await app.evaluate(async ({ BrowserWindow }, p: string) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('menu:command', { type: 'openRecent', path: p });
+      }, largeMdPath);
+      await page.waitForFunction(
+        () => {
+          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+          return cm?.innerText.includes('Large Stress Fixture') ?? false;
+        },
+        undefined,
+        { timeout: 30_000 },
+      );
+      await setWysiwygMode(app, page);
+      await scrollToTop(page);
+      await page.waitForTimeout(400);
+      const wsRootCount = await page.locator('.cm-tree-root-label').count();
+      const wsFileCount = await page.locator('.cm-tree-row-file').count();
+      // eslint-disable-next-line no-console
+      console.log(
+        `[smoke v5] workspace roots visible: ${wsRootCount}, file rows: ${wsFileCount}`,
+      );
+      await snap(page, '47-multi-workspace-three-open.png');
+
+      // ---- 48 — Workspace switching: click a file row in workspace 2 so
+      // a different file is loaded into the editor; capture the sidebar
+      // with that row highlighted/active.
+      const ws2FileLabel = 'literature.md';
+      const ws2Row = page
+        .locator(`.cm-tree-row-file:has-text("${ws2FileLabel}")`)
+        .first();
+      const ws2Visible = await ws2Row.isVisible({ timeout: 1500 }).catch(() => false);
+      if (ws2Visible) {
+        await ws2Row.click().catch(() => undefined);
+        await page
+          .waitForFunction(
+            () => {
+              const cm = document.querySelector('.cm-content') as HTMLElement | null;
+              return cm?.innerText.includes('Literature') ?? false;
+            },
+            undefined,
+            { timeout: 5000 },
+          )
+          .catch(() => {
+            // eslint-disable-next-line no-console
+            console.warn('[smoke v5] editor did not load literature.md within 5s');
+          });
+        await page.waitForTimeout(300);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`[smoke v5] could not locate ${ws2FileLabel} row for shot 48`);
+      }
+      await snap(page, '48-workspace-switching.png');
+
+      // ---- State leak: after opening 3 workspaces, does the memo panel
+      // still mount? We re-open the large doc (which has 22 memos) and
+      // toggle the memo panel; if no `.cm-memo-card` is visible, that's a
+      // potential desync.
+      await app.evaluate(async ({ BrowserWindow }, p: string) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('menu:command', { type: 'openRecent', path: p });
+      }, largeMdPath);
+      await page.waitForFunction(
+        () => {
+          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+          return cm?.innerText.includes('Large Stress Fixture') ?? false;
+        },
+        undefined,
+        { timeout: 30_000 },
+      );
+      await setWysiwygMode(app, page);
+      await app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w?.webContents.send('menu:command', 'showMemos');
+      });
+      await page.waitForTimeout(800);
+      const memoCardCount = await page.locator('.cm-memo-card').count();
+      // eslint-disable-next-line no-console
+      console.log(
+        `[smoke v5] after multi-workspace cycle, memo cards visible: ${memoCardCount} ` +
+          `(fixture has 22 memos)`,
+      );
+      if (memoCardCount === 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          '[smoke v5] STATE LEAK FLAG: memo panel mounted 0 cards despite 22 memos in fixture',
+        );
+      }
+    } finally {
+      await shutdown(app);
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+      try {
+        fs.rmSync(ws1, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+      try {
+        fs.rmSync(ws2, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+      try {
+        fs.rmSync(ws3, { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
+    }
+  });
 });
+
+/**
+ * Programmatically write a ~5000-line, ~170KB markdown stress fixture to the
+ * given path. Contents:
+ *   - YAML front matter
+ *   - 100+ mixed-level headings (H1-H6, including subheadings)
+ *   - 50+ inline citations `[@key1]`...
+ *   - 20+ footnote refs + definitions
+ *   - 20+ memos `%% memo N %%`
+ *   - 10+ CriticMarkup spans of each kind (insert/delete/substitute/highlight/comment)
+ *   - 5+ Mermaid blocks, 5+ block math, 3+ tables
+ *   - A bibliography section
+ *
+ * Generation is deterministic (no Math.random) so reruns produce byte-identical
+ * output. Lorem ipsum is short (single sentences per paragraph) to keep the
+ * file under 200KB despite the 5000-line target.
+ */
+function writeLargeFixture(outPath: string): void {
+  const LOREM = [
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+    'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+    'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.',
+    'Nisi ut aliquip ex ea commodo consequat duis aute irure dolor.',
+    'In reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla.',
+    'Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia.',
+    'Deserunt mollit anim id est laborum quis aute iure reprehenderit.',
+    'Curabitur pretium tincidunt lacus nulla gravida orci a odio nullam.',
+    'Cras sit amet ligula at libero ullamcorper viverra in vitae erat.',
+    'Pellentesque habitant morbi tristique senectus et netus et malesuada.',
+  ];
+  const sentence = (i: number): string => LOREM[i % LOREM.length] ?? '';
+  const lines: string[] = [];
+  lines.push('---', 'title: Durumi Large Stress Fixture', 'author: Smoke v5', '---', '');
+  lines.push('# Large Stress Fixture', '');
+  lines.push('A long-form manuscript simulation for performance + state-leak stress.', '');
+
+  let citationIdx = 0;
+  let footnoteIdx = 0;
+  let memoCount = 0;
+  let cmI = 0;
+  let cmD = 0;
+  let cmS = 0;
+  let cmH = 0;
+  let cmC = 0;
+  const FN_KEYS: string[] = [];
+  for (let i = 1; i <= 25; i++) FN_KEYS.push(`fn${i}`);
+  const nextCite = (): string => {
+    const k = `key${(citationIdx % 60) + 1}`;
+    citationIdx++;
+    return `[@${k}]`;
+  };
+  const nextFn = (): string => {
+    const k = FN_KEYS[footnoteIdx % FN_KEYS.length] ?? 'fn1';
+    footnoteIdx++;
+    return `[^${k}]`;
+  };
+  for (let s = 1; s <= 110; s++) {
+    const level = s % 25 === 0 ? 1 : 2 + (s % 5);
+    lines.push(
+      `${'#'.repeat(level)} Section ${s} — ${
+        ['Methods', 'Results', 'Discussion', 'Background', 'Analysis'][s % 5]
+      }`,
+      '',
+    );
+    let p = sentence(s);
+    if (s % 2 === 0 && citationIdx < 55) p += ` ${nextCite()} ${nextCite()}`;
+    if (s % 5 === 0 && footnoteIdx < 22) p += ` ${nextFn()}`;
+    if (s % 7 === 0 && memoCount < 22) {
+      memoCount++;
+      p += ` %% memo ${memoCount}: revisit this %%`;
+    }
+    if (s % 9 === 0 && cmI < 12) {
+      cmI++;
+      p += ` {++insert ${cmI}++}`;
+    }
+    if (s % 11 === 0 && cmD < 12) {
+      cmD++;
+      p += ` {--delete ${cmD}--}`;
+    }
+    if (s % 13 === 0 && cmS < 12) {
+      cmS++;
+      p += ` {~~old${cmS}~>new${cmS}~~}`;
+    }
+    if (s % 17 === 0 && cmH < 12) {
+      cmH++;
+      p += ` {==highlight ${cmH}==}`;
+    }
+    if (s % 19 === 0 && cmC < 12) {
+      cmC++;
+      p += ` {>>comment ${cmC}<<}`;
+    }
+    lines.push(p, '', sentence(s + 1), '');
+    if (s % 3 === 0) {
+      lines.push(
+        `${'#'.repeat(Math.min(6, level + 1))} Section ${s}.1 — Subtopic`,
+        '',
+        sentence(s + 2),
+        '',
+      );
+    }
+    if (s % 6 === 0) {
+      lines.push(
+        `${'#'.repeat(Math.min(6, level + 2))} Section ${s}.2 — Deep subtopic`,
+        '',
+        sentence(s + 3),
+        '',
+      );
+    }
+    if (s === 10 || s === 30 || s === 50 || s === 70 || s === 90 || s === 105) {
+      lines.push(
+        '```mermaid',
+        'flowchart LR',
+        `  A${s}[Step ${s}A] --> B${s}[Step ${s}B]`,
+        `  B${s} --> C${s}[Outcome]`,
+        '```',
+        '',
+      );
+    }
+    if (s === 8 || s === 25 || s === 45 || s === 65 || s === 85 || s === 100) {
+      lines.push('$$', `E_{${s}} = mc^2 + \\sum_{i=1}^{n} x_i \\cdot \\alpha_${s}`, '$$', '');
+    }
+    if (s === 15 || s === 55 || s === 80 || s === 95) {
+      lines.push(
+        '| Metric | Value | Notes |',
+        '| --- | ---: | :---: |',
+        `| Alpha-${s} | 1.23 | baseline |`,
+        `| Beta-${s} | 4.56 | control |`,
+        `| Gamma-${s} | 7.89 | intervention |`,
+        '',
+      );
+    }
+  }
+  // Top-ups so the totals meet scope minimums.
+  while (citationIdx < 52) lines.push(`Citation cluster ${nextCite()} ${nextCite()}.`, '');
+  while (footnoteIdx < 22) lines.push(`Footnote ref ${nextFn()}.`, '');
+  while (memoCount < 22) {
+    memoCount++;
+    lines.push(`Orphan paragraph %% memo ${memoCount}: orphan %%.`, '');
+  }
+  while (cmI < 12) {
+    cmI++;
+    lines.push(`Extra {++insert ${cmI}++}.`, '');
+  }
+  while (cmD < 12) {
+    cmD++;
+    lines.push(`Extra {--delete ${cmD}--}.`, '');
+  }
+  while (cmS < 12) {
+    cmS++;
+    lines.push(`Extra {~~old${cmS}~>new${cmS}~~}.`, '');
+  }
+  while (cmH < 12) {
+    cmH++;
+    lines.push(`Extra {==highlight ${cmH}==}.`, '');
+  }
+  while (cmC < 12) {
+    cmC++;
+    lines.push(`Extra {>>comment ${cmC}<<}.`, '');
+  }
+  // Pad with lorem to push past 5000 lines.
+  let i = 0;
+  while (lines.length < 4700) {
+    lines.push(sentence(i++), '');
+  }
+  lines.push('## Footnotes', '');
+  for (const k of FN_KEYS) lines.push(`[^${k}]: definition for ${k}.`);
+  lines.push('', '## References', '');
+  for (let r = 1; r <= 60; r++) {
+    lines.push(`- [@key${r}]: Author ${r} et al. (${2000 + r}). Title ${r}.`);
+  }
+  lines.push('');
+  while (lines.length < 5050) {
+    lines.push(sentence(i++), '');
+  }
+  fs.writeFileSync(outPath, lines.join('\n'), 'utf8');
+}
