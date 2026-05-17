@@ -81,9 +81,25 @@ describe('WYSIWYG mode — each plugin hides markers on the active line', () => 
     view.destroy();
   });
 
-  it('link: `[Text]` hides `[` and `]` even with caret on the line', () => {
-    const view = setupActiveLine('[Text]');
+  it('link: `[text](url)` hides brackets + URL even with caret on the line', () => {
+    // v0.2.20 — shortcut Links (no URL child) NO LONGER hide brackets,
+    // because the v0.2.20 escape relaxation lets `[Notes]` round-trip
+    // raw, and we want the visible chrome to match what's on disk for
+    // those literal placeholders. Real inline `[text](url)` links keep
+    // the bracket-hide widget exactly as before.
+    const view = setupActiveLine('[click](https://example.com)');
     expect(hiddenCount(view)).toBeGreaterThanOrEqual(2);
+    view.destroy();
+  });
+
+  it('v0.2.20: shortcut link `[Text]` (no URL) keeps brackets visible', () => {
+    // Pins the new contract: without a URL child, linkDecoration skips
+    // the hide widget entirely. That's what makes the v0.2.20 escape
+    // removal safe for user-typed placeholder text — the visual
+    // result is identical to the pre-v0.2.20 `\[Text\]` form which
+    // also rendered as `[Text]` literally.
+    const view = setupActiveLine('[Text]');
+    expect(hiddenCount(view)).toBe(0);
     view.destroy();
   });
 

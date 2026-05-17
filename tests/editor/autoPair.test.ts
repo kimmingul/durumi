@@ -78,8 +78,14 @@ describe('autoPair', () => {
   // v0.1.12 — WYSIWYG-mode interactions: markdown markers must NOT auto-pair
   // (the wysiwygEscape filter escapes them instead). Non-markdown pairs
   // (`(`, `{`, `"`, `'`) keep working.
+  //
+  // v0.2.20 — `[` moved off this list. The escape filter no longer
+  // touches brackets so user-typed `[text](url)` parses as a real Link
+  // (enables the v0.2.19 hover tooltip + click + right-click menu for
+  // typed links, not just toolbar-inserted ones). autoPair then runs
+  // for `[` exactly as it does in Typora mode.
   it('skips markdown marker auto-pairing in WYSIWYG mode', () => {
-    for (const ch of ['*', '_', '`', '[', '~', '=']) {
+    for (const ch of ['*', '_', '`', '~', '=']) {
       const view = setup('', 0, undefined, 'wysiwyg');
       type(view, ch);
       // The character lands as a single char — escape filter is NOT loaded
@@ -87,6 +93,13 @@ describe('autoPair', () => {
       expect(view.state.doc.toString()).toBe(ch);
       view.destroy();
     }
+  });
+
+  it('v0.2.20: auto-pairs `[` in WYSIWYG mode (escape removed)', () => {
+    const view = setup('', 0, undefined, 'wysiwyg');
+    type(view, '[');
+    expect(view.state.doc.toString()).toBe('[]');
+    view.destroy();
   });
 
   it('still auto-pairs non-markdown brackets/quotes in WYSIWYG mode', () => {

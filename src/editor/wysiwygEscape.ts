@@ -30,9 +30,41 @@ import { currentEditMode } from './editMode';
  * when `currentEditMode(state) !== 'wysiwyg'`.
  */
 
-/** Markdown special chars escaped on every user keystroke. */
+/**
+ * Markdown special chars escaped on every user keystroke.
+ *
+ * v0.2.20 — `[` and `]` REMOVED from this set. Rationale:
+ *
+ * 1. v0.2.19 added inline-link interactivity (hover tooltip, click-to-open,
+ *    "Edit" affordance). The implementation hangs off the lezer `Link`
+ *    node + the `.cm-md-link` mark decoration, both of which only fire
+ *    when the parser sees real `[text](url)` syntax. Escaping the
+ *    brackets to `\[` / `\]` made the parser emit `Escape` nodes instead,
+ *    so a user who TYPED `[click](https://example.com)` in Document mode
+ *    never got a clickable link (only programmatic toolbar insertion did).
+ *    User feedback: "문서모드에서 마우스 커서를 링크에 올려놓았을 때
+ *    툴팁이 안 보여요" → root cause.
+ *
+ * 2. The literal-display promise of WYSIWYG mode is preserved for
+ *    shortcut links `[Your Name]`: with brackets unescaped the lezer
+ *    parser produces a `Link` node without a `URL` child, and both
+ *    `linkDecoration` (since v0.2.20) and `linkInteract.findLinkAt`
+ *    self-gate on `linkHasUrl` — no styling, no tooltip, brackets stay
+ *    visible. Footnote refs `[^foo]` and citations `[@key]` follow the
+ *    same shape (Link node without URL); the citation/footnote
+ *    decorations apply their own marking on top, unchanged.
+ *
+ * 3. Side-benefit: user-typed images `![alt](src)` now also parse as
+ *    real images in Document mode. Previously the trailing `[` was
+ *    escaped and the construct stayed literal — the v0.2.19 test at
+ *    `wysiwygEscape.test.ts:75` documented that gap explicitly.
+ *
+ * Headings / emphasis / blockquote / code / strikethrough escapes are
+ * unchanged — those are typed-source formatting triggers users do NOT
+ * want in WYSIWYG, and there is no interactivity hanging off them.
+ */
 const ALWAYS_ESCAPE: ReadonlySet<string> = new Set([
-  '#', '>', '<', '*', '_', '`', '[', ']', '~',
+  '#', '>', '<', '*', '_', '`', '~',
 ]);
 
 /** Chars escaped only when typed at the start of a line (after optional whitespace). */

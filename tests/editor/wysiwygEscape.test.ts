@@ -36,9 +36,22 @@ describe('escapeMarkdownChar (pure)', () => {
   const blank = EditorState.create({ doc: '' });
 
   it('always escapes the obvious markdown markers', () => {
-    for (const ch of ['#', '>', '<', '*', '_', '`', '[', ']', '~']) {
+    // v0.2.20 — `[` and `]` removed from this set so user-typed
+    // `[text](url)` parses as a real inline Link (which the v0.2.19
+    // hover tooltip + click + right-click menu depend on). See the
+    // commentary at the head of wysiwygEscape.ts::ALWAYS_ESCAPE.
+    for (const ch of ['#', '>', '<', '*', '_', '`', '~']) {
       expect(escapeMarkdownChar(ch, blank, 0)).toBe('\\' + ch);
     }
+  });
+
+  it('v0.2.20: does NOT escape `[` and `]` (enables typed inline links)', () => {
+    // Pinning the new contract: brackets stay raw so lezer can produce a
+    // Link node. linkDecoration / linkInteract self-gate on
+    // `linkHasUrl` so shortcut `[Notes]` still looks literal — no visual
+    // regression for the strict-literal WYSIWYG promise.
+    expect(escapeMarkdownChar('[', blank, 0)).toBe('[');
+    expect(escapeMarkdownChar(']', blank, 0)).toBe(']');
   });
 
   it('escapes `-` and `+` only at line start (after whitespace)', () => {
@@ -72,7 +85,9 @@ describe('escapeMarkdownChar (pure)', () => {
     }
   });
 
-  it('does not escape `!` (the trailing `[` will be escaped, breaking image syntax)', () => {
+  it('does not escape `!` (image-syntax leader stays literal)', () => {
+    // v0.2.20 follow-on: `[` is no longer escaped either, so a typed
+    // `![alt](src)` round-trips correctly into a real Image node.
     expect(escapeMarkdownChar('!', blank, 0)).toBe('!');
   });
 });
@@ -104,13 +119,19 @@ describe('wysiwygEscapeFilter (transaction filter)', () => {
     expect(s.doc.toString()).toBe('\\*\\_');
   });
 
-  it('escapes `[` (Citation is toolbar-only in WYSIWYG mode)', () => {
+  it('v0.2.20: does NOT escape `[` (typed inline links must parse)', () => {
+    // Pre-v0.2.20 this test expected `\[` so a typed `[Notes]`
+    // placeholder rendered as literal `[Notes]`. The link decoration's
+    // `linkHasUrl` gate now keeps that visual contract WITHOUT the
+    // escape — shortcut links (no URL child) get no `cm-md-link` mark
+    // and no bracket-hide widget. Citations `[@key]` keep working too
+    // (citation decoration runs on its own node + the parsed Link
+    // shape).
     let s = makeState({ mode: 'wysiwyg' });
     s = typeChar(s, '[');
-    expect(s.doc.toString()).toBe('\\[');
-    // Even followed by `@`, no special exception.
+    expect(s.doc.toString()).toBe('[');
     s = typeChar(s, '@');
-    expect(s.doc.toString()).toBe('\\[@');
+    expect(s.doc.toString()).toBe('[@');
   });
 
   it('escapes `-` at line start but not mid-line', () => {
@@ -175,12 +196,41 @@ describe('wysiwygEscapeFilter (transaction filter)', () => {
     expect(s.doc.toString()).toBe('\\<sup\\>1\\</sup\\>');
   });
 
-  it('escapes a typed `[Your Name]` placeholder fully', () => {
+  it('v0.2.20: typed `[Your Name]` placeholder lands raw (no escape)', () => {
+    // Was `\[Your Name\]` before v0.2.20. The visual literal-text
+    // contract is now upheld at decoration time (linkDecoration skips
+    // styling and bracket-hide for shortcut Links that lack a URL
+    // child) instead of at typing time. Round-trip to disk now stores
+    // the cleaner `[Your Name]` form.
     let s = makeState({ mode: 'wysiwyg' });
     for (const ch of '[Your Name]') {
       s = typeChar(s, ch);
     }
-    expect(s.doc.toString()).toBe('\\[Your Name\\]');
+    expect(s.doc.toString()).toBe('[Your Name]');
+  });
+
+  it('v0.2.20: typed inline link `[text](url)` lands as a real link', () => {
+    // The fix the user reported: hover tooltip + click-to-open were
+    // dead in Document mode because the v0.1.12 escape filter rewrote
+    // every typed `[` and `]` to `\[` / `\]`, so the lezer parser saw
+    // Escape nodes instead of a Link node. This test pins the new
+    // pass-through so the v0.2.19 link interactivity works for typed
+    // input, not just toolbar-inserted links.
+    let s = makeState({ mode: 'wysiwyg' });
+    // Sidestep autoPair's `(` → `()` behavior by inserting the URL part
+    // as a single chunk after the brackets settle. autoPair only fires
+    // for char-at-a-time `input.type` events; a programmatic multi-char
+    // insert bypasses it. We assert the doc text, not the interim
+    // caret positions.
+    for (const ch of '[click]') {
+      s = typeChar(s, ch);
+    }
+    const head = s.selection.main.head;
+    const tr = s.update({
+      changes: { from: head, to: head, insert: '(https://example.com)' },
+    });
+    s = tr.state;
+    expect(s.doc.toString()).toBe('[click](https://example.com)');
   });
 
   it('escapes `1.` typed at line start (numbered list defuse)', () => {

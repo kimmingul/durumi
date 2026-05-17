@@ -86,6 +86,49 @@ describe('toggleBulletList (bug #1 - multi-line)', () => {
   });
 });
 
+describe('v0.2.20 — toolbar on a blank line / empty doc', () => {
+  // Pre-v0.2.20 the toolbar bullet / numbered / task buttons silently
+  // no-op'd on a blank line because the "skip blank lines" rule fired
+  // before the "no non-blank lines" special case was handled. The four
+  // toolbar.spec.ts C1-C4 e2e tests have been red since v0.2.19 as a
+  // result. v0.2.20 seeds the prefix on the first (blank) line and
+  // moves the caret past it so the user can keep typing.
+  it('toggleBulletList on an empty doc inserts "- " and moves caret', () => {
+    const view = setup('', 0);
+    expect(toggleBulletList(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe('- ');
+    expect(view.state.selection.main.head).toBe(2);
+    view.destroy();
+  });
+
+  it('toggleNumberedList on an empty doc inserts "1. " and moves caret', () => {
+    const view = setup('', 0);
+    expect(toggleNumberedList(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe('1. ');
+    expect(view.state.selection.main.head).toBe(3);
+    view.destroy();
+  });
+
+  it('toggleNumberedList on a blank line after `1. existing` continues at 2.', () => {
+    // Blank line below an existing numbered item should pick up the
+    // continuity logic the same way it does for non-blank single-line
+    // toggling (bug #3 family).
+    const doc = '1. existing\n';
+    const view = setup(doc, doc.length);
+    expect(toggleNumberedList(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe('1. existing\n2. ');
+    view.destroy();
+  });
+
+  it('toggleTaskList on an empty doc inserts "- [ ] " and moves caret', () => {
+    const view = setup('', 0);
+    expect(toggleTaskList(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe('- [ ] ');
+    expect(view.state.selection.main.head).toBe(6);
+    view.destroy();
+  });
+});
+
 describe('toggleNumberedList (bug #2 - multi-line)', () => {
   it('numbers every line in a multi-line selection sequentially', () => {
     const doc = 'one\ntwo\nthree';

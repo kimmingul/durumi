@@ -1,6 +1,239 @@
 # Durumi — Progress
 
-## v0.2.19 (current) — Toolbar list multi-line + link interactivity
+## v0.2.20 (current) — Link tooltip mount fix + right-click context menu
+
+### What was broken (v0.2.19 install feedback)
+
+A clean install of v0.2.19 surfaced two issues with the brand-new
+link interactivity surface (bug #5 from v0.2.18 → v0.2.19):
+
+1. **Hover tooltip never appeared in Document mode.** The user
+   reported "문서모드에서 마우스 커서를 링크에 올려놓았을 때
+   (호버), 툴팁에 기재한 텍스트가 보여야할 것 같은데, 아무것도
+   안나타나요." — hovering an inline link in WYSIWYG produced
+   nothing.
+2. **No right-click menu over a link.** "링크를 편집하려면 커서를
+   링크에 올려놓은 상태에서 마우스 우클릭하면 메뉴에 편집이
+   나와야 할 것 같은데 이런거도 없어요." — right-clicking only
+   popped the native Cut/Copy/Paste menu; no Open / Copy URL /
+   Edit link entries.
+
+### Root cause — bug 1 (tooltip)
+
+`linkInteractivity()` IS wired into the `liveDecorations` bundle
+and `hoverTooltip()` IS imported correctly. The unit tests at
+`tests/editor/linkInteract.test.ts` exercise the helper in
+isolation against a jsdom EditorView with `linkDecoration` +
+`linkHoverTooltip` and all 8 cases pass. The integration is
+correct.
+
+The real problem is one layer down. The v0.1.12 WYSIWYG escape
+filter (`src/editor/wysiwygEscape.ts`) had `[` and `]` in its
+`ALWAYS_ESCAPE` set, so every user-typed `[` was rewritten to
+`\[` and every `]` to `\]` BEFORE the transaction reached the
+parser. Lezer-markdown then parsed those as `Escape` nodes
+(not a `Link` node). With no `Link` node, `linkDecoration` never
+applied the `.cm-md-link` mark, `findLinkAt` returned `null`,
+and `hoverTooltip` had nothing to bind to.
+
+The only path that produced a working link in v0.2.19 was the
+toolbar's "Insert link" button — it dispatches programmatically
+(no `userEvent: 'input.type'` annotation), so the escape filter
+let the brackets through. A real Electron probe confirmed:
+
+   - typed link `[click](url)` → DOM shows `[click` then a
+     hidden marker for the escape backslash, then `]` as
+     literal text. No `.cm-md-link` span anywhere. Hover →
+     nothing.
+   - toolbar-inserted link `[click](url)` → DOM shows a single
+     `.cm-md-link` span containing "click", URL hidden via the
+     `closeBracket..to` replace widget. Hover → tooltip with
+     "https://example.com" + Open + Edit. Right-click → fires
+     `contextmenu` on `.cm-md-link` (which v0.2.19 ignored).
+
+The unit tests passed because they bypassed the escape filter
+entirely. Lesson: hoverTooltip behaviour can't be unit-tested
+end-to-end in jsdom — `posAtCoords` requires layout and the
+escape pipeline is a transactionFilter on a different layer.
+v0.2.20 adds real-Electron e2e coverage at
+`e2e/link-interact.spec.ts` so this entire surface (mount +
+hover + click + right-click + edit-link dispatch) is exercised
+against a live build.
+
+### Root cause — bug 2 (right-click menu)
+
+There simply WAS no link-specific right-click handler in v0.2.19.
+`electron/contextMenu.ts` (the main-process spell-check +
+Cut/Copy/Paste + memo + CriticMarkup menu) ran on every
+right-click but had no awareness of the renderer's link
+decorations.
+
+### Fix shape
+
+Three coordinated changes, all small:
+
+1. **`src/editor/wysiwygEscape.ts`** — removed `[` and `]` from
+   `ALWAYS_ESCAPE`. Now user-typed `[text](url)` flows through
+   to the parser unchanged and produces a real `Link` node. The
+   strict-literal contract for `[Notes]` placeholders (no URL)
+   is preserved at decoration time instead of typing time:
+   `link.ts::linkDecoration` now gates the bracket-hide widget
+   AND the `.cm-md-link` mark on `linkHasUrl(node)`. Shortcut
+   `[Notes]` → no widget, no mark, brackets visible. Real
+   `[text](url)` → brackets/URL hidden, label styled. Identical
+   visual to the pre-v0.2.20 `\[Notes\]` form.
+
+2. **`src/editor/keymap/autoPair.ts`** — removed `[` from
+   `MARKDOWN_PAIR_KEYS`. Pre-v0.2.20 autoPair bailed on `[` in
+   WYSIWYG so the escape filter could rewrite it; with escape
+   gone there's nothing to defer to, and `[` auto-pairs to `[]`
+   like in Typora mode (friendlier UX for typed links —
+   bracket opens with auto-close, type label, Right past `]`,
+   then `(` opens the URL pair).
+
+3. **`src/editor/decorations/linkInteract.ts`** — new
+   `linkContextMenu()` extension wired into the
+   `linkInteractivity()` bundle. Captures `contextmenu` on
+   `.cm-md-link`, prevent + stopPropagation the native menu,
+   pops a small DOM popup with three items:
+     - **Open link** → `window.api.shellOpenExternal(url)`
+     - **Copy URL** → `navigator.clipboard.writeText(url)`
+     - **Edit link…** → dispatches `durumi:edit-link` with
+       the same `{from, to, text, url, title}` payload the
+       tooltip's Edit button uses, so `EditorToolbar`'s
+       existing v0.2.19 listener re-opens the
+       `InsertLinkDialog` pre-filled and replaces the range.
+
+   The popup dismisses on outside-click / Esc / scroll / blur
+   (same rules as `sidebar/ContextMenu.tsx`). CSS borrows the
+   chrome from `.cm-context-menu` so the look matches the
+   rest of the app.
+
+4. **`src/editor/keymap/listToggle.ts`** (bonus) — fixes a
+   v0.2.19 toolbar regression caught by the same audit. The
+   bullet / numbered / task buttons silently no-op'd on a
+   blank line because the "skip blank lines" rule fired
+   before the "no non-blank lines" case was handled. Four
+   `e2e/toolbar.spec.ts` C1-C4 tests have been red since
+   v0.2.19 as a result. v0.2.20 adds an `allBlank()`
+   early-return that seeds the prefix on the first (blank)
+   line and moves the caret past it. Toolbar e2e is now green
+   (35/35 in `toolbar.spec.ts`, was 31/35 in v0.2.19).
+
+### Tests added
+
+- **Unit (+8 vs v0.2.19 baseline):**
+  - `tests/editor/wysiwygEscape.test.ts`: pin the new bracket
+    contract (`[` / `]` pass through) AND keep the negative
+    case for the other escape markers. Updated 3 pre-existing
+    bracket tests; added 2 new ones (raw bracket + raw
+    `[click](url)` end-to-end via the filter).
+  - `tests/editor/wysiwygEscapeIntegration.test.ts`: pin the
+    new autoPair-runs-for-`[` integration shape (`[` → `[]`).
+  - `tests/editor/autoPair.test.ts`: pin `[` no longer in
+    `MARKDOWN_PAIR_KEYS`; added a positive test for the new
+    `[` auto-pair in WYSIWYG mode.
+  - `tests/editor/wysiwygActiveLineRender.test.ts`: pin the
+    new link-decoration gate — `[text](url)` still hides
+    brackets, `[Text]` (shortcut, no URL) now keeps brackets
+    visible.
+  - `tests/editor/linkInteract.test.ts`: 4 new tests for the
+    `linkContextMenu()` extension — 3-item menu shape, NOT
+    shown for non-link targets, "Open" calls
+    `shellOpenExternal`, "Edit" fires `durumi:edit-link`
+    with the full payload.
+  - `tests/editor/listToggle.test.ts`: 4 new tests for the
+    blank-line toggle behaviour (bullet, numbered, numbered
+    continuity after existing item, task).
+
+- **e2e (+5, real Electron):**
+  - `e2e/link-interact.spec.ts`: five tests exercising the
+    full mount path against a packaged build:
+      1. hover tooltip mounts over a programmatic-inserted
+         link (the toolbar path) and shows URL + Open + Edit.
+      2. right-click opens the Open / Copy / Edit popup and
+         Esc dismisses it.
+      3. right-click "Edit link…" fires `durumi:edit-link`
+         with `{text, url, title}`.
+      4. typed `[Notes]` lands raw with zero backslash
+         escapes (pre-v0.2.20: `\[Notes\]`).
+      5. shortcut `[Notes]` (no URL) renders zero
+         `.cm-md-link` spans — the visual strict-literal
+         contract.
+
+Each new e2e assertion was verified to fail without the
+targeted source change (stash → rebuild → re-run; the typed-
+link test fails with `Expected "[Notes]" Received "\[Notes"`
+when the escape relaxation is reverted).
+
+### Test deltas
+
+- vitest: **1613 → 1621 passed** (+8)
+- e2e: **122 → 126 passed**, 4 skipped, 0 failed (was 4
+  failed in v0.2.19: the toolbar C1-C4 blank-line cases that
+  the bonus listToggle fix now covers, plus +5 new
+  `link-interact` tests, minus 1 since the link-interact
+  count includes one negative case)
+- pnpm lint, typecheck: clean
+
+### UX decision recorded (deliberate)
+
+The renderer-side right-click popup INTENTIONALLY suppresses
+the native main-process menu over `.cm-md-link` (via
+`preventDefault` + `stopPropagation`). Trade-off: spell-check
+suggestions and the "Insert link" / "Add memo" entries are not
+available on a link span. Users who want those right-click on
+the surrounding text. We chose the popup-over-native path
+because (1) it matches the sidebar `ContextMenu.tsx` pattern
+already in the renderer, (2) it avoids an IPC round-trip to
+ask main to build a link-aware native menu, and (3) it lets
+"Edit link…" dispatch the in-process `durumi:edit-link`
+CustomEvent directly without serializing the payload through
+`menu:command`.
+
+### Files touched
+
+- `src/editor/wysiwygEscape.ts` (remove `[` / `]` from
+  `ALWAYS_ESCAPE` + commentary)
+- `src/editor/decorations/link.ts` (gate hide widget on
+  `linkHasUrl` so shortcut links keep brackets)
+- `src/editor/decorations/linkInteract.ts` (add
+  `linkContextMenu()` + wire into bundle)
+- `src/editor/keymap/autoPair.ts` (remove `[` from
+  `MARKDOWN_PAIR_KEYS`)
+- `src/editor/keymap/listToggle.ts` (seed on blank line for
+  bullet / numbered / task)
+- `src/styles/global.css` (add `.cm-link-context-menu*`
+  rules — borrows chrome from `.cm-context-menu`)
+- `tests/editor/linkInteract.test.ts` (+4 ctx menu tests)
+- `tests/editor/listToggle.test.ts` (+4 blank-line tests)
+- `tests/editor/wysiwygEscape.test.ts` (updated bracket
+  contract + 1 positive test)
+- `tests/editor/wysiwygEscapeIntegration.test.ts` (updated
+  `[` → `[]` integration)
+- `tests/editor/autoPair.test.ts` (updated markdown-pair
+  list + 1 positive test)
+- `tests/editor/wysiwygActiveLineRender.test.ts` (link test
+  swapped to real inline link + 1 new shortcut test)
+- `e2e/link-interact.spec.ts` (new — 5 e2e tests)
+- `package.json` (0.2.19 → 0.2.20)
+- `docs/PROGRESS.md` (this entry)
+
+### Deferred to v0.2.21+
+
+- **Typed full `[text](url)` end-to-end caret juggling.** With
+  `[`/`(` both auto-pairing, the caret lands BEFORE the
+  auto-closed `)` while the user types the URL — fine — but
+  the WYSIWYG bracket-hide widget at `closeBracket..to`
+  clamps subsequent insertions to the label range, so typing
+  past the URL drops characters into the label. A future
+  release should either (a) skip-over-closer logic in
+  autoPair (smart `)` handling), (b) keep brackets visible
+  while caret is inside the link node, or (c) both. The
+  toolbar Link button path is unaffected — programmatic
+  insertion already produces a clean `[text](url)`.
+
+## v0.2.19 — Toolbar list multi-line + link interactivity
 
 ### What was broken (v0.2.18 manual-test report)
 

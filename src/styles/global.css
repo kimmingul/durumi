@@ -1056,6 +1056,33 @@ body {
   border-color: var(--accent, #4a90e2);
 }
 
+/* v0.2.20 — right-click popup over a `.cm-md-link`. Borrows the chrome
+   from `.cm-context-menu` (sidebar file-tree menu) so the look stays
+   consistent. Defined separately because the link popup is built from
+   plain DOM inside the CodeMirror extension (no React mount point), and
+   inheriting `.cm-context-menu` directly would force us to drag the
+   sidebar's class taxonomy into the editor. */
+.cm-link-context-menu {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  min-width: 160px;
+  font-size: 13px;
+  user-select: none;
+}
+.cm-link-context-menu-item {
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cm-link-context-menu-item:hover {
+  background: var(--accent, rgba(0, 100, 200, 0.15));
+  color: #fff;
+}
+
 /* Right-side authoring sidebar (v0.1.8.4). Mirrors `.cm-sidebar*` but
    anchored to the right edge: `border-left` instead of `border-right`, and
    the resizer sits on the panel's left edge. Shapes copied from the left

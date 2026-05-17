@@ -75,7 +75,16 @@ export function linkDecoration(): Extension {
       const { openBracket, closeBracket } = bounds;
       const textFrom = openBracket + 1;
       const textTo = closeBracket;
-      const hide = shouldHideMarker(view.state, lineActive);
+      // v0.2.20 — only hide the brackets/URL when the link is a *real*
+      // `[text](url)` inline link. Shortcut `[Your Name]` and reference
+      // `[text][id]` constructs lack a `URL` child and should render as
+      // literal text with brackets visible — that's the v0.1.12
+      // strict-literal contract for WYSIWYG mode AND now the v0.2.20
+      // contract for Typora mode too (since v0.2.20 stopped escaping
+      // `[`/`]` so users can type real `[text](url)` links and have
+      // them parse + become hoverable/clickable).
+      const realInlineLink = linkHasUrl(node);
+      const hide = realInlineLink && shouldHideMarker(view.state, lineActive);
       if (hide) {
         if (openBracket > from) {
           builder.add(from, openBracket, Decoration.replace({ widget: new HiddenMarkerWidget() }));
@@ -83,12 +92,12 @@ export function linkDecoration(): Extension {
         builder.add(openBracket, textFrom, Decoration.replace({ widget: new HiddenMarkerWidget() }));
       }
       if (textTo > textFrom) {
-        // v0.1.12 — suppress link styling in WYSIWYG mode unless this is
-        // a real `[label](url)`. Tentative shortcut `[Text]` constructs
-        // (no URL child) should look like plain literal text. Real
-        // inline links keep their Word-style colour + underline.
+        // Suppress link styling in WYSIWYG mode unless this is a real
+        // `[label](url)`. Tentative shortcut `[Text]` constructs (no
+        // URL child) should look like plain literal text. Real inline
+        // links keep their Word-style colour + underline.
         const wysiwyg = isWysiwygMode(view.state);
-        if (!wysiwyg || linkHasUrl(node)) {
+        if (!wysiwyg || realInlineLink) {
           builder.add(textFrom, textTo, Decoration.mark({ class: 'cm-md-link' }));
         }
       }

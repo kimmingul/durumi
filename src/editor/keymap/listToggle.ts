@@ -109,15 +109,40 @@ function allMatch(lines: Line[], regex: RegExp): boolean {
 }
 
 /**
+ * True when every line in the selection is blank — used to detect the
+ * "user clicked the toolbar button on an empty doc / blank line"
+ * special case. v0.2.20 — fixes the v0.2.19 regression where the
+ * toolbar bullet / numbered / task buttons did nothing on a blank line
+ * because `allBlank` was skipped silently. We now seed the marker on
+ * the (only, blank) line so the user sees the prefix appear and can
+ * start typing the item text.
+ */
+function allBlank(lines: Line[]): boolean {
+  return lines.every((line) => line.text.trim().length === 0);
+}
+
+/**
  * Toggle a `- ` bullet on every line in the selection.
  *
  * - All non-blank lines already bullets ⇒ remove the bullet from each.
  * - Otherwise ⇒ replace any existing prefix (numbered, task) with `- `
  *   and add `- ` to plain lines.
+ * - All lines blank (e.g. empty doc, blank line) ⇒ seed `- ` on the
+ *   first line so the toolbar button is meaningful from any caret
+ *   position (v0.2.20 hot-fix for the toolbar-on-blank-line e2e tests
+ *   that have been red since v0.2.19).
  */
 export function toggleBulletList(view: EditorView): boolean {
   const { lines } = collectSelectedLines(view.state);
   if (lines.length === 0) return false;
+  if (allBlank(lines)) {
+    const first = lines[0]!;
+    view.dispatch({
+      changes: { from: first.from, to: first.from, insert: '- ' },
+      selection: { anchor: first.from + 2 },
+    });
+    return true;
+  }
   const changes: LineChange[] = [];
   if (allMatch(lines, BULLET_RE)) {
     for (const line of lines) {
@@ -149,6 +174,27 @@ export function toggleBulletList(view: EditorView): boolean {
 export function toggleNumberedList(view: EditorView): boolean {
   const { lines } = collectSelectedLines(view.state);
   if (lines.length === 0) return false;
+  if (allBlank(lines)) {
+    // v0.2.20 — seed `1. ` on the (only, blank) line so the toolbar
+    // button works from any caret position. Mirrors the bullet seed
+    // above.
+    const first = lines[0]!;
+    let n = 1;
+    const prev = previousNonBlank(view.state, first);
+    if (prev) {
+      const prevMatch = ORDERED_RE.exec(prev.text);
+      if (prevMatch && prevMatch[1] !== undefined) {
+        const next = Number(prevMatch[1]) + 1;
+        if (Number.isFinite(next) && next >= 1) n = next;
+      }
+    }
+    const insert = `${n}. `;
+    view.dispatch({
+      changes: { from: first.from, to: first.from, insert },
+      selection: { anchor: first.from + insert.length },
+    });
+    return true;
+  }
   const changes: LineChange[] = [];
   if (allMatch(lines, ORDERED_RE)) {
     for (const line of lines) {
@@ -196,6 +242,17 @@ export function toggleNumberedList(view: EditorView): boolean {
 export function toggleTaskList(view: EditorView): boolean {
   const { lines } = collectSelectedLines(view.state);
   if (lines.length === 0) return false;
+  if (allBlank(lines)) {
+    // v0.2.20 — seed `- [ ] ` on the (only, blank) line so the toolbar
+    // task button works from any caret position. Mirrors the bullet /
+    // numbered seeds above.
+    const first = lines[0]!;
+    view.dispatch({
+      changes: { from: first.from, to: first.from, insert: '- [ ] ' },
+      selection: { anchor: first.from + 6 },
+    });
+    return true;
+  }
   const changes: LineChange[] = [];
   if (allMatch(lines, TASK_RE)) {
     for (const line of lines) {

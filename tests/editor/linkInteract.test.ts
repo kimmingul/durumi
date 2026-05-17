@@ -7,6 +7,7 @@ import { linkDecoration } from '../../src/editor/decorations/link';
 import {
   findLinkAt,
   linkClickHandler,
+  linkContextMenu,
   linkHoverTooltip,
   dispatchEditLink,
 } from '../../src/editor/decorations/linkInteract';
@@ -31,6 +32,7 @@ function setup(doc: string, cursor: number = 0): EditorView {
         linkDecoration(),
         linkHoverTooltip(),
         linkClickHandler(),
+        linkContextMenu(),
       ],
     }),
     parent: document.body.appendChild(document.createElement('div')),
@@ -148,5 +150,94 @@ describe('linkHoverTooltip + dispatchEditLink', () => {
     const ev = handler.mock.calls[0]![0] as CustomEvent;
     expect(ev.detail).toEqual(detail);
     window.removeEventListener('durumi:edit-link', handler as EventListener);
+  });
+});
+
+/**
+ * v0.2.20 — `linkContextMenu()` is the right-click handler that pops a
+ * Open/Copy URL/Edit menu over a `.cm-md-link`. The full mounting +
+ * menu-render path is exercised end-to-end in `e2e/link-interact.spec.ts`
+ * (the same way the hover tooltip is now covered). The unit tests below
+ * pin the SHAPE of the menu the renderer builds — the three labels and
+ * the three test ids — so future refactors of the menu DOM break
+ * something visible in the suite instead of silently shipping a menu
+ * with missing entries.
+ */
+describe('linkContextMenu (renderer-side popup)', () => {
+  beforeEach(() => {
+    (window as unknown as { api: Pick<typeof window.api, 'shellOpenExternal'> }).api = {
+      shellOpenExternal: vi.fn(),
+    };
+    document.querySelectorAll('.cm-link-context-menu').forEach((n) => n.remove());
+  });
+
+  it('right-click on a .cm-md-link span pops a 3-item menu', () => {
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    expect(linkEl).not.toBeNull();
+    const origPosAtCoords = view.posAtCoords.bind(view);
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+
+    const menu = document.querySelector('[data-testid=link-context-menu]');
+    expect(menu).not.toBeNull();
+    const items = Array.from(menu!.querySelectorAll('[role=menuitem]')).map((n) =>
+      n.getAttribute('data-testid'),
+    );
+    expect(items).toEqual(['link-ctx-open', 'link-ctx-copy', 'link-ctx-edit']);
+    view.posAtCoords = origPosAtCoords;
+    view.destroy();
+  });
+
+  it('NOT shown when right-click target is outside any link span', () => {
+    const doc = 'plain paragraph here';
+    const view = setup(doc);
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'target', { value: view.contentDOM });
+    view.contentDOM.dispatchEvent(ev);
+    expect(document.querySelector('[data-testid=link-context-menu]')).toBeNull();
+    view.destroy();
+  });
+
+  it('clicking "Open link" calls shellOpenExternal with the URL', () => {
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    expect(linkEl).not.toBeNull();
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    const openBtn = document.querySelector('[data-testid=link-ctx-open]') as HTMLElement;
+    openBtn.click();
+    expect(window.api.shellOpenExternal).toHaveBeenCalledWith('https://example.com');
+    view.destroy();
+  });
+
+  it('clicking "Edit link" fires durumi:edit-link with the link payload', () => {
+    const doc = 'see [hello](https://example.com "tip") end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    expect(linkEl).not.toBeNull();
+    view.posAtCoords = vi.fn(() => doc.indexOf('hello') + 1);
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    const handler = vi.fn();
+    window.addEventListener('durumi:edit-link', handler as EventListener);
+    const editBtn = document.querySelector('[data-testid=link-ctx-edit]') as HTMLElement;
+    editBtn.click();
+    expect(handler).toHaveBeenCalled();
+    const detail = (handler.mock.calls[0]![0] as CustomEvent).detail;
+    expect(detail).toMatchObject({
+      text: 'hello',
+      url: 'https://example.com',
+      title: 'tip',
+    });
+    window.removeEventListener('durumi:edit-link', handler as EventListener);
+    view.destroy();
   });
 });

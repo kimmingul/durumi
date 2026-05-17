@@ -31,9 +31,19 @@ const ALL_KEYS = new Set([...Object.keys(PAIRS_FULL), ...Object.keys(WRAP_ONLY)]
  * pre-empt those keys (otherwise `*` would auto-wrap as `**|**` and the
  * escape filter would see no plain insertion to handle). Generic
  * non-markdown pairs (`(`, `{`, `<`, `"`, `'`) keep working.
+ *
+ * v0.2.20 — `[` removed from this set. The escape filter no longer
+ * touches brackets (so typed `[text](url)` can parse as a real inline
+ * Link and the v0.2.19 hover tooltip + click + right-click menu fire).
+ * With escape out of the picture, autoPair can pair `[` → `[]` in
+ * WYSIWYG mode just like in Typora — which is the friendlier UX for
+ * typed links: bracket opens with auto-close, type label, Right-arrow
+ * past the `]`, then `(` opens the URL pair the same way. The
+ * autoPair-induced caret juggling that existed before in Typora mode
+ * is now identical in WYSIWYG mode (i.e. no regression in either).
  */
 const MARKDOWN_PAIR_KEYS: ReadonlySet<string> = new Set([
-  '*', '_', '`', '[', '~', '=', '^', '$',
+  '*', '_', '`', '~', '=', '^', '$',
 ]);
 
 /**

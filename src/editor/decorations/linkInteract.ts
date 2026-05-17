@@ -201,7 +201,156 @@ export function linkClickHandler(): Extension {
   });
 }
 
+/**
+ * v0.2.20 — right-click on a `.cm-md-link` shows a small DOM popup with
+ * "Open link", "Copy URL", and "Edit link…". The handler self-gates on
+ * the same `.cm-md-link` target as the click handler so non-link
+ * right-clicks fall through to the existing main-process context menu
+ * (Cut/Copy/Paste + Add memo + Track changes ▶ + Insert link +
+ * spell-check, in `electron/contextMenu.ts`).
+ *
+ * Why a DOM popup instead of extending the native Electron menu:
+ *   - The native menu lives in `electron/contextMenu.ts` (main process)
+ *     and would need an IPC round-trip to learn the URL/text/title at
+ *     right-click time. The DOM popup keeps everything in the renderer
+ *     and matches the sidebar `ContextMenu.tsx` pattern.
+ *   - Menu items can fire `durumi:edit-link` directly with the cached
+ *     payload — no IPC handler, no serialization, same dispatcher used
+ *     by the tooltip's Edit button.
+ *
+ * The popup tears itself down on outside-click, scroll, blur, or Esc
+ * (same dismissal rules as `sidebar/ContextMenu.tsx`).
+ */
+interface MenuItemSpec {
+  testid: string;
+  label: string;
+  onSelect: () => void;
+}
+
+function showLinkContextMenu(x: number, y: number, items: MenuItemSpec[]): void {
+  // Remove any previous popup before showing a new one.
+  document.querySelectorAll('.cm-link-context-menu').forEach((n) => n.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'cm-link-context-menu';
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('data-testid', 'link-context-menu');
+  menu.style.position = 'fixed';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.style.zIndex = '1000';
+  menu.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  const close = () => {
+    menu.remove();
+    document.removeEventListener('mousedown', onDown, true);
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('blur', close);
+    window.removeEventListener('scroll', close, true);
+  };
+  function onDown(e: MouseEvent) {
+    if (e.target instanceof Node && menu.contains(e.target)) return;
+    close();
+  }
+  function onKey(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  }
+
+  for (const item of items) {
+    const row = document.createElement('div');
+    row.className = 'cm-link-context-menu-item';
+    row.setAttribute('role', 'menuitem');
+    row.setAttribute('data-testid', item.testid);
+    row.textContent = item.label;
+    row.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        item.onSelect();
+      } finally {
+        close();
+      }
+    });
+    menu.appendChild(row);
+  }
+
+  document.body.appendChild(menu);
+
+  // Clamp to viewport (same logic as sidebar ContextMenu).
+  const rect = menu.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let nx = x;
+  let ny = y;
+  if (nx + rect.width > vw - 4) nx = Math.max(4, vw - rect.width - 4);
+  if (ny + rect.height > vh - 4) ny = Math.max(4, vh - rect.height - 4);
+  menu.style.left = `${nx}px`;
+  menu.style.top = `${ny}px`;
+
+  document.addEventListener('mousedown', onDown, true);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('blur', close);
+  window.addEventListener('scroll', close, true);
+}
+
+function copyToClipboard(text: string): void {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(text);
+  }
+}
+
+export function linkContextMenu(): Extension {
+  return EditorView.domEventHandlers({
+    contextmenu(event, view) {
+      const target = event.target as HTMLElement | null;
+      if (!target) return false;
+      const linkEl = target.closest('.cm-md-link');
+      if (!linkEl) return false;
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos === null) return false;
+      const link = findLinkAt(view.state, pos);
+      if (!link || !link.url) return false;
+      event.preventDefault();
+      // Stop the event so the main-process context-menu handler in
+      // electron/contextMenu.ts doesn't ALSO pop its native menu on top
+      // of ours. Electron's `webContents.on('context-menu')` fires
+      // regardless of preventDefault — the main listener already checks
+      // `params.isEditable`, but the menu would still show with
+      // Cut/Copy/Paste. stopPropagation belt; the renderer popup wins.
+      event.stopPropagation();
+      showLinkContextMenu(event.clientX, event.clientY, [
+        {
+          testid: 'link-ctx-open',
+          label: 'Open link',
+          onSelect: () => openUrl(link.url),
+        },
+        {
+          testid: 'link-ctx-copy',
+          label: 'Copy URL',
+          onSelect: () => copyToClipboard(link.url),
+        },
+        {
+          testid: 'link-ctx-edit',
+          label: 'Edit link…',
+          onSelect: () =>
+            dispatchEditLink({
+              from: link.from,
+              to: link.to,
+              text: link.text,
+              url: link.url,
+              title: link.title,
+            }),
+        },
+      ]);
+      return true;
+    },
+  });
+}
+
 /** Bundle for decorations/index.ts. */
 export function linkInteractivity(): Extension[] {
-  return [linkHoverTooltip(), linkClickHandler()];
+  return [linkHoverTooltip(), linkClickHandler(), linkContextMenu()];
 }
