@@ -369,6 +369,31 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     return () => window.removeEventListener('durumi:edit-link', onEdit as EventListener);
   }, []);
 
+  // v0.2.21 — listen for the menu/right-click "Insert link" path. The
+  // native context menu (`electron/contextMenu.ts → 'link'`), the Cmd+K
+  // accelerator, and the View menu Insert link item all funnel through
+  // `useMenuCommandRouter`'s `'link'` branch, which now dispatches
+  // `durumi:open-link-dialog` instead of inserting raw `[]()` text. We
+  // open the dialog with the current selection pre-filled — identical to
+  // the toolbar Link button's `openLinkDialog`. We keep the handlers
+  // separate (this one vs. edit-link) so the edit flow can carry the
+  // existing range payload without conflating with insert.
+  useEffect(() => {
+    function onOpen(): void {
+      const v = view;
+      if (!v) return;
+      const { from, to } = v.state.selection.main;
+      const text = v.state.sliceDoc(from, to);
+      setLinkEditRange(null);
+      setLinkInitialText(text);
+      setLinkInitialUrl('');
+      setLinkInitialTitle('');
+      setLinkOpen(true);
+    }
+    window.addEventListener('durumi:open-link-dialog', onOpen as EventListener);
+    return () => window.removeEventListener('durumi:open-link-dialog', onOpen as EventListener);
+  }, [view]);
+
   if (!visible) return null;
 
   const disabled = !view;

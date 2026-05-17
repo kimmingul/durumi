@@ -160,9 +160,24 @@ export function linkHoverTooltip(): Extension {
       const link = findLinkAt(view.state, pos);
       if (!link || !link.url) return null;
       void side;
+      // v0.2.21 — the tooltip MUST be anchored on a position that
+      // `view.coordsAtPos()` can resolve, otherwise CodeMirror parks the
+      // tooltip at `top: -10000px` and the user sees nothing. In Document
+      // mode `linkDecoration` collapses the leading `[` (and the trailing
+      // `](url)`) into a hidden replace-widget — so `coordsAtPos(link.from)`
+      // returns `null` and the v0.2.19/v0.2.20 tooltip never reached the
+      // viewport, even though the DOM node existed (innerText showed the
+      // URL). Confirmed in real Electron: `coordsAtPos(linkFrom) === null`,
+      // `dom.style.top === '-10000px'` after measure.
+      //
+      // Fix: anchor on the position the user is actually hovering (`pos`).
+      // It always falls inside the rendered label range, so coordsAtPos
+      // returns a real on-screen rect. End is clamped similarly so the
+      // tooltip's hideOnLeave region matches what's visible.
+      const anchor = Math.max(link.from + 1, Math.min(pos, link.to - 1));
       return {
-        pos: link.from,
-        end: link.to,
+        pos: anchor,
+        end: anchor,
         above: false,
         create() {
           return { dom: buildTooltip(link) };
@@ -186,6 +201,19 @@ export function linkHoverTooltip(): Extension {
 export function linkClickHandler(): Extension {
   return EditorView.domEventHandlers({
     mousedown(event, view) {
+      // v0.2.21 — gate on LEFT button only. Pre-v0.2.21 this handler ran
+      // for every mousedown including button=2 (right) and button=1
+      // (middle), so a right-click on a `.cm-md-link` BOTH opened the
+      // browser (via shellOpenExternal) AND popped the renderer context
+      // menu added in v0.2.20 — confirmed in real Electron via an IPC
+      // intercept. Users reported "right-click opens browser, same as
+      // left". This guard keeps the WYSIWYG plain-click-follows-link UX
+      // (left only) and lets `linkContextMenu()`'s `contextmenu` handler
+      // own the right-click path. Modifier keys (Cmd/Ctrl) also bail —
+      // those modify selection / drag behaviour in CodeMirror and should
+      // never trigger navigation.
+      if (event.button !== 0) return false;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
       const target = event.target as HTMLElement | null;
       if (!target) return false;
       const linkEl = target.closest('.cm-md-link');

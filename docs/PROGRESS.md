@@ -1,6 +1,174 @@
 # Durumi — Progress
 
-## v0.2.20 (current) — Link tooltip mount fix + right-click context menu
+## v0.2.21 (current) — Link interaction live verification (THIRD attempt)
+
+### Why this exists
+
+v0.2.19 introduced link interactivity (hover tooltip, click→browser,
+Edit affordance). v0.2.20 added the right-click context menu and
+relaxed the WYSIWYG escape filter so typed `[text](url)` would parse
+as a real link. Both shipped with unit tests AND e2e tests passing —
+and BOTH installs failed in production with the same three user
+reports:
+
+1. **Hover over a link → no tooltip.** Not even after the v0.2.20
+   escape filter fix.
+2. **Right-click on link → opens browser** (same as left-click).
+   Expected: context menu with Open / Copy URL / Edit link.
+3. **Right-click on empty line → "링크 삽입" → inserts literal
+   `[]()` text.** Expected: open the InsertLinkDialog.
+
+### Why v0.2.19 / v0.2.20 false-greened
+
+The pre-v0.2.21 e2e tests asserted on `.cm-link-tooltip-url`'s text
+content, which is present whether or not the tooltip is visible.
+They never drove real `mouse.move` events or measured the tooltip's
+on-screen bounding rect. Similarly, the right-click test only
+asserted the renderer popup appeared — it never intercepted the
+main-process `shell:openExternal` IPC to verify the browser didn't
+ALSO open. And the "Insert link" path was never exercised end-to-end
+at all (only the toolbar Link button was).
+
+### Root causes (verified in real Electron via IPC + DOM probe)
+
+1. **Tooltip off-screen at `top: -10000px`.**
+   `src/editor/decorations/linkInteract.ts:158-173` (pre-v0.2.21):
+   `linkHoverTooltip` anchored the tooltip on `pos: link.from` — the
+   document position of the `[` character. In Document mode that
+   position lives INSIDE a hidden replace-widget (`linkDecoration`
+   collapses `[` and `](url)` into hidden markers). CodeMirror's
+   tooltip layout calls `view.coordsAtPos(link.from)` and gets `null`
+   back, then parks the tooltip at `style.top = "-10000px"`. The DOM
+   node existed (innerText showed the URL) which is why the v0.2.20
+   text assertion passed.
+
+2. **Right-click triggers left-click handler.**
+   `src/editor/decorations/linkInteract.ts:186-202` (pre-v0.2.21):
+   `linkClickHandler`'s `mousedown` ran on EVERY button (no
+   `event.button` guard). Real-Electron IPC intercept confirmed
+   `shellOpenExternal('https://example.com')` was called on a
+   right-click — the renderer context menu popped on TOP of the
+   browser opening.
+
+3. **"링크 삽입" inserts `[]()` instead of opening the dialog.**
+   `src/hooks/useMenuCommandRouter.ts:206-213` (pre-v0.2.21): the
+   `'link'` MenuCommand handler dispatched a literal `[${text}]()`
+   into the document. The native context menu (`electron/contextMenu.ts:104-109`),
+   Cmd+K accelerator, and View menu Insert link entry ALL funnel
+   through this branch — so all three entry points inserted raw
+   text, while only the toolbar Link button opened the dialog.
+
+### Fix shape
+
+1. **`src/editor/decorations/linkInteract.ts::linkHoverTooltip`** —
+   anchor the tooltip on a position that is always rendered (the
+   hover `pos`, clamped to `[link.from + 1, link.to - 1]`). That
+   position is inside the visible label range, so `coordsAtPos`
+   resolves to a real rect and CodeMirror positions the tooltip
+   correctly.
+
+2. **`src/editor/decorations/linkInteract.ts::linkClickHandler`** —
+   added `if (event.button !== 0) return false` plus a modifier-key
+   bail (`metaKey || ctrlKey || altKey || shiftKey`). Right-click
+   now flows through to the contextmenu handler unmolested;
+   Cmd-click no longer navigates.
+
+3. **`src/hooks/useMenuCommandRouter.ts`** — `'link'` now dispatches
+   a `durumi:open-link-dialog` CustomEvent (peer to the existing
+   `durumi:edit-link` shape) instead of inserting `[]()`.
+   **`src/components/EditorToolbar.tsx`** — new listener mirrors
+   `openLinkDialog`: reads current selection, clears the edit-range,
+   and opens the dialog. Now the toolbar Link button, the native
+   menu's "링크 삽입", Cmd+K, and the View menu Insert link entry
+   all open the same `InsertLinkDialog` with identical pre-fill
+   semantics.
+
+### Tests added (REAL UI, NOT unit)
+
+`e2e/link-interact-v21.spec.ts` (+3):
+
+1. **fix #1**: insert link → real `page.mouse.move` over the link →
+   wait 500ms → assert `.cm-tooltip-hover` `getBoundingClientRect()`
+   has `top > 0 && top < 2000 && left > 0` (i.e. on-screen, NOT at
+   -10000). Screenshot: `e2e/screenshots/v0.2-smoke/49-link-tooltip-visible.png`.
+
+2. **fix #2**: install an IPC intercept on `shell:openExternal` in
+   the MAIN process so the test can count actual calls. Right-click
+   the link → assert renderer context menu visible AND
+   `__shellOpenCalls === []`. Sanity: left-click after Esc → assert
+   `__shellOpenCalls === ['https://example.com']`. Screenshot:
+   `e2e/screenshots/v0.2-smoke/50-link-rightclick-no-browser.png`.
+
+3. **fix #3**: send `menu:command` IPC with `'link'` from main
+   (same path the native context menu fires) → assert
+   `[data-testid=insert-link-dialog]` visible AND document body
+   string is `''` (no `[]()` insertion). Screenshot:
+   `e2e/screenshots/v0.2-smoke/51-link-dialog-from-menu.png`.
+
+`tests/editor/linkInteract.test.ts` (+3 unit, complement to the
+e2e — these pin the guard shape so future refactors of the click
+handler break a visible test):
+
+- right-click (`button=2`) on `.cm-md-link` does NOT call
+  `shellOpenExternal`.
+- middle-click (`button=1`) on `.cm-md-link` does NOT call
+  `shellOpenExternal`.
+- left-click with `metaKey: true` (Cmd-click) does NOT call
+  `shellOpenExternal`.
+
+### Test deltas
+
+- vitest: **1625 → 1628 passed** (+3)
+- e2e: **126 → 129 passed**, 4 skipped, 0 failed (+3 v0.2.21 tests)
+- pnpm lint, typecheck: clean
+
+### Files touched
+
+- `src/editor/decorations/linkInteract.ts` (tooltip anchor +
+  button/modifier guard)
+- `src/hooks/useMenuCommandRouter.ts` ('link' command →
+  CustomEvent)
+- `src/components/EditorToolbar.tsx` (listen for
+  `durumi:open-link-dialog`)
+- `tests/editor/linkInteract.test.ts` (+3 button/modifier guard
+  unit tests)
+- `e2e/link-interact-v21.spec.ts` (NEW — 3 real-UI tests with
+  IPC intercept + DOM measurement)
+- `package.json` (0.2.20 → 0.2.21)
+- `docs/PROGRESS.md` (this entry)
+
+### Verification protocol used
+
+Each fix was reproduced FIRST in a hand-written exploratory probe
+(deleted before commit) that confirmed the user-visible bug in real
+Electron:
+
+- bug #1: probe dumped `coordsAtPos(linkFrom) === null` and
+  `dom.style.top === '-10000px'` after a real mouse hover.
+- bug #2: probe used the main-process `ipcMain.removeHandler` +
+  re-handle pattern to count `shell:openExternal` calls; right-click
+  produced one call to `'https://example.com'`.
+- bug #3: probe sent `menu:command 'link'` and saw the document
+  contain `[]()` afterwards.
+
+Then the targeted fix was applied, the build rebuilt, and the same
+probe re-run to confirm the bug was gone. Only then was the
+permanent `link-interact-v21.spec.ts` written. The probe spec is
+NOT in the commit — only the permanent spec is.
+
+### Deferred to v0.2.22+
+
+- The native `electron/contextMenu.ts` menu still surfaces
+  `Cut/Copy/Paste/메모/변경 추적/링크 삽입` over `.cm-md-link`
+  spans BELOW the renderer popup. (v0.2.20 added
+  `stopPropagation` on the renderer side; the main-process
+  `webContents.on('context-menu')` fires regardless on macOS.)
+  Acceptable: the renderer popup shows first, and dismissing it
+  reveals the native menu — not blocking. A follow-up can use
+  Electron's `params.linkURL`-style hinting to suppress the
+  native menu over link spans entirely.
+
+## v0.2.20 — Link tooltip mount fix + right-click context menu
 
 ### What was broken (v0.2.19 install feedback)
 

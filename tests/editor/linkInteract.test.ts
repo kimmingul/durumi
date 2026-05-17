@@ -132,6 +132,56 @@ describe('linkClickHandler', () => {
     expect(window.api.shellOpenExternal).not.toHaveBeenCalled();
     view.destroy();
   });
+
+  it('v0.2.21: does NOT open browser on RIGHT-click (button=2) over a link', () => {
+    // Pre-v0.2.21 the mousedown handler ran for every button, so the same
+    // right-click that pops the renderer context menu ALSO fired
+    // shellOpenExternal — the user-reported "right-click opens browser
+    // same as left-click" regression. The fix gates on `event.button===0`.
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    expect(linkEl).not.toBeNull();
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    expect(window.api.shellOpenExternal).not.toHaveBeenCalled();
+    view.destroy();
+  });
+
+  it('v0.2.21: does NOT open browser on MIDDLE-click (button=1) over a link', () => {
+    // Same shape — middle-click is also a non-left button that the
+    // legacy handler treated as "open in browser".
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 1 });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    expect(window.api.shellOpenExternal).not.toHaveBeenCalled();
+    view.destroy();
+  });
+
+  it('v0.2.21: does NOT open browser when a MODIFIER key is held (Cmd/Ctrl-click)', () => {
+    // Cmd/Ctrl-click in editors typically means "add cursor" or
+    // "follow-with-modifier"; either way it should not navigate.
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      metaKey: true,
+    });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    expect(window.api.shellOpenExternal).not.toHaveBeenCalled();
+    view.destroy();
+  });
 });
 
 describe('linkHoverTooltip + dispatchEditLink', () => {

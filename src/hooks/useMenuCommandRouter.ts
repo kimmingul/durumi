@@ -204,10 +204,22 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
       if (cmd === 'findNext' && view) { gotoNext(view); view.focus(); return; }
       if (cmd === 'findPrev' && view) { gotoPrev(view); view.focus(); return; }
       if (cmd === 'link' && view) {
-        const { from, to } = view.state.selection.main;
-        const text = view.state.sliceDoc(from, to);
-        const insert = `[${text}]()`;
-        view.dispatch({ changes: { from, to, insert } });
+        // v0.2.21 — route to the InsertLinkDialog (the same surface as the
+        // toolbar's Link button) instead of inserting literal `[]()` text.
+        // Pre-v0.2.21 the native menu's "링크 삽입" / Cmd+K / right-click
+        // "Insert link" entry all dropped `[selection]()` directly into the
+        // doc — confusing for the user who expected the same dialog the
+        // toolbar opens. The dialog ALSO owns title-quote escaping and the
+        // edit-existing-link replacement path (durumi:edit-link), so
+        // routing here guarantees one shape of link insertion across all
+        // three entry points (toolbar, native menu, right-click).
+        //
+        // EditorToolbar's `openLinkDialog` already handles the open path
+        // (current selection → `linkInitialText`, no range to replace).
+        // The event payload is empty by convention — the dialog reads the
+        // current selection itself. The contract matches the existing
+        // `durumi:edit-link` listener wiring.
+        window.dispatchEvent(new CustomEvent('durumi:open-link-dialog'));
         view.focus();
         return;
       }
