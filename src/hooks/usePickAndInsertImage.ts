@@ -30,7 +30,13 @@ export function usePickAndInsertImage(
       // can't handle, and a popup would be more annoying than informative.
       return;
     }
-    const link = 'relPath' in result ? result.relPath : result.absPath;
+    // Pending-asset paths can contain spaces (macOS userData lives under
+    // `Library/Application Support/…`). CommonMark refuses unwrapped
+    // spaces in image URLs, so the parser would silently fail to
+    // tokenise the link and the user would see raw markdown. Percent-
+    // encode at insert time; `resolveImageSrc` mirrors the decode before
+    // wrapping in durumi-asset://.
+    const link = 'relPath' in result ? result.relPath : encodeURI(result.absPath);
     const cursor = view.state.selection.main.head;
     const md = `![](${link})`;
     view.dispatch({

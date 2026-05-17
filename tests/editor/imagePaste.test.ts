@@ -89,12 +89,14 @@ describe('handlePaste', () => {
     view.destroy();
   });
 
-  it('inserts pending absolute path when buffer is unsaved (v0.2.23 pending-assets flow)', async () => {
+  it('inserts pending path (percent-encoded) when buffer is unsaved (v0.2.23 pending-assets flow)', async () => {
     // v0.2.23 — saveImage no longer errors with `no-file`. It writes the
     // bytes into the per-session pending-assets dir and returns the
-    // absolute path. The renderer embeds that verbatim so the image
-    // renders immediately via durumi-asset://; the first subsequent
-    // save migrates the file into <docDir>/assets/.
+    // absolute path. The renderer percent-encodes the path so CommonMark
+    // accepts the image link (macOS userData lives under
+    // `Library/Application Support/…` — bare spaces would make the parser
+    // skip the node and the user would see literal markdown).
+    // `resolveImageSrc` mirrors the decode.
     const view = viewWith('hello', 5);
     const pendingAbs = '/Users/x/Library/Application Support/durumi/pending-assets/s-1/img-1.png';
     fakeApi.saveImage.mockResolvedValueOnce({ absPath: pendingAbs });
@@ -108,7 +110,10 @@ describe('handlePaste', () => {
 
     handlePaste(event, view, { current: null });
     await flush();
-    expect(view.state.doc.toString()).toBe(`hello![](${pendingAbs})`);
+    expect(view.state.doc.toString()).toBe(`hello![](${encodeURI(pendingAbs)})`);
+    // Sanity: the encoded form must not contain unwrapped spaces — that's
+    // exactly the parser-killer this regression test pins.
+    expect(view.state.doc.toString()).not.toMatch(/!\]\([^)]* [^)]*\)/);
     view.destroy();
   });
 
@@ -155,9 +160,11 @@ describe('handleDrop', () => {
     view.destroy();
   });
 
-  it('drop on unsaved buffer inserts pending absolute path', async () => {
+  it('drop on unsaved buffer inserts pending absolute path (percent-encoded)', async () => {
     const view = viewWith('hi', 2);
-    const pendingAbs = '/tmp/durumi/pending-assets/s-1/img-2.png';
+    // Include a space to mimic real macOS userData paths and pin the
+    // encode-at-insert contract.
+    const pendingAbs = '/Users/x/Library/Application Support/durumi/pending-assets/s-1/img-2.png';
     fakeApi.saveImage.mockResolvedValueOnce({ absPath: pendingAbs });
     const event = {
       dataTransfer: { files: [makePngFile()] },
@@ -165,7 +172,7 @@ describe('handleDrop', () => {
     } as unknown as DragEvent;
     handleDrop(event, view, { current: null });
     await flush();
-    expect(view.state.doc.toString()).toBe(`hi![](${pendingAbs})`);
+    expect(view.state.doc.toString()).toBe(`hi![](${encodeURI(pendingAbs)})`);
     view.destroy();
   });
 });

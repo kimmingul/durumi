@@ -136,6 +136,26 @@ describe('migratePendingInContent', () => {
     await rm(docDir, { recursive: true, force: true });
   });
 
+  it('migrates a percent-encoded pending link (mirrors the renderer-side encode-at-insert)', async () => {
+    // v0.2.23 — the renderer percent-encodes pending absolute paths
+    // before inserting `![](…)` so CommonMark accepts URLs with spaces
+    // (macOS userData lives under `Library/Application Support/…`).
+    // Main's migration scanner must decode before checking against the
+    // pending-root prefix or the move would never fire.
+    const { savePendingImage, migratePendingInContent } = await import(
+      '../../electron/pendingAssets'
+    );
+    const pending = await savePendingImage(new Uint8Array([9]), 'image/png');
+    const docDir = await mkdtemp(join(tmpdir(), 'durumi-doc-'));
+    const content = `![](${encodeURI(pending.absPath)})`;
+    const r = await migratePendingInContent(content, docDir);
+    expect(r.moved).toBe(1);
+    expect(r.content).toMatch(/^!\[\]\(assets\/img-[^)]+\.png\)$/);
+    expect(r.content).not.toContain(pending.absPath);
+    expect(r.content).not.toContain(encodeURI(pending.absPath));
+    await rm(docDir, { recursive: true, force: true });
+  });
+
   it('reports failed=1 and leaves the link untouched when the pending file is missing', async () => {
     const { migratePendingInContent } = await import('../../electron/pendingAssets');
     const docDir = await mkdtemp(join(tmpdir(), 'durumi-doc-'));

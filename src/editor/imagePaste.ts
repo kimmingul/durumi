@@ -20,7 +20,12 @@ async function processFiles(
     // carries `absPath` instead of `relPath`. Either way we insert the
     // markdown image immediately; the first subsequent save migrates
     // pending files into `<docDir>/assets/` and rewrites the link.
-    const link = 'relPath' in result ? result.relPath : result.absPath;
+    //
+    // The abs path is percent-encoded because macOS userData lives under
+    // `Library/Application Support/…` and CommonMark refuses unwrapped
+    // spaces in URLs (the parser would skip the node and the user would
+    // see literal markdown). `resolveImageSrc` mirrors the decode.
+    const link = 'relPath' in result ? result.relPath : encodeURI(result.absPath);
     const cursor = view.state.selection.main.head;
     const md = `![](${link})`;
     view.dispatch({
