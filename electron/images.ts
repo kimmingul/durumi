@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { savePendingImage } from './pendingAssets';
 
 const MIME_EXT: Record<string, string> = {
   'image/png': 'png',
@@ -25,16 +26,25 @@ function rand(): string {
   return Math.random().toString(36).slice(2, 8);
 }
 
+/**
+ * v0.2.23 — the `no-file` error arm is gone. When the active document
+ * has no on-disk path, the bytes land in the per-session pending-assets
+ * dir (`<userData>/pending-assets/<sid>/`) and the renderer embeds the
+ * absolute path. On the first subsequent save, `migratePendingInContent`
+ * moves each pending file into `<docDir>/assets/` and rewrites the link.
+ */
 export type SaveImageResult =
   | { relPath: string }
-  | { error: 'no-file' };
+  | { absPath: string };
 
 export async function saveImage(
   buffer: Uint8Array,
   mimeType: string,
   contextFilePath: string | null,
 ): Promise<SaveImageResult> {
-  if (!contextFilePath) return { error: 'no-file' };
+  if (!contextFilePath) {
+    return savePendingImage(buffer, mimeType);
+  }
   const dir = dirname(contextFilePath);
   const assetsDir = join(dir, 'assets');
   await mkdir(assetsDir, { recursive: true });

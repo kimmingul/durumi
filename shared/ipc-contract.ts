@@ -323,8 +323,20 @@ export interface IpcApi {
   ping: () => Promise<'pong'>;
   fileOpen: () => Promise<FileResult | null>;
   fileOpenPath: (path: string) => Promise<FileResult>;
-  fileSave: (path: string, content: string) => Promise<{ ok: true }>;
-  fileSaveAs: (content: string, suggestedName?: string) => Promise<{ path: string } | null>;
+  /**
+   * v0.2.23 — when the saved buffer contained pending-asset image refs
+   * (absolute paths under `<userData>/pending-assets/`), main migrates
+   * those files into `<docDir>/assets/` and rewrites the markdown link
+   * to the relative form. The rewritten content is returned so the
+   * renderer can sync the in-memory buffer to what's now on disk; when
+   * no rewrite happened the `content` field is omitted to keep the
+   * common path cheap.
+   */
+  fileSave: (path: string, content: string) => Promise<{ ok: true; content?: string }>;
+  fileSaveAs: (
+    content: string,
+    suggestedName?: string,
+  ) => Promise<{ path: string; content?: string } | null>;
   exportFile: (
     html: string,
     format: 'html' | 'pdf',
@@ -353,11 +365,21 @@ export interface IpcApi {
   onCustomCssChanged: (cb: (css: string) => void) => () => void;
   gitGetStatus: (rootPath: string) => Promise<Record<string, string>>;
   onGitStatusChanged: (cb: (rootPath: string) => void) => () => void;
+  /**
+   * v0.2.23 — when `contextFilePath` is null (untitled buffer), the
+   * bytes land in the per-session pending-assets dir and `absPath` is
+   * returned for the renderer to embed verbatim. The renderer's
+   * `resolveImageSrc` already routes absolute paths through
+   * `durumi-asset://`, so the image displays immediately. On the next
+   * `fileSave`/`fileSaveAs` main migrates the pending file into
+   * `<docDir>/assets/` and rewrites the markdown link to the relative
+   * form. The legacy `{ error: 'no-file' }` arm is gone.
+   */
   saveImage: (
     buffer: Uint8Array,
     mimeType: string,
     contextFilePath: string | null,
-  ) => Promise<{ relPath: string } | { error: 'no-file' }>;
+  ) => Promise<{ relPath: string } | { absPath: string }>;
   /**
    * v0.2.x — single-shot "pick an image off disk and stash it next to
    * the active document" flow. Replaces the v0.1.x renderer round-trip
@@ -365,10 +387,17 @@ export interface IpcApi {
    * raw bytes from disk in the renderer and bypassed the path guard.
    * Main owns the dialog, the disk read, and the `saveImage` write, so
    * the renderer never touches `file://`.
+   *
+   * v0.2.23 — `absPath` variant added for the untitled-buffer flow
+   * (same pending-assets pipeline as `saveImage`).
    */
   imagePickAndSave: (
     contextFilePath: string | null,
-  ) => Promise<{ ok: true; relPath: string } | { ok: false; error: string }>;
+  ) => Promise<
+    | { ok: true; relPath: string }
+    | { ok: true; absPath: string }
+    | { ok: false; error: string }
+  >;
   macrosGet: () => Promise<Macro[]>;
   onMacrosChanged: (cb: (macros: Macro[]) => void) => () => void;
   onAppRequestClose: (decide: () => boolean | Promise<boolean>) => () => void;

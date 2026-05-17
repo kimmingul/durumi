@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { promises as fs } from 'node:fs';
+import { dirname } from 'node:path';
 import type { FileResult } from '@shared/ipc-contract';
 import { addRecentFile, getPreferences } from '../preferences';
 import {
@@ -20,6 +21,7 @@ import {
   revealInFolder,
 } from '../fileOps';
 import { allowSessionPath, assertAllowedPath } from '../pathGuard';
+import { migratePendingInContent } from '../pendingAssets';
 import { broadcastGitStatusInvalidated, findOwningRoot } from './_shared';
 
 export function registerFilesHandlers(): void {
@@ -52,14 +54,22 @@ export function registerFilesHandlers(): void {
 
   ipcMain.handle('file:save', async (_e, path: string, content: string) => {
     await assertAllowedPath(path);
-    await writeFileAtomic(path, content);
+    // v0.2.23: migrate any pending-assets image refs into `<docDir>/assets/`
+    // and rewrite the markdown to point at the relative form BEFORE the
+    // write. Returning the migrated content lets the renderer reconcile
+    // its in-memory buffer with what's now on disk.
+    const migration = await migratePendingInContent(content, dirname(path));
+    const finalContent = migration.content;
+    await writeFileAtomic(path, finalContent);
     // Same dir-trust idempotency as file:openPath.
     allowSessionPath(path);
     await addRecentFile(path);
     const prefs = await getPreferences();
     const owningRoot = findOwningRoot(path, prefs.workspaceFolders ?? []);
     if (owningRoot) broadcastGitStatusInvalidated(owningRoot);
-    return { ok: true as const };
+    return migration.changed
+      ? { ok: true as const, content: finalContent }
+      : { ok: true as const };
   });
 
   ipcMain.handle('file:saveAs', async (event, content: string, suggestedName?: string) => {
@@ -71,12 +81,19 @@ export function registerFilesHandlers(): void {
     });
     if (result.canceled || !result.filePath) return null;
     allowSessionPath(result.filePath);
-    await writeFileAtomic(result.filePath, content);
+    // v0.2.23: same migration step as file:save. Critical for the
+    // "untitled → first save" path because that's exactly when pending
+    // images need a real home.
+    const migration = await migratePendingInContent(content, dirname(result.filePath));
+    const finalContent = migration.content;
+    await writeFileAtomic(result.filePath, finalContent);
     await addRecentFile(result.filePath);
     const prefs = await getPreferences();
     const owningRoot = findOwningRoot(result.filePath, prefs.workspaceFolders ?? []);
     if (owningRoot) broadcastGitStatusInvalidated(owningRoot);
-    return { path: result.filePath };
+    return migration.changed
+      ? { path: result.filePath, content: finalContent }
+      : { path: result.filePath };
   });
 
   ipcMain.handle('export:file', async (event, html: string, format: 'html' | 'pdf', suggestedName?: string) => {

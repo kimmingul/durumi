@@ -235,10 +235,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'discard.discard': "Don't Save",
     'discard.cancel': 'Cancel',
 
-    // Image paste (C3)
-    'image.noFileAlert': 'Save the document first to use image paste.',
-    'image.noFileToast': 'Save this document first to paste images.',
-    'image.noFileAction': 'Save as…',
+    // Image paste / toolbar — v0.2.23: noFile* strings retired with the
+    // pending-assets pipeline, which renders unsaved images immediately.
     'image.toastDismiss': 'Dismiss',
 
     // Auto-updater (C8)
@@ -774,10 +772,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'discard.discard': '저장 안 함',
     'discard.cancel': '취소',
 
-    // Image paste (C3)
-    'image.noFileAlert': '이미지 붙여넣기를 사용하려면 먼저 문서를 저장하세요.',
-    'image.noFileToast': '이 문서를 먼저 저장한 후 이미지를 붙여넣을 수 있습니다.',
-    'image.noFileAction': '다른 이름으로 저장…',
+    // Image paste / toolbar — v0.2.23: noFile* strings retired with the
+    // pending-assets pipeline, which renders unsaved images immediately.
     'image.toastDismiss': '닫기',
 
     // Auto-updater (C8)

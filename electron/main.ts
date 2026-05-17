@@ -11,6 +11,7 @@ import { attachCloseGuard } from './closeGuard';
 import { attachContextMenu } from './contextMenu';
 import { registerAssetProtocolHandler, registerAssetProtocolSchemes } from './assetProtocol';
 import { bootstrapSessionTreesFromRecents } from './pathGuard';
+import { sweepStalePendingDirs } from './pendingAssets';
 
 // Privileges (`standard`, `secure`, `supportFetchAPI`, `stream`) must be
 // declared BEFORE app.whenReady() resolves. The actual request handler
@@ -109,6 +110,10 @@ void app.whenReady().then(async () => {
   // recent-file dirnames so reopening a recent doc finds its sibling
   // assets through durumi-asset:// even on a cold start.
   await bootstrapSessionTreesFromRecents();
+  // Sweep leftover pending-asset session dirs from previous (possibly
+  // crashed) runs. The current session dir is created lazily on first
+  // pending write, so this can't ever clobber it.
+  await sweepStalePendingDirs();
   buildMenu(initialPrefs, onNewWindow);
   onPreferencesChanged((prefs) => buildMenu(prefs, onNewWindow));
 

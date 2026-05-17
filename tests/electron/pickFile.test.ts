@@ -50,6 +50,19 @@ vi.mock('../../electron/fs', () => ({
 vi.mock('../../electron/pdf', () => ({ exportToPdf: vi.fn() }));
 vi.mock('../../electron/customCss', () => ({ getCustomCss: vi.fn() }));
 vi.mock('../../electron/images', () => ({ saveImage: vi.fn() }));
+// pendingAssets pulls in `app.getPath('userData')` at module load via the
+// shared electron mock; we don't exercise it here, so stub the exports.
+vi.mock('../../electron/pendingAssets', () => ({
+  migratePendingInContent: vi.fn(async (content: string) => ({
+    content,
+    changed: false,
+    moved: 0,
+    failed: 0,
+  })),
+  savePendingImage: vi.fn(),
+  isPendingPath: vi.fn(() => false),
+  sweepStalePendingDirs: vi.fn(),
+}));
 vi.mock('../../electron/macros', () => ({ getMacros: vi.fn() }));
 vi.mock('../../electron/git', () => ({ getRepoStatus: vi.fn() }));
 vi.mock('../../electron/i18n', () => ({

@@ -18,17 +18,23 @@ vi.mock('node:fs/promises', () => {
   };
 });
 
+// v0.2.23 — saveImage now delegates to pendingAssets when no doc path is
+// supplied. Mock that module so this suite stays focused on the doc-path
+// arm and doesn't need an Electron `app` instance for `getPath('userData')`.
+vi.mock('../../electron/pendingAssets', () => ({
+  savePendingImage: vi.fn(async () => ({ absPath: '/fake/pending/img-1.png' })),
+}));
+
 beforeEach(() => {
   writes.clear();
   dirs.clear();
 });
 
 describe('saveImage', () => {
-  it('returns error when no context path', async () => {
+  it('routes to pendingAssets when no context path', async () => {
     const { saveImage } = await import('../../electron/images');
-    expect(await saveImage(new Uint8Array([1]), 'image/png', null)).toEqual({
-      error: 'no-file',
-    });
+    const r = await saveImage(new Uint8Array([1]), 'image/png', null);
+    expect(r).toEqual({ absPath: '/fake/pending/img-1.png' });
   });
 
   it('writes png next to file in assets/', async () => {

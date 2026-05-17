@@ -107,8 +107,12 @@ export function registerShellHandlers(): void {
         return { ok: false as const, error: (err as Error).message };
       }
       const save = await saveImage(new Uint8Array(bytes), mime, contextFilePath);
-      if ('error' in save) {
-        return { ok: false as const, error: save.error };
+      // v0.2.23: `saveImage` no longer returns a `no-file` error. When the
+      // doc is untitled it falls back to the pending-assets dir and
+      // returns an absolute path; the renderer embeds that as-is and the
+      // first save migrates the file into `<docDir>/assets/`.
+      if ('absPath' in save) {
+        return { ok: true as const, absPath: save.absPath };
       }
       return { ok: true as const, relPath: save.relPath };
     },

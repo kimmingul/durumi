@@ -45,11 +45,19 @@ export function useFileMenuCommands(): FileMenuCommands {
   const content = useAppStore((s) => s.content);
   const isDirty = useAppStore((s) => s.isDirty);
   const setFile = useAppStore((s) => s.setFile);
+  const setContent = useAppStore((s) => s.setContent);
   const markClean = useAppStore((s) => s.markClean);
 
   const doSave = useCallback(async (): Promise<boolean> => {
     if (filePath) {
-      await window.api.fileSave(filePath, content);
+      const r = await window.api.fileSave(filePath, content);
+      // v0.2.23 — main may have migrated pending-asset image refs into
+      // `<docDir>/assets/` and rewritten the markdown to relative paths.
+      // When that happens, `r.content` is the post-migration text on
+      // disk; sync the buffer so the editor (and store) match.
+      if (r.content !== undefined && r.content !== content) {
+        setContent(r.content);
+      }
       // Force-flush any pending sidecar edits next to the document so a Cmd+S
       // never leaves thread/resolved changes in memory only.
       await useMemoSidecarStore.getState().saveIfDirty();
@@ -58,14 +66,17 @@ export function useFileMenuCommands(): FileMenuCommands {
     }
     const r = await window.api.fileSaveAs(content, 'untitled.md');
     if (!r) return false;
-    setFile(r.path, content);
+    // v0.2.23 — same migration-aware sync as the file:save arm. Critical
+    // here because the untitled → first save transition is exactly when
+    // pending images get a real home.
+    setFile(r.path, r.content ?? content);
     // After Save As, re-bind the sidecar to the new path so subsequent edits
     // land alongside the just-saved document.
     await useMemoSidecarStore.getState().loadFor(r.path);
     await useMemoSidecarStore.getState().saveIfDirty();
     markClean();
     return true;
-  }, [filePath, content, setFile, markClean]);
+  }, [filePath, content, setFile, setContent, markClean]);
 
   const maybeDiscard = useCallback(async (): Promise<boolean> => {
     if (!isDirty) return true;
@@ -89,7 +100,9 @@ export function useFileMenuCommands(): FileMenuCommands {
   const doSaveAs = useCallback(async () => {
     const r = await window.api.fileSaveAs(content, basenameOf(filePath));
     if (r) {
-      setFile(r.path, content);
+      // v0.2.23 — `r.content` is set when main rewrote pending-asset
+      // image refs into the doc's `assets/` dir during the save.
+      setFile(r.path, r.content ?? content);
       markClean();
     }
   }, [content, filePath, setFile, markClean]);

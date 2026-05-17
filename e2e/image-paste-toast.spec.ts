@@ -13,45 +13,46 @@ async function shutdown(app: ElectronApplication) {
 }
 
 /**
- * v0.2.11 — Item 3 e2e. The full paste chain
- *   Cmd+V → contentDOM 'paste' → handlePaste → window.api.saveImage(null)
- *   → {error:'no-file'} → showToast → ToastHost render
- * is covered as follows:
+ * v0.2.23 — pending-assets IPC contract.
  *
- *  - `tests/editor/imagePaste.test.ts` (vitest) drives `handlePaste`
- *    directly with a stubbed `window.api.saveImage` returning the no-file
- *    shape, and asserts the toast store gains an entry with the
- *    "Save as…" action.
- *  - `tests/store/toastStore.test.ts` (vitest) covers the store + auto-
- *    dismiss timer + action wiring.
- *  - This e2e (below) pins the IPC contract: a real launched Electron
- *    app's `image:save` handler returns exactly `{error:'no-file'}` for
- *    a null `contextFilePath`, which is the trigger the renderer-side
- *    handler keys off. Locking the IPC shape end-to-end prevents a
- *    main-process refactor from silently breaking the toast trigger
- *    (the unit tests stub `window.api`, so they cannot catch a real-IPC
- *    drift).
+ * The previous v0.2.11 toast-trigger contract (`saveImage(null)` returning
+ * `{ error: 'no-file' }`) is gone. The new pipeline writes bytes into a
+ * per-session pending-assets dir on the spot and returns the absolute path
+ * for the renderer to embed. The first subsequent save migrates that file
+ * into `<docDir>/assets/` and rewrites the markdown link.
  *
- * A genuine `dispatchEvent('paste', …)` from `page.evaluate` does not
- * reach `handlePaste`: CodeMirror's input pipeline filters synthetic
- * events (`isTrusted=false`) for security. Driving Cmd+V against an OS
- * clipboard image works on a real desktop but is flaky in headless
- * Electron because the OS pasteboard surface differs across CI hosts —
- * we keep it out of the suite to avoid platform-specific flakes and
- * rely on the unit-tested `handlePaste→showToast` chain instead.
+ * Unit coverage lives in:
+ *  - `tests/editor/imagePaste.test.ts` — `handlePaste` inserts the abs path
+ *    when the doc is unsaved.
+ *  - `tests/electron/pendingAssets.test.ts` — savePendingImage write
+ *    location, isPendingPath, migratePendingInContent end-to-end.
+ *
+ * This e2e pins the IPC contract: a real launched Electron app's
+ * `image:save` handler returns `{ absPath }` for a null `contextFilePath`,
+ * and the absolute path lives under `<userData>/pending-assets/`. Locking
+ * the IPC shape end-to-end prevents a main-process refactor from silently
+ * breaking the immediate-render trigger (the unit tests stub
+ * `window.api`, so they cannot catch a real-IPC drift).
  */
-test('image:save IPC returns {error:"no-file"} for a null doc path', async () => {
+test('image:save IPC returns {absPath} under pending-assets for a null doc path', async () => {
   const { app, page } = await launch();
   try {
     const ipcResult = await page.evaluate(async () => {
       const w = window as unknown as {
         api: {
-          saveImage: (b: Uint8Array, m: string, p: string | null) => Promise<{ error?: string; relPath?: string }>;
+          saveImage: (
+            b: Uint8Array,
+            m: string,
+            p: string | null,
+          ) => Promise<{ absPath?: string; relPath?: string }>;
         };
       };
       return w.api.saveImage(new Uint8Array([1, 2, 3]), 'image/png', null);
     });
-    expect(ipcResult).toEqual({ error: 'no-file' });
+    expect(ipcResult).toHaveProperty('absPath');
+    expect(typeof ipcResult.absPath).toBe('string');
+    expect(ipcResult.absPath).toMatch(/[\\/]pending-assets[\\/]/);
+    expect(ipcResult.absPath!.endsWith('.png')).toBe(true);
   } finally {
     await shutdown(app);
   }
