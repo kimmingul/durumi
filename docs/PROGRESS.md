@@ -1,6 +1,41 @@
 # Durumi — Progress
 
-## v0.2.21 (current) — Link interaction live verification (THIRD attempt)
+## v0.2.22 (current) — Hover tooltip simplified (title-or-URL only)
+
+User confirmed v0.2.21's three link fixes work but found the
+hover tooltip too noisy. Requested a minimal tooltip: only the
+`title` attribute if present, else the URL. No Open/Edit buttons
+(plain click follows the link, right-click context menu still
+exposes Open / Copy URL / Edit link).
+
+Fix:
+- `buildTooltip` in `src/editor/decorations/linkInteract.ts`
+  now produces a single-line tooltip: `link.title || link.url ||
+  '(no URL)'`. The previous URL-line + optional title-line +
+  Open/Edit action row collapsed into one `<div>`.
+- `openUrl` and `dispatchEditLink` helpers kept — they're still
+  used by the click handler and the right-click context menu.
+- CSS in `src/styles/global.css` trimmed: removed
+  `.cm-link-tooltip-actions` and `.cm-link-tooltip-btn` rules.
+- E2E assertions updated in `e2e/link-interact.spec.ts` and
+  `e2e/link-interact-v21.spec.ts` to assert `data-testid=
+  link-tooltip-open` and `-edit` have COUNT 0 (not visible)
+  rather than being visible.
+- Reference screenshot
+  `e2e/screenshots/v0.2-smoke/49-link-tooltip-visible.png`
+  regenerated showing the new minimal tooltip.
+
+Test counts unchanged at 1628 vitest; e2e 129 passed / 4
+skipped. Lint + typecheck clean.
+
+UX rationale: tooltip is now a passive preview (browser-`title`-
+like). Active actions (Open / Edit) are reachable via plain
+click and right-click context menu, so the tooltip doesn't
+duplicate them. Lower visual noise on hover.
+
+---
+
+## v0.2.21 — Link interaction live verification (THIRD attempt)
 
 ### Why this exists
 

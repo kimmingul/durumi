@@ -110,47 +110,15 @@ function openUrl(url: string): void {
 }
 
 function buildTooltip(link: LinkAtPos): HTMLElement {
+  // v0.2.22 — minimal tooltip: show the title attribute if present, else
+  // fall back to the URL. No buttons (click = follow, right-click = menu
+  // covers Open / Copy URL / Edit). Single-line, browser-`title`-like.
   const dom = document.createElement('div');
   dom.className = 'cm-citation-tooltip cm-link-tooltip';
-  const urlLine = document.createElement('div');
-  urlLine.className = 'cm-link-tooltip-url';
-  urlLine.textContent = link.url || '(no URL)';
-  dom.appendChild(urlLine);
-  if (link.title) {
-    const titleLine = document.createElement('div');
-    titleLine.className = 'cm-link-tooltip-title';
-    titleLine.textContent = link.title;
-    dom.appendChild(titleLine);
-  }
-  const actions = document.createElement('div');
-  actions.className = 'cm-link-tooltip-actions';
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.className = 'cm-link-tooltip-btn';
-  open.textContent = 'Open';
-  open.setAttribute('data-testid', 'link-tooltip-open');
-  open.addEventListener('click', (e) => {
-    e.preventDefault();
-    openUrl(link.url);
-  });
-  const edit = document.createElement('button');
-  edit.type = 'button';
-  edit.className = 'cm-link-tooltip-btn';
-  edit.textContent = 'Edit';
-  edit.setAttribute('data-testid', 'link-tooltip-edit');
-  edit.addEventListener('click', (e) => {
-    e.preventDefault();
-    dispatchEditLink({
-      from: link.from,
-      to: link.to,
-      text: link.text,
-      url: link.url,
-      title: link.title,
-    });
-  });
-  actions.appendChild(open);
-  actions.appendChild(edit);
-  dom.appendChild(actions);
+  const line = document.createElement('div');
+  line.className = link.title ? 'cm-link-tooltip-title' : 'cm-link-tooltip-url';
+  line.textContent = link.title || link.url || '(no URL)';
+  dom.appendChild(line);
   return dom;
 }
 

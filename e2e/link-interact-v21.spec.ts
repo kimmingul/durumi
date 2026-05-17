@@ -57,10 +57,10 @@ test('v0.2.21 fix #1: hover renders a visible (on-screen) tooltip', async () => 
   expect(measured!.top).toBeLessThan(2000);
   expect(measured!.left).toBeGreaterThan(0);
 
-  // Tooltip content surface check: URL + Open + Edit are reachable.
+  // v0.2.22 — tooltip is single-line: title if present, else URL. No buttons.
   await expect(page.locator('.cm-link-tooltip-url')).toHaveText('https://example.com');
-  await expect(page.locator('[data-testid=link-tooltip-open]')).toBeVisible();
-  await expect(page.locator('[data-testid=link-tooltip-edit]')).toBeVisible();
+  await expect(page.locator('[data-testid=link-tooltip-open]')).toHaveCount(0);
+  await expect(page.locator('[data-testid=link-tooltip-edit]')).toHaveCount(0);
 
   await page.screenshot({ path: 'e2e/screenshots/v0.2-smoke/49-link-tooltip-visible.png' });
   await shutdownClean(app);

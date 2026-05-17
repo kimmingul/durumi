@@ -61,8 +61,9 @@ test('hover tooltip mounts over a real `.cm-md-link` (programmatic insert)', asy
   await page.waitForTimeout(400);
   const tooltipUrl = await page.locator('.cm-link-tooltip-url').textContent();
   expect(tooltipUrl).toBe('https://example.com');
-  await expect(page.locator('[data-testid=link-tooltip-open]')).toBeVisible();
-  await expect(page.locator('[data-testid=link-tooltip-edit]')).toBeVisible();
+  // v0.2.22 — tooltip is single-line: title if present, else URL. No buttons.
+  await expect(page.locator('[data-testid=link-tooltip-open]')).toHaveCount(0);
+  await expect(page.locator('[data-testid=link-tooltip-edit]')).toHaveCount(0);
 
   await shutdownClean(app);
 });
