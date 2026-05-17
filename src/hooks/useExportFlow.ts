@@ -80,7 +80,7 @@ export function useExportFlow(deps: {
         const { inlineImagesInHtml } = await import('../export/inlineImages');
         html = await inlineImagesInHtml(html, { docPath: filePath });
       }
-      await window.api.exportFile(html, format, suggested);
+      await window.api.exportFile(html, format, suggested, filePath);
     },
     [filePath, content, loadBibliography],
   );

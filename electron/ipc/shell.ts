@@ -7,6 +7,7 @@ import { openFolderDialog } from '../fs';
 import { saveImage } from '../images';
 import { getRepoStatus } from '../git';
 import { allowSessionPath, assertAllowedPath } from '../pathGuard';
+import { pickDefaultDir } from '../dialogDefaults';
 import { isExternalUrlAllowed, readMemoSidecar, writeMemoSidecar } from './_shared';
 
 /**
@@ -129,10 +130,15 @@ export function registerShellHandlers(): void {
     async (event, opts?: FilePickerOptions) => {
       const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
       if (!win) return null;
+      // v0.2.23 — seed the dialog with the user's workspace / recent
+      // dir so settings-panel pickers (style refs, templates, etc.)
+      // don't dump them in `~/Downloads`.
+      const defaultDir = await pickDefaultDir(null);
       const result = await dialog.showOpenDialog(win, {
         properties: ['openFile'],
         title: opts?.title,
         filters: opts?.filters,
+        ...(defaultDir ? { defaultPath: defaultDir } : {}),
       });
       if (result.canceled || result.filePaths.length === 0) return null;
       const picked = result.filePaths[0]!;

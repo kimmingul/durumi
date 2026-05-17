@@ -1,8 +1,9 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { promises as fs } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { FileResult } from '@shared/ipc-contract';
 import { addRecentFile, getPreferences } from '../preferences';
+import { pickDefaultDir } from '../dialogDefaults';
 import {
   listDirectory,
   unwatchAllRoots,
@@ -28,9 +29,11 @@ export function registerFilesHandlers(): void {
   ipcMain.handle('file:open', async (event): Promise<FileResult | null> => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return null;
+    const defaultDir = await pickDefaultDir(null);
     const result = await dialog.showOpenDialog(win, {
       filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
       properties: ['openFile'],
+      ...(defaultDir ? { defaultPath: defaultDir } : {}),
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const path = result.filePaths[0]!;
@@ -72,11 +75,24 @@ export function registerFilesHandlers(): void {
       : { ok: true as const };
   });
 
-  ipcMain.handle('file:saveAs', async (event, content: string, suggestedName?: string) => {
+  ipcMain.handle(
+    'file:saveAs',
+    async (
+      event,
+      content: string,
+      suggestedName?: string,
+      currentFilePath?: string | null,
+    ) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return null;
+    // v0.2.23 — Build an absolute `defaultPath` so the dialog opens in
+    // the doc's folder / the workspace / the most-recent location
+    // instead of being pulled to `~/Downloads` by macOS's relative-
+    // path fallback.
+    const filename = suggestedName ?? 'untitled.md';
+    const defaultDir = await pickDefaultDir(currentFilePath ?? null);
     const result = await dialog.showSaveDialog(win, {
-      defaultPath: suggestedName ?? 'untitled.md',
+      defaultPath: defaultDir ? join(defaultDir, filename) : filename,
       filters: [{ name: 'Markdown', extensions: ['md'] }],
     });
     if (result.canceled || !result.filePath) return null;
@@ -96,12 +112,22 @@ export function registerFilesHandlers(): void {
       : { path: result.filePath };
   });
 
-  ipcMain.handle('export:file', async (event, html: string, format: 'html' | 'pdf', suggestedName?: string) => {
+  ipcMain.handle(
+    'export:file',
+    async (
+      event,
+      html: string,
+      format: 'html' | 'pdf',
+      suggestedName?: string,
+      sourceFilePath?: string | null,
+    ) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
     if (!win) return null;
     const ext = format === 'pdf' ? 'pdf' : 'html';
+    const filename = suggestedName ?? `untitled.${ext}`;
+    const defaultDir = await pickDefaultDir(sourceFilePath ?? null);
     const result = await dialog.showSaveDialog(win, {
-      defaultPath: suggestedName ?? `untitled.${ext}`,
+      defaultPath: defaultDir ? join(defaultDir, filename) : filename,
       filters: [
         format === 'pdf'
           ? { name: 'PDF', extensions: ['pdf'] }

@@ -64,7 +64,7 @@ export function useFileMenuCommands(): FileMenuCommands {
       markClean();
       return true;
     }
-    const r = await window.api.fileSaveAs(content, 'untitled.md');
+    const r = await window.api.fileSaveAs(content, 'untitled.md', filePath);
     if (!r) return false;
     // v0.2.23 — same migration-aware sync as the file:save arm. Critical
     // here because the untitled → first save transition is exactly when
@@ -98,7 +98,9 @@ export function useFileMenuCommands(): FileMenuCommands {
   }, [maybeDiscard, setFile]);
 
   const doSaveAs = useCallback(async () => {
-    const r = await window.api.fileSaveAs(content, basenameOf(filePath));
+    // Pass `filePath` so main can seed the dialog with the doc's
+    // current folder; without it macOS dumps the user in `~/Downloads`.
+    const r = await window.api.fileSaveAs(content, basenameOf(filePath), filePath);
     if (r) {
       // v0.2.23 — `r.content` is set when main rewrote pending-asset
       // image refs into the doc's `assets/` dir during the save.

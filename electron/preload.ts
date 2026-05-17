@@ -6,9 +6,10 @@ const api: IpcApi = {
   fileOpen: () => ipcRenderer.invoke('file:open'),
   fileOpenPath: (path) => ipcRenderer.invoke('file:openPath', path),
   fileSave: (path, content) => ipcRenderer.invoke('file:save', path, content),
-  fileSaveAs: (content, suggestedName) => ipcRenderer.invoke('file:saveAs', content, suggestedName),
-  exportFile: (html, format, suggestedName) =>
-    ipcRenderer.invoke('export:file', html, format, suggestedName),
+  fileSaveAs: (content, suggestedName, currentFilePath) =>
+    ipcRenderer.invoke('file:saveAs', content, suggestedName, currentFilePath),
+  exportFile: (html, format, suggestedName, sourceFilePath) =>
+    ipcRenderer.invoke('export:file', html, format, suggestedName, sourceFilePath),
   confirmDiscard: (filename) => ipcRenderer.invoke('dialog:confirmDiscard', filename),
   prefsGet: () => ipcRenderer.invoke('prefs:get'),
   prefsSet: (patch) => ipcRenderer.invoke('prefs:set', patch),

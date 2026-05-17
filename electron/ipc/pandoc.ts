@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { join } from 'node:path';
 import { getPreferences, setPreferences } from '../preferences';
 import {
   clearPandocCache,
@@ -10,6 +11,7 @@ import {
 } from '../pandoc';
 import { findBibliographyFor } from '../bibliography';
 import { allowSessionPath, assertAllowedPath } from '../pathGuard';
+import { pickDefaultDir } from '../dialogDefaults';
 
 export function registerPandocHandlers(): void {
   ipcMain.handle('pandoc:detect', async () => {
@@ -56,9 +58,11 @@ export function registerPandocHandlers(): void {
     const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0];
     if (!win) return null;
     const filterName = format === 'docx' ? 'Word' : format === 'odt' ? 'OpenDocument' : 'RTF';
+    const defaultDir = await pickDefaultDir(null);
     const dialogResult = await dialog.showOpenDialog(win, {
       filters: [{ name: filterName, extensions: [format] }],
       properties: ['openFile'],
+      ...(defaultDir ? { defaultPath: defaultDir } : {}),
     });
     if (dialogResult.canceled || dialogResult.filePaths.length === 0) return null;
     const inputPath = dialogResult.filePaths[0]!;
@@ -89,8 +93,10 @@ export function registerPandocHandlers(): void {
       if (!win) return null;
       const ext = format === 'docx' ? 'docx' : 'tex';
       const filterName = format === 'docx' ? 'Word' : 'LaTeX';
+      const filename = suggestedName ?? `untitled.${ext}`;
+      const defaultDir = await pickDefaultDir(sourceFilePath ?? null);
       const dialogResult = await dialog.showSaveDialog(win, {
-        defaultPath: suggestedName ?? `untitled.${ext}`,
+        defaultPath: defaultDir ? join(defaultDir, filename) : filename,
         filters: [{ name: filterName, extensions: [ext] }],
       });
       if (dialogResult.canceled || !dialogResult.filePath) return null;

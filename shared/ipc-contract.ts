@@ -331,16 +331,23 @@ export interface IpcApi {
    * renderer can sync the in-memory buffer to what's now on disk; when
    * no rewrite happened the `content` field is omitted to keep the
    * common path cheap.
+   *
+   * `currentFilePath` (saveAs / export) seeds the dialog's defaultPath
+   * — without it, macOS opens the dialog in `~/Downloads` instead of
+   * the doc's folder or the active workspace. See
+   * `electron/dialogDefaults.ts` for the priority chain.
    */
   fileSave: (path: string, content: string) => Promise<{ ok: true; content?: string }>;
   fileSaveAs: (
     content: string,
     suggestedName?: string,
+    currentFilePath?: string | null,
   ) => Promise<{ path: string; content?: string } | null>;
   exportFile: (
     html: string,
     format: 'html' | 'pdf',
     suggestedName?: string,
+    sourceFilePath?: string | null,
   ) => Promise<{ path: string } | null>;
   confirmDiscard: (filename: string) => Promise<DiscardChoice>;
   prefsGet: () => Promise<Preferences>;
