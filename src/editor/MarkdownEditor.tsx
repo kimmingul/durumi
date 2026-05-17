@@ -24,6 +24,7 @@ import { emojiAutocomplete } from './keymap/emojiAutocomplete';
 import { viewModes } from './viewModes';
 import { makeTheme } from './theme';
 import { handlePaste, handleDrop } from './imagePaste';
+import { atomicMediaExtension } from './atomicMedia';
 import { citationAutocomplete } from './autocomplete/citationAutocomplete';
 import { citationHoverTooltip } from './decorations/citationHover';
 import { defaultGhostTextRefs, ghostTextExtension } from './ai/ghostText';
@@ -100,6 +101,12 @@ export function MarkdownEditor({
         editModeStateExtension(),
         docPathStateExtension(),
         editModeCompartmentRef.current.of(decorationsForMode(initialEditModeRef.current)),
+        // v0.2.23 — image/link widgets must behave atomically: arrow keys
+        // skip across them, clicks snap to edges, and a single Backspace
+        // / Delete at a widget edge removes the entire `![](…)` /
+        // `[label](url)` instead of nicking one source char (which would
+        // break the markdown and reveal raw text). See atomicMedia.ts.
+        atomicMediaExtension(),
         wysiwygEscapeFilter(),
         citationAutocomplete(),
         citationHoverTooltip(),
