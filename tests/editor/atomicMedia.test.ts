@@ -39,17 +39,6 @@ function stateFor(doc: string, cursor = 0): EditorState {
   });
 }
 
-function viewFor(doc: string, cursor = 0): EditorView {
-  const view = new EditorView({
-    state: stateFor(doc, cursor),
-    parent: document.body.appendChild(document.createElement('div')),
-  });
-  // Default mode is wysiwyg (see editMode.ts initial value) — explicit
-  // dispatch ensures the StateField is populated before our keymap runs.
-  view.dispatch({ effects: setEditMode.of('wysiwyg') });
-  return view;
-}
-
 /** Tick the user-active gate so `hasActiveLine` returns true. */
 function armUserActive(view: EditorView): void {
   view.dispatch({
