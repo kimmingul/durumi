@@ -1034,6 +1034,15 @@ body {
   font-size: 12px;
   color: inherit;
 }
+/* v0.2.23 — modifier-key hint line. Plain click no longer opens the URL
+   (it positions the caret instead), so the tooltip carries a quiet
+   secondary line telling the user how to open. Muted so it stays
+   subordinate to the title/URL line above. */
+.cm-link-tooltip-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--fg-muted, rgba(127, 127, 127, 0.85));
+}
 
 /* v0.2.20 — right-click popup over a `.cm-md-link`. Borrows the chrome
    from `.cm-context-menu` (sidebar file-tree menu) so the look stays

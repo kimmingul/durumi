@@ -66,16 +66,18 @@ test('v0.2.21 fix #1: hover renders a visible (on-screen) tooltip', async () => 
   await shutdownClean(app);
 });
 
-test('v0.2.21 fix #2: right-click does NOT open the browser', async () => {
+test('v0.2.23: click semantics — plain left = caret only, ⌘+Click = open, right = menu', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
   await page.waitForSelector('.cm-content');
 
   // Intercept shell:openExternal in main so we can count actual calls.
-  // Pre-v0.2.21 the linkClickHandler ran on every mousedown including
-  // button=2, so a right-click on a `.cm-md-link` fired
-  // shell:openExternal AND popped the renderer context menu. With the
-  // v0.2.21 `event.button === 0` guard the IPC must NOT be called.
+  // Three distinct click flavours land here, each with a different
+  // expectation:
+  //   - right-click: never opens, pops the renderer context menu
+  //   - plain left: never opens (v0.2.23 — used to open pre-fix, now
+  //     positions the caret so users can edit the label)
+  //   - ⌘+Click / Ctrl+Click: opens
   await app.evaluate(({ ipcMain }) => {
     const g = global as unknown as { __shellOpenCalls?: string[] };
     g.__shellOpenCalls = [];
@@ -96,24 +98,37 @@ test('v0.2.21 fix #2: right-click does NOT open the browser', async () => {
   });
   await page.keyboard.press('End');
 
+  // Right-click → renderer context menu, no browser.
   await page.locator('.cm-md-link').first().click({ button: 'right' });
   await page.waitForTimeout(200);
-
-  // Context menu visible (existing v0.2.20 behaviour).
   await expect(page.locator('[data-testid=link-context-menu]')).toBeVisible();
-
-  // The key v0.2.21 assertion: browser NOT opened.
-  const calls = await app.evaluate(() => (global as unknown as { __shellOpenCalls?: string[] }).__shellOpenCalls ?? []);
-  expect(calls).toEqual([]);
-
+  expect(
+    await app.evaluate(() => (global as unknown as { __shellOpenCalls?: string[] }).__shellOpenCalls ?? []),
+  ).toEqual([]);
   await page.screenshot({ path: 'e2e/screenshots/v0.2-smoke/50-link-rightclick-no-browser.png' });
+  await page.keyboard.press('Escape');
 
-  // Sanity: left-click on the link DOES still open the browser.
-  await page.keyboard.press('Escape'); // dismiss any menu
+  // v0.2.23 — plain left-click MUST NOT open. This is the user-reported
+  // regression that drove the modifier-gating change.
   await page.locator('.cm-md-link').first().click({ button: 'left' });
   await page.waitForTimeout(200);
-  const callsAfterLeft = await app.evaluate(() => (global as unknown as { __shellOpenCalls?: string[] }).__shellOpenCalls ?? []);
-  expect(callsAfterLeft).toEqual(['https://example.com']);
+  const callsAfterPlain = await app.evaluate(
+    () => (global as unknown as { __shellOpenCalls?: string[] }).__shellOpenCalls ?? [],
+  );
+  expect(callsAfterPlain).toEqual([]);
+
+  // v0.2.23 — ⌘+Click / Ctrl+Click DOES open. `ControlOrMeta` auto-picks
+  // ⌘ on macOS and Ctrl on Win/Linux, matching the runtime check in
+  // `linkClickHandler`.
+  await page.locator('.cm-md-link').first().click({
+    button: 'left',
+    modifiers: ['ControlOrMeta'],
+  });
+  await page.waitForTimeout(200);
+  const callsAfterMod = await app.evaluate(
+    () => (global as unknown as { __shellOpenCalls?: string[] }).__shellOpenCalls ?? [],
+  );
+  expect(callsAfterMod).toEqual(['https://example.com']);
 
   await shutdownClean(app);
 });
