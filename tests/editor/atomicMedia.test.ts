@@ -109,6 +109,19 @@ describe('findMediaAtEdge — Link', () => {
     expect(target).toEqual({ from: 0, to: doc.length });
   });
 
+  it('Backspace at the END of the visible label (just before hidden ]) fires — REGRESSION (v0.2.23)', () => {
+    // The user-visible regression that drove this fix: in WYSIWYG mode
+    // the hidden `](url)` suffix is zero-width on screen, so clicking
+    // "right after the rendered link" snaps the caret to closeBracket.
+    // Without this case, default Backspace nicked the last label char
+    // and left a broken `[labe](url)` that re-exposed as raw markdown.
+    const doc = '[label](https://e.com)';
+    const closeBracket = doc.indexOf(']');
+    const state = stateFor(doc, closeBracket);
+    const target = findMediaAtEdge(state, closeBracket, 'backward');
+    expect(target).toEqual({ from: 0, to: doc.length });
+  });
+
   it('Backspace in the MIDDLE of the label does not fire (normal edit)', () => {
     // Cursor between 'la' and 'bel'. User is editing the label; do not
     // collapse to a whole-link delete.

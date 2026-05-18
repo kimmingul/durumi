@@ -1,6 +1,11 @@
 import { syntaxTree } from '@codemirror/language';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
-import { type EditorState, type Extension, RangeSetBuilder } from '@codemirror/state';
+import {
+  type EditorState,
+  type Extension,
+  Prec,
+  RangeSetBuilder,
+} from '@codemirror/state';
 import type { SyntaxNode, SyntaxNodeRef } from '@lezer/common';
 import { shouldHideMarker } from './decorations/activeLine';
 import { getActiveLineRange, hasActiveLine } from './decorations/activeLine';
@@ -180,11 +185,24 @@ function findMediaAtEdge(
         const active = lineActiveFor(state, node.from, node.to);
         if (!shouldHideMarker(state, active)) return;
         if (direction === 'backward') {
-          // Cursor at the right edge of the whole link OR at the start
-          // of the label (i.e. just after the hidden `[`). Either way,
-          // the user's next deletion would land inside the hidden part
-          // and break the markdown — collapse to a whole-node delete.
-          if (pos === node.to || pos === bounds.openBracket + 1) {
+          // Three positions trigger a whole-link delete on Backspace:
+          //   • `node.to` — cursor past the closing `)`.
+          //   • `bounds.closeBracket` — cursor at the END of the visible
+          //     label, i.e. exactly where CM6 snaps a click placed
+          //     "right after the rendered link" (the hidden `](url)`
+          //     suffix is zero-width on screen, so this position and
+          //     `node.to` collapse to the same visual location).
+          //     Without this case, a click + Backspace on a link
+          //     silently nicked the label's last character — exactly
+          //     what users on v0.2.23 hit before the fix.
+          //   • `bounds.openBracket + 1` — cursor at the START of the
+          //     visible label. Default Backspace here would delete the
+          //     hidden `[` and break the markdown.
+          if (
+            pos === node.to ||
+            pos === bounds.closeBracket ||
+            pos === bounds.openBracket + 1
+          ) {
             result = { from: node.from, to: node.to };
           }
         } else if (direction === 'forward') {
@@ -228,14 +246,23 @@ function deleteMediaForward(view: EditorView): boolean {
 export function atomicMediaExtension(): Extension {
   return [
     EditorView.atomicRanges.of(buildAtomicRanges),
-    // High-priority keymap so we run BEFORE the default Backspace/Delete
-    // from `@codemirror/commands`. Returning `false` falls through to the
+    // `Prec.high` is REQUIRED — without it the default Backspace from
+    // `@codemirror/commands` (registered earlier in MarkdownEditor) runs
+    // first, always returns true, and our handler never gets a chance.
+    // For Image nodes that "accidentally" worked because CM6's
+    // `skipAtomic` extends the default-delete range across the
+    // node-wide atomicRange, but Links keep only the hidden brackets
+    // atomic (so the label remains editable) and the default-delete +
+    // skipAtomic combo can't reach across the visible label — only this
+    // explicit handler can. Returning `false` falls through to the
     // default when the caret isn't at a media edge, so non-widget edits
     // are unaffected.
-    keymap.of([
-      { key: 'Backspace', run: deleteMediaBackward },
-      { key: 'Delete', run: deleteMediaForward },
-    ]),
+    Prec.high(
+      keymap.of([
+        { key: 'Backspace', run: deleteMediaBackward },
+        { key: 'Delete', run: deleteMediaForward },
+      ]),
+    ),
   ];
 }
 
