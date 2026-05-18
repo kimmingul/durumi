@@ -91,22 +91,84 @@ describe('linkClickHandler', () => {
     };
   });
 
-  it('calls shellOpenExternal when a .cm-md-link span is clicked', () => {
+  it('v0.2.23: plain left-click on a .cm-md-link does NOT open (positions caret instead)', () => {
+    // Pre-v0.2.23 plain click opened the URL. After the v0.2.23 review
+    // users wanted plain click to position the caret so they can edit
+    // the label without being yanked into a browser. shellOpenExternal
+    // is now gated on Cmd/Ctrl.
     const doc = 'see [click](https://example.com) end';
     const view = setup(doc, 0);
     const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
     expect(linkEl).not.toBeNull();
-    // jsdom doesn't lay things out, so posAtCoords would fail; bypass by
-    // directly calling the handler via a synthetic event whose target the
-    // mousedown handler can closest('.cm-md-link') against. We need to also
-    // make posAtCoords resolve — stub it.
     const origPosAtCoords = view.posAtCoords.bind(view);
     view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
     const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     Object.defineProperty(ev, 'target', { value: linkEl });
     view.contentDOM.dispatchEvent(ev);
-    expect(window.api.shellOpenExternal).toHaveBeenCalledWith('https://example.com');
+    expect(window.api.shellOpenExternal).not.toHaveBeenCalled();
     view.posAtCoords = origPosAtCoords;
+    view.destroy();
+  });
+
+  it('v0.2.23: ⌘+Click on a .cm-md-link opens the URL', () => {
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    expect(linkEl).not.toBeNull();
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      metaKey: true,
+    });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    expect(window.api.shellOpenExternal).toHaveBeenCalledWith('https://example.com');
+    view.destroy();
+  });
+
+  it('v0.2.23: Ctrl+Click on a .cm-md-link opens the URL (Win/Linux modifier)', () => {
+    // macOS users press ⌘ (metaKey); Win/Linux users press Ctrl
+    // (ctrlKey). Both should open. On macOS Ctrl+Click is an OS-level
+    // right-click (button=2) so the button guard above already excludes
+    // that path — exercising `ctrlKey` here with `button=0` is the
+    // Win/Linux scenario.
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    expect(linkEl).not.toBeNull();
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      ctrlKey: true,
+    });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    expect(window.api.shellOpenExternal).toHaveBeenCalledWith('https://example.com');
+    view.destroy();
+  });
+
+  it('v0.2.23: ⌘+Shift+Click does NOT open (Shift is a selection modifier)', () => {
+    // Shift / Alt are paired with Cmd in some editor shortcuts (e.g.
+    // "Add cursor above"). Treat them as "user is doing something other
+    // than navigation" and bail.
+    const doc = 'see [click](https://example.com) end';
+    const view = setup(doc, 0);
+    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
+    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
+    const ev = new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      metaKey: true,
+      shiftKey: true,
+    });
+    Object.defineProperty(ev, 'target', { value: linkEl });
+    view.contentDOM.dispatchEvent(ev);
+    expect(window.api.shellOpenExternal).not.toHaveBeenCalled();
     view.destroy();
   });
 
@@ -164,24 +226,6 @@ describe('linkClickHandler', () => {
     view.destroy();
   });
 
-  it('v0.2.21: does NOT open browser when a MODIFIER key is held (Cmd/Ctrl-click)', () => {
-    // Cmd/Ctrl-click in editors typically means "add cursor" or
-    // "follow-with-modifier"; either way it should not navigate.
-    const doc = 'see [click](https://example.com) end';
-    const view = setup(doc, 0);
-    const linkEl = view.dom.querySelector('.cm-md-link') as HTMLElement | null;
-    view.posAtCoords = vi.fn(() => doc.indexOf('click') + 1);
-    const ev = new MouseEvent('mousedown', {
-      bubbles: true,
-      cancelable: true,
-      button: 0,
-      metaKey: true,
-    });
-    Object.defineProperty(ev, 'target', { value: linkEl });
-    view.contentDOM.dispatchEvent(ev);
-    expect(window.api.shellOpenExternal).not.toHaveBeenCalled();
-    view.destroy();
-  });
 });
 
 describe('linkHoverTooltip + dispatchEditLink', () => {

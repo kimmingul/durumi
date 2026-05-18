@@ -109,16 +109,33 @@ function openUrl(url: string): void {
   void window.api.shellOpenExternal(url);
 }
 
+/**
+ * Modifier-key label for the tooltip hint. macOS users see "⌘+Click",
+ * everyone else sees "Ctrl+Click". navigator.platform is the simplest
+ * available signal — `userAgentData.platform` is still partial in
+ * Electron and not worth the polyfill.
+ */
+const OPEN_HINT_KEY =
+  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+    ? '⌘+Click'
+    : 'Ctrl+Click';
+
 function buildTooltip(link: LinkAtPos): HTMLElement {
-  // v0.2.22 — minimal tooltip: show the title attribute if present, else
-  // fall back to the URL. No buttons (click = follow, right-click = menu
-  // covers Open / Copy URL / Edit). Single-line, browser-`title`-like.
+  // v0.2.23 — two lines: the existing browser-`title`-like primary
+  // (title if present, else URL) plus a faint discoverability hint
+  // describing the new modifier-gated open shortcut. Hint is critical
+  // because plain click no longer opens — without it users would think
+  // the link is broken.
   const dom = document.createElement('div');
   dom.className = 'cm-citation-tooltip cm-link-tooltip';
   const line = document.createElement('div');
   line.className = link.title ? 'cm-link-tooltip-title' : 'cm-link-tooltip-url';
   line.textContent = link.title || link.url || '(no URL)';
   dom.appendChild(line);
+  const hint = document.createElement('div');
+  hint.className = 'cm-link-tooltip-hint';
+  hint.textContent = `${OPEN_HINT_KEY} to open`;
+  dom.appendChild(hint);
   return dom;
 }
 
@@ -157,31 +174,39 @@ export function linkHoverTooltip(): Extension {
 }
 
 /**
- * Plain click on a .cm-md-link span calls shell.openExternal. The handler
- * self-gates on the click target so editor clicks outside link spans
- * behave normally (placing the caret, starting a drag, etc.).
+ * Modifier-gated link follow: ⌘+Click (macOS) / Ctrl+Click (Win/Linux)
+ * on a `.cm-md-link` span calls shell.openExternal. Plain left-click
+ * positions the caret (the default CodeMirror behaviour), so users can
+ * edit a link's label without being yanked into a browser tab. The
+ * right-click context menu still has "Open link" as the discoverable
+ * alternative.
  *
- * The .cm-md-link class is ONLY emitted by the WYSIWYG-aware
- * linkDecoration, so this single check naturally gates "plain click
- * follows" to Document mode without needing the handler to know about
- * edit modes.
+ * Why ⌘/Ctrl+Click and not plain click:
+ *   - v0.2.19 shipped plain-click-follows, which matched Typora. After
+ *     a v0.2.23 review users reported wanting to position the caret in
+ *     a link to edit its label, which forced them onto keyboard arrows
+ *     since every click navigated to the browser.
+ *   - ⌘+Click is the de-facto standard in pro editors (VS Code, Word,
+ *     Google Docs, Pandoc-flavoured Typora) and preserves the fast
+ *     "open without going to a menu" path.
+ *   - On macOS, Ctrl+Click is an OS-level right-click (event.button
+ *     === 2), so the `button === 0` guard below excludes that path
+ *     automatically — accepting `event.ctrlKey` here is harmless on
+ *     macOS and exactly what Win/Linux users expect.
+ *
+ * The `.cm-md-link` class gate keeps the handler dormant on raw
+ * Markdown / Live mode (where the linkDecoration doesn't emit the
+ * class).
  */
 export function linkClickHandler(): Extension {
   return EditorView.domEventHandlers({
     mousedown(event, view) {
-      // v0.2.21 — gate on LEFT button only. Pre-v0.2.21 this handler ran
-      // for every mousedown including button=2 (right) and button=1
-      // (middle), so a right-click on a `.cm-md-link` BOTH opened the
-      // browser (via shellOpenExternal) AND popped the renderer context
-      // menu added in v0.2.20 — confirmed in real Electron via an IPC
-      // intercept. Users reported "right-click opens browser, same as
-      // left". This guard keeps the WYSIWYG plain-click-follows-link UX
-      // (left only) and lets `linkContextMenu()`'s `contextmenu` handler
-      // own the right-click path. Modifier keys (Cmd/Ctrl) also bail —
-      // those modify selection / drag behaviour in CodeMirror and should
-      // never trigger navigation.
       if (event.button !== 0) return false;
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+      // ⌘ on macOS / Ctrl on Win/Linux opens the link; anything else
+      // (plain click, Shift, Alt) falls through to CodeMirror's normal
+      // caret-placement behaviour.
+      if (!(event.metaKey || event.ctrlKey)) return false;
+      if (event.altKey || event.shiftKey) return false;
       const target = event.target as HTMLElement | null;
       if (!target) return false;
       const linkEl = target.closest('.cm-md-link');

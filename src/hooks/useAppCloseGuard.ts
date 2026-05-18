@@ -27,7 +27,7 @@ export function useAppCloseGuard(): void {
           useAppStore.getState().markClean();
           return true;
         }
-        const r = await window.api.fileSaveAs(state.content, 'untitled.md');
+        const r = await window.api.fileSaveAs(state.content, 'untitled.md', state.filePath);
         if (!r) return false;
         useAppStore.getState().setFile(r.path, state.content);
         useAppStore.getState().markClean();

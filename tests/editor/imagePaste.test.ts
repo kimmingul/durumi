@@ -2,12 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { handlePaste, handleDrop } from '../../src/editor/imagePaste';
-import {
-  clearPendingImages,
-  pendingImageCount,
-  runPendingImageInserts,
-} from '../../src/editor/pendingImagePaste';
-import { useToastStore } from '../../src/store/toastStore';
 
 function viewWith(doc: string, anchor: number, head = anchor): EditorView {
   return new EditorView({
@@ -44,14 +38,10 @@ beforeEach(() => {
     saveImage: vi.fn(async () => ({ relPath: 'assets/img-x.png' })),
   };
   (window as unknown as { api: FakeApi }).api = fakeApi;
-  clearPendingImages();
-  useToastStore.getState().clear();
 });
 
 afterEach(() => {
   (window as unknown as { api?: unknown }).api = originalApi;
-  clearPendingImages();
-  useToastStore.getState().clear();
 });
 
 describe('handlePaste', () => {
@@ -99,9 +89,17 @@ describe('handlePaste', () => {
     view.destroy();
   });
 
-  it('queues a pending insert + shows a Save-as toast when the doc is unsaved', async () => {
+  it('inserts pending path (percent-encoded) when buffer is unsaved (v0.2.23 pending-assets flow)', async () => {
+    // v0.2.23 — saveImage no longer errors with `no-file`. It writes the
+    // bytes into the per-session pending-assets dir and returns the
+    // absolute path. The renderer percent-encodes the path so CommonMark
+    // accepts the image link (macOS userData lives under
+    // `Library/Application Support/…` — bare spaces would make the parser
+    // skip the node and the user would see literal markdown).
+    // `resolveImageSrc` mirrors the decode.
     const view = viewWith('hello', 5);
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'no-file' });
+    const pendingAbs = '/Users/x/Library/Application Support/durumi/pending-assets/s-1/img-1.png';
+    fakeApi.saveImage.mockResolvedValueOnce({ absPath: pendingAbs });
     const file = makePngFile();
     const event = {
       clipboardData: {
@@ -112,13 +110,10 @@ describe('handlePaste', () => {
 
     handlePaste(event, view, { current: null });
     await flush();
-    // The doc didn't change — bytes were buffered for retry instead.
-    expect(view.state.doc.toString()).toBe('hello');
-    expect(pendingImageCount()).toBe(1);
-    const toasts = useToastStore.getState().toasts;
-    expect(toasts).toHaveLength(1);
-    expect(toasts[0]!.action).not.toBeNull();
-    expect(toasts[0]!.action!.label.length).toBeGreaterThan(0);
+    expect(view.state.doc.toString()).toBe(`hello![](${encodeURI(pendingAbs)})`);
+    // Sanity: the encoded form must not contain unwrapped spaces — that's
+    // exactly the parser-killer this regression test pins.
+    expect(view.state.doc.toString()).not.toMatch(/!\]\([^)]* [^)]*\)/);
     view.destroy();
   });
 
@@ -133,186 +128,6 @@ describe('handlePaste', () => {
     } as unknown as ClipboardEvent;
     expect(handlePaste(event, view, { current: '/foo/bar.md' })).toBe(false);
     expect(fakeApi.saveImage).not.toHaveBeenCalled();
-    view.destroy();
-  });
-});
-
-describe('runPendingImageInserts (v0.2.11 retry-after-save flow)', () => {
-  it('drains the queue and inserts each buffered image once a path exists', async () => {
-    const view = viewWith('hello', 5);
-    // Simulate two pastes into an untitled doc.
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'no-file' });
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'no-file' });
-    const fileA = makePngFile('a.png');
-    const fileB = makePngFile('b.png');
-    handlePaste(
-      {
-        clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => fileA }] },
-        preventDefault: vi.fn(),
-      } as unknown as ClipboardEvent,
-      view,
-      { current: null },
-    );
-    handlePaste(
-      {
-        clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => fileB }] },
-        preventDefault: vi.fn(),
-      } as unknown as ClipboardEvent,
-      view,
-      { current: null },
-    );
-    await flush();
-    expect(pendingImageCount()).toBe(2);
-
-    // Now the user has saved; saveImage starts to succeed.
-    fakeApi.saveImage.mockReset();
-    fakeApi.saveImage
-      .mockResolvedValueOnce({ relPath: 'assets/img-a.png' })
-      .mockResolvedValueOnce({ relPath: 'assets/img-b.png' });
-
-    const inserted = await runPendingImageInserts('/foo/bar.md');
-    expect(inserted).toBe(2);
-    expect(pendingImageCount()).toBe(0);
-    const doc = view.state.doc.toString();
-    expect(doc).toContain('![](assets/img-a.png)');
-    expect(doc).toContain('![](assets/img-b.png)');
-    view.destroy();
-  });
-
-  it('returns 0 when the queue is empty', async () => {
-    expect(await runPendingImageInserts('/foo/bar.md')).toBe(0);
-  });
-
-  it('bug repro: pre-fix App.tsx effect would have inserted queued bytes into an open-target file', async () => {
-    // Bug guard: pre-fix, the App.tsx drain effect was
-    //   useEffect(() => { if (!filePath) return; runPendingImageInserts(filePath); }, [filePath])
-    // which ran on EVERY filePath transition — including File > Open
-    // / sidebar click / quick-open — silently inserting queued bytes
-    // into a freshly opened, unrelated file. This test reproduces that
-    // exact scenario at the queue level, then asserts the FIX (a
-    // `pendingDrainArmed` gate that defaults to false unless armed by
-    // a save-driven path, plus a `clearPendingImages()` call on open
-    // paths) leaves the unrelated buffer untouched.
-    const view = viewWith('unrelated content', 17);
-    const originalDoc = view.state.doc.toString();
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'no-file' });
-    handlePaste(
-      {
-        clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => makePngFile() }] },
-        preventDefault: vi.fn(),
-      } as unknown as ClipboardEvent,
-      view,
-      { current: null },
-    );
-    await flush();
-    expect(pendingImageCount()).toBe(1);
-
-    fakeApi.saveImage.mockReset();
-    fakeApi.saveImage.mockResolvedValue({ relPath: 'assets/leak.png' });
-
-    // === Fix's open-path behavior: clear + leave gate disarmed. ===
-    const pendingDrainArmed = { current: false };
-    clearPendingImages();
-    pendingDrainArmed.current = false;
-
-    // === Fix's drain effect (gated). ===
-    const fakeFilePath = '/unrelated/file.md';
-    if (fakeFilePath && pendingDrainArmed.current) {
-      pendingDrainArmed.current = false;
-      await runPendingImageInserts(fakeFilePath);
-    }
-
-    // Pre-fix: saveImage would have been called and the doc would
-    // contain `![](assets/leak.png)`. Post-fix: untouched.
-    expect(fakeApi.saveImage).not.toHaveBeenCalled();
-    expect(view.state.doc.toString()).toBe(originalDoc);
-    expect(view.state.doc.toString()).not.toContain('leak.png');
-    view.destroy();
-  });
-
-  it('verifies the save-driven path still flushes (positive case for the gate)', async () => {
-    const view = viewWith('hello', 5);
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'no-file' });
-    handlePaste(
-      {
-        clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => makePngFile() }] },
-        preventDefault: vi.fn(),
-      } as unknown as ClipboardEvent,
-      view,
-      { current: null },
-    );
-    await flush();
-    expect(pendingImageCount()).toBe(1);
-
-    fakeApi.saveImage.mockReset();
-    fakeApi.saveImage.mockResolvedValueOnce({ relPath: 'assets/saved.png' });
-
-    // Save-driven entry: gate is armed BEFORE the filePath transition.
-    const pendingDrainArmed = { current: true };
-    const fakeFilePath = '/saved/file.md';
-    if (fakeFilePath && pendingDrainArmed.current) {
-      pendingDrainArmed.current = false;
-      await runPendingImageInserts(fakeFilePath);
-    }
-    expect(view.state.doc.toString()).toContain('![](assets/saved.png)');
-    view.destroy();
-  });
-
-  it('drops queued bytes when the buffer is replaced via open (no silent insert into wrong doc)', async () => {
-    // Bug guard: pre-fix, App.tsx flushed the queue on ANY filePath
-    // transition (including File > Open / sidebar click / quick-open),
-    // which silently mutated an unrelated file. The new App.tsx wires
-    // open paths to clearPendingImages() before the transition. This
-    // test pins that contract at the queue-module boundary: once the
-    // queue is cleared, even a "fresh path" call cannot leak old bytes.
-    const view = viewWith('unrelated content', 17);
-    const originalDoc = view.state.doc.toString();
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'no-file' });
-    handlePaste(
-      {
-        clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => makePngFile() }] },
-        preventDefault: vi.fn(),
-      } as unknown as ClipboardEvent,
-      view,
-      { current: null },
-    );
-    await flush();
-    expect(pendingImageCount()).toBe(1);
-
-    // Simulate the open-path bypass: queue is cleared BEFORE the new
-    // file's path becomes active.
-    clearPendingImages();
-    expect(pendingImageCount()).toBe(0);
-
-    // Now the unrelated file's path becomes active — saveImage would
-    // succeed if anything were left in the queue. Drain must be a no-op.
-    fakeApi.saveImage.mockReset();
-    fakeApi.saveImage.mockResolvedValue({ relPath: 'assets/should-not-insert.png' });
-    const inserted = await runPendingImageInserts('/unrelated/file.md');
-    expect(inserted).toBe(0);
-    expect(fakeApi.saveImage).not.toHaveBeenCalled();
-    // The unrelated buffer is untouched.
-    expect(view.state.doc.toString()).toBe(originalDoc);
-    view.destroy();
-  });
-
-  it('skips entries whose saveImage retry still errors', async () => {
-    const view = viewWith('x', 1);
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'no-file' });
-    handlePaste(
-      {
-        clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => makePngFile() }] },
-        preventDefault: vi.fn(),
-      } as unknown as ClipboardEvent,
-      view,
-      { current: null },
-    );
-    await flush();
-    fakeApi.saveImage.mockReset();
-    fakeApi.saveImage.mockResolvedValueOnce({ error: 'still-broken' });
-    const inserted = await runPendingImageInserts('/foo/bar.md');
-    expect(inserted).toBe(0);
-    expect(view.state.doc.toString()).toBe('x');
     view.destroy();
   });
 });
@@ -342,6 +157,22 @@ describe('handleDrop', () => {
     await flush();
     expect(fakeApi.saveImage).toHaveBeenCalledTimes(1);
     expect(view.state.doc.toString()).toBe('hi![](assets/img-x.png)');
+    view.destroy();
+  });
+
+  it('drop on unsaved buffer inserts pending absolute path (percent-encoded)', async () => {
+    const view = viewWith('hi', 2);
+    // Include a space to mimic real macOS userData paths and pin the
+    // encode-at-insert contract.
+    const pendingAbs = '/Users/x/Library/Application Support/durumi/pending-assets/s-1/img-2.png';
+    fakeApi.saveImage.mockResolvedValueOnce({ absPath: pendingAbs });
+    const event = {
+      dataTransfer: { files: [makePngFile()] },
+      preventDefault: vi.fn(),
+    } as unknown as DragEvent;
+    handleDrop(event, view, { current: null });
+    await flush();
+    expect(view.state.doc.toString()).toBe(`hi![](${encodeURI(pendingAbs)})`);
     view.destroy();
   });
 });

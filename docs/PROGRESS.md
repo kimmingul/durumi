@@ -1,6 +1,145 @@
 # Durumi — Progress
 
-## v0.2.22 (current) — Hover tooltip simplified (title-or-URL only)
+## v0.2.23 (current) — Pending-assets pipeline + smart dialog defaults + atomic media + ⌘+Click link follow
+
+User-reported the v0.2.22 image-insert flow blocked the user in
+untitled documents with "Save the document first to use image paste."
+They wanted images to render immediately, with the on-disk asset
+clean-up happening at save time. The rewrite snowballed into four
+distinct UX fixes the user surfaced through a sequence of real-UI
+verifications — each one caught a gap the prior cycle of unit + e2e
+tests had missed.
+
+### Feature 1 — Pending-assets pipeline (immediate image rendering)
+
+Untitled buffers now accept image inserts/pastes/drops on the spot.
+Bytes land in `<userData>/pending-assets/<session-id>/img-*.<ext>`,
+the markdown carries the absolute path, and the existing
+`durumi-asset://` protocol handler serves the bytes so the widget
+renders immediately. On the first subsequent save,
+`migratePendingInContent` moves each pending file into
+`<docDir>/assets/` and rewrites the markdown link to the clean
+relative form — so the saved doc is portable (zip / git commit
+`<doc>.md + assets/`) exactly like docs that were never untitled.
+Stale session dirs from crashed runs are swept on app start.
+
+Files: new `electron/pendingAssets.ts`, `electron/images.ts`
+(saveImage returns `{relPath}|{absPath}`), `file:save` / `file:saveAs`
+migrate-on-save, App.tsx pending-queue wiring removed.
+
+### Feature 2 — Percent-encoded pending paths
+
+First UI test caught the next gap: on macOS the pending-assets dir
+lives under `~/Library/Application Support/durumi/…`. CommonMark
+refuses unwrapped spaces in image URLs, so the parser silently
+skipped the node and the user saw raw `![](...)` text where the
+image should be. The unit + IPC e2e suite missed this because
+`os.tmpdir()` returns a space-free path on every CI host.
+
+Fix: percent-encode at insert time
+(`encodeURI(absPath)` in `usePickAndInsertImage` /
+`imagePaste`), mirror the decode in `resolveImageSrc` so the
+durumi-asset:// URL carries the real filesystem path. Migration on
+the main side already `decodeURI`s before checking the pending
+prefix. New e2e launches with a userData dir containing a literal
+space and asserts the `<img>` actually loads (`naturalWidth > 0`).
+
+### Feature 3 — Smart default folder for Save / Open / Export / pickFile
+
+User opened the workspace folder in the sidebar, hit Save on an
+untitled doc, and macOS dropped them in `~/Downloads`. Root cause:
+`file:saveAs` only passed a bare filename like `'untitled.md'` as
+`defaultPath`, which Electron resolves as a relative path against
+the OS-default save dir. Same gap for `file:open`, `export:file`,
+`dialog:pickFile`, `pandoc:import` and `pandoc:export`.
+
+New `electron/dialogDefaults.ts#pickDefaultDir(currentFilePath?)`
+walks a priority chain:
+1. `dirname(currentFilePath)` — the doc this action originates from
+   (Save As / Export of an open buffer). Strongest signal.
+2. `prefs.workspaceFolders[0]` — sidebar workspace root.
+3. `prefs.recentFolders[0]` — MRU folder.
+4. `dirname(prefs.recentFiles[0])` — MRU file's parent.
+5. `null` — let the OS decide.
+
+Wired into all six dialog handlers. Save / Export grew a new
+`currentFilePath` / `sourceFilePath` IPC param so the renderer can
+pass the open doc's path; pandoc:export already had it.
+
+### Feature 4 — Atomic Image / Link widgets
+
+WYSIWYG widgets render the markdown source invisibly — but Backspace
+next to a rendered image was deleting one source char (usually the
+closing `)`), which broke the markdown and re-exposed the raw
+`![](url)` text. Same UX hazard for inline `[label](url)` links.
+
+`src/editor/atomicMedia.ts` registers two pieces:
+
+  - `EditorView.atomicRanges` — cursor motion, mouse placement, and
+    selection extension treat the widget's range as a single unit.
+    For Image: the full node range. For Link with URL: only the
+    hidden prefix `[` and the hidden suffix `](url)` — the label
+    between them stays editable.
+
+  - A `Prec.high` keymap intercepting Backspace / Delete when the
+    caret sits at a widget edge (or just inside the visible label
+    start/end) and removes the entire node in one dispatch.
+    `Prec.high` is required because `atomicRanges` is consulted by
+    cursor-motion commands but NOT by `deleteCharBackward` —
+    `@codemirror/commands` runs first at default precedence and
+    always returns true.
+
+Initial cut missed the closeBracket-position case: the hidden
+`](url)` suffix is zero-width on screen, so clicking "right after
+the rendered link" snaps the caret to closeBracket, which the
+lookup didn't treat as a delete trigger. Real-UI e2e
+(`page.keyboard.press('Backspace')`) caught this; unit tests had
+been dispatching transactions directly and bypassing keymap
+precedence entirely. Fix adds the closeBracket case.
+
+### Feature 5 — ⌘/Ctrl+Click opens link, plain click positions caret
+
+User pointed out that v0.2.19's plain-click-follows convention
+forced keyboard arrows to position the caret in a link for label
+editing. The pro-editor convention (VS Code, Word, Google Docs,
+GitHub) is the opposite: plain click positions, ⌘ (macOS) / Ctrl
+(Win/Linux) + click follows.
+
+Inverted the modifier guard in `linkClickHandler`. Hover tooltip
+gained a second muted line `⌘+Click to open` (or `Ctrl+Click to
+open`) — picked at module load via `navigator.platform`. Right-
+click context menu unchanged: still has "Open link" as the
+discoverable fallback.
+
+### Test counts
+
+- vitest: **1662** passed (167 files; +27 vs v0.2.22's 1635)
+- e2e Playwright: **137** passed / 4 skipped (+8 specs)
+- Three new test files: `tests/electron/pendingAssets.test.ts`,
+  `tests/electron/dialogDefaults.test.ts`,
+  `tests/editor/atomicMedia.test.ts`
+- Three new e2e specs:
+  `e2e/pending-assets-migration.spec.ts`,
+  `e2e/atomic-media.spec.ts`, and an inverted
+  `e2e/link-interact-v21.spec.ts`
+
+### Lessons logged to feedback-real-ui-verification memory
+
+v0.2.23 became the fourth cycle (after v0.2.19/20/21) where unit
++ e2e green didn't mean production-ready. New false-green patterns
+this round:
+- `os.tmpdir()` is space-free on every CI host, so tests never
+  exercise production path shapes like macOS
+  `Application Support/` containing a literal space.
+- Unit tests that dispatch CodeMirror transactions directly bypass
+  keymap precedence — they can't catch facet-ordering bugs that
+  only surface through real key events.
+
+Both are now in the [feedback memory](memory) checklist.
+
+---
+
+## v0.2.22 — Hover tooltip simplified (title-or-URL only)
 
 User confirmed v0.2.21's three link fixes work but found the
 hover tooltip too noisy. Requested a minimal tooltip: only the

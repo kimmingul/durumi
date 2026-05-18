@@ -29,10 +29,30 @@ export function resolveImageSrc(src: string, docPath: string | null): string {
   if (!src) return src;
   if (isFileUrl(src)) return assetUrlFor(fileUrlToAbsPath(src));
   if (isUrlLike(src)) return src;
-  if (isAbsolutePath(src)) return assetUrlFor(src);
+  if (isAbsolutePath(src)) return assetUrlFor(decodePercent(src));
   if (!docPath) return src;
-  const abs = joinPath(dirnameOf(docPath), src);
+  const abs = joinPath(dirnameOf(docPath), decodePercent(src));
   return assetUrlFor(abs);
+}
+
+/**
+ * Decode `%20` and friends in a markdown-link path. We percent-encode the
+ * absolute path of pending assets at insert time so the markdown parser
+ * accepts paths under `Library/Application Support/…` (CommonMark refuses
+ * unwrapped spaces in URLs). assetUrlFor will re-encode for the
+ * durumi-asset:// query string, so the path the main-side handler sees
+ * is the real filesystem path.
+ *
+ * `decodeURI` throws on malformed sequences — wrap and fall through
+ * unchanged rather than letting the widget pass error out.
+ */
+function decodePercent(src: string): string {
+  if (!src.includes('%')) return src;
+  try {
+    return decodeURI(src);
+  } catch {
+    return src;
+  }
 }
 
 // `file:` is intentionally NOT in this allowlist. Markdown `file://`

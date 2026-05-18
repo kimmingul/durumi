@@ -50,6 +50,30 @@ describe('resolveImageSrc — absolute filesystem paths', () => {
     expect(resolveImageSrc('/Users/min/img.png', null)).toBe(assetUrlFor('/Users/min/img.png'));
   });
 
+  it('decodes percent-encoded segments before wrapping (paths with spaces, e.g. macOS userData)', () => {
+    // v0.2.23 — pending-asset paths live under
+    // `~/Library/Application Support/durumi/pending-assets/…`. The
+    // renderer percent-encodes at insert time so CommonMark accepts the
+    // image URL; this test pins the symmetric decode so the durumi-asset://
+    // URL the widget builds carries the REAL filesystem path (with the
+    // literal space) — anything else would 404 against the main-side
+    // readFile.
+    const encoded = '/Users/min/Library/Application%20Support/durumi/img.png';
+    const out = resolveImageSrc(encoded, null);
+    expect(new URL(out).searchParams.get('p')).toBe(
+      '/Users/min/Library/Application Support/durumi/img.png',
+    );
+  });
+
+  it('falls through unchanged when the path has no %-sequences', () => {
+    // Avoid the surprise of decodeURI corrupting paths that happen to
+    // contain a literal `%` followed by hex but were never URL-encoded.
+    // Production paths from `savePendingImage` never include `%`, so this
+    // guards against accidental double-decoding in future refactors.
+    const plain = '/Users/min/assets/no-encoding.png';
+    expect(resolveImageSrc(plain, null)).toBe(assetUrlFor(plain));
+  });
+
   it('wraps a Windows drive-letter path (forward slash variant)', () => {
     expect(resolveImageSrc('C:/Users/min/img.png', null)).toBe(assetUrlFor('C:/Users/min/img.png'));
   });
