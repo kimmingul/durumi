@@ -194,7 +194,7 @@ export interface RenderedSpan {
 
 ## 8. PR Checklist (의무)
 
-문서모드에 영향 주는 PR은 description에 아래 항목을 채운다.
+문서모드에 영향 주는 PR은 description에 아래 항목을 채운다. 본 체크리스트는 [.github/PULL_REQUEST_TEMPLATE.md](../.github/PULL_REQUEST_TEMPLATE.md)에 통합되어 있어 PR 생성 시 자동 prefill된다.
 
 ```markdown
 ### Document Mode Principles
