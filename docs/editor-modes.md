@@ -1,5 +1,7 @@
 # 편집 모드 가이드 (v0.1.11~)
 
+> **개발자/리뷰어**는 [DOCUMENT_MODE_PRINCIPLES.md](DOCUMENT_MODE_PRINCIPLES.md)도 함께 참조하세요. 본 문서는 사용자 관점의 가이드이고, PRINCIPLES는 문서모드 구현·확장 시 지켜야 할 invariant 명세입니다.
+
 Durumi의 편집 화면은 **3가지 모드** 중 하나로 작동합니다. 작성 중인
 문서는 동일한 markdown 소스이지만, **어떻게 보여줄지**만 모드에 따라
 바뀝니다. 모드는 언제든 즉시 전환 가능 — 문서 내용이나 커서/스크롤

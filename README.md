@@ -27,7 +27,7 @@ The editor wears three faces. Switch via status-bar D/L/S segmented control, the
 
 `Cmd/Ctrl + /` toggles between Source and the previously-used mode. Default mode persists in `prefs.editor.defaultMode` (internal values stay `wysiwyg | typora | markdown` for back-compat).
 
-See [docs/editor-modes.md](docs/editor-modes.md) for the full user guide, FAQ, and IME-safety notes.
+See [docs/editor-modes.md](docs/editor-modes.md) for the full user guide, FAQ, and IME-safety notes. For the engineering invariants every Document Mode PR must preserve, see [docs/DOCUMENT_MODE_PRINCIPLES.md](docs/DOCUMENT_MODE_PRINCIPLES.md).
 
 ### Document style presets (v0.1.11)
 
