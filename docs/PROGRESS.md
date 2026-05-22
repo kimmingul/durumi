@@ -1,6 +1,93 @@
 # Durumi — Progress
 
-## v0.2.23 (current) — Pending-assets pipeline + smart dialog defaults + atomic media + ⌘+Click link follow
+## v0.2.24 → v0.2.28 (current) — Atomic inline-mark rollout (Bold / Italic / Strike / Highlight / Subscript)
+
+The v0.2.23 widget-atomicity contract (`EditorView.atomicRanges` +
+`Prec.high` Backspace/Delete keymap, [src/editor/atomicMedia.ts](../src/editor/atomicMedia.ts))
+extended from Image/Link to five inline marks. Each mark is a single
+`INLINE_MARK_SPECS` entry in the new spec-driven module
+[src/editor/atomicInlineMarks.ts](../src/editor/atomicInlineMarks.ts);
+the gates and the lookup/delete logic are shared.
+
+### What lands per mark
+
+| Version | Mark | Lezer node | markerLen | Implemented by |
+|---|---|---|---|---|
+| v0.2.24 | `**bold**` / `__bold__` | `StrongEmphasis` | 2 | Claude (lead) |
+| v0.2.25 | `*italic*` / `_italic_` | `Emphasis` | 1 | Claude (lead) |
+| v0.2.26 | `~~strike~~` | `Strikethrough` | 2 | Claude executor (parallel round) |
+| v0.2.27 | `==highlight==` | `Highlight` | 2 | Codex CLI 0.133.0 (parallel round) |
+| v0.2.28 | `~subscript~` | `Subscript` | 1 | Gemini CLI 0.43.0 (parallel round) |
+
+Each mark ships with the same contract: caret in the label is
+editable, both markers are atomic and hidden, Backspace/Delete at any
+boundary deletes the entire `<open><label><close>` in one keystroke,
+and arrow keys skip the hidden markers atomically. Toggle shortcuts
+(Cmd+B, Cmd+I, Cmd+Shift+X) coexist with the keymap because they
+dispatch directly and bypass our `Prec.high` Backspace handler.
+
+### Stronger gating than v0.2.23 atomic-media
+
+`shouldApplyAtomic` short-circuits in Markdown (Source) mode —
+`liveDecorations` are stripped there, so the marker-hide widgets do
+not run and atomic ranges installed from the syntax tree alone would
+freeze caret motion across raw markdown. `atomicMedia.ts` (Image /
+Link) carries the analogous latent bug; deferred to a focused follow-
+up PR because the user-visible behaviour in Source mode for media
+widgets has no prior report.
+
+`isInsideCodeIsland` ancestor check expanded beyond
+`FencedCode`/`CodeBlock` to also cover `InlineCode`, `FrontMatter`,
+`MathBlock`, `InlineMath` — Principle §3 (code-island sovereignty)
+in full.
+
+`inlineMarkBounds` enforces `head === tail`. Lezer's CommonMark grammar
+already guarantees this, but pinning it in code keeps the contract
+explicit and survives future parser drift.
+
+### v0.2.26-28 tri-model parallel round
+
+Three models worked in isolated worktrees off the v0.2.25 italic
+branch:
+
+- **Claude Sonnet executor** picked Strike — added `STRIKE_SPEC`,
+  seven unit tests, and a nine-case e2e (`page.keyboard.press` at
+  every boundary + Cmd+Shift+X menu IPC toggle).
+- **Codex CLI 0.133.0** picked Highlight — discovered there is no
+  `'highlight'` IPC channel in `useMenuCommandRouter.ts`, dropped
+  the toggle test, shipped eight-case e2e otherwise.
+- **Gemini CLI 0.43.0** picked Subscript — generated the spec, unit
+  tests, and e2e through two prompts with zero manual correction.
+  Pinned the parser's whitespace requirement (`~ ~` doesn't parse)
+  and the GFM precedence (single `~` wins over GFM `~~` only when
+  followed by non-whitespace).
+
+Spec-driven design held: each mark was a one-entry append plus a
+mirror of the unit/e2e suite. No new branches in the shared module.
+
+### Test plan landed
+
+- vitest baseline on main: **1710 / 1710** in 168 files (was 1662 at v0.2.23 — added 48 atomic-inline tests across all five marks).
+- Playwright Electron: atomic-bold 12, atomic-italic 10, atomic-strike 9, atomic-highlight 8, atomic-subscript 8 — all pass.
+
+### Out of scope, logged for later
+
+- **`atomicMedia.ts` Markdown-mode gate**: same latent bug as the one
+  this rollout fixes for inline marks. Separate scope decision —
+  Image/Link in Source mode has no prior user report.
+- **Superscript (`^sup^`)**: pattern is identical — one-line
+  `INLINE_MARK_SPECS` append + an e2e mirror. Skipped in v0.2.26-28
+  to keep the parallel round to one mark per model. Easy follow-up.
+- **InlineCode (`` ` ``)**: marker length is variable (`` `code` ``
+  vs `` ``co`de`` ``), so the uniform `markerLen` spec doesn't fit
+  cleanly. Needs a separate design pass.
+- **§7 RenderedSpan contract** ([docs/DOCUMENT_MODE_PRINCIPLES.md](DOCUMENT_MODE_PRINCIPLES.md)):
+  with five inline marks plus Image/Link now in the catalogue, the
+  pattern is ripe for unification in v0.3.x.
+
+---
+
+## v0.2.23 — Pending-assets pipeline + smart dialog defaults + atomic media + ⌘+Click link follow
 
 User-reported the v0.2.22 image-insert flow blocked the user in
 untitled documents with "Save the document first to use image paste."
