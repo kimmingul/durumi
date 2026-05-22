@@ -5,6 +5,7 @@ import { GFM } from '@lezer/markdown';
 import { __test } from '../../src/editor/atomicInlineMarks';
 import { editModeStateExtension, setEditMode } from '../../src/editor/editMode';
 import { userActiveExtension } from '../../src/editor/decorations/activeLine';
+import { FrontMatterExtension } from '../../src/editor/markdownExt/frontMatter';
 import { EditorView } from '@codemirror/view';
 
 const { findInlineMarkAtEdge } = __test;
@@ -14,7 +15,11 @@ function stateFor(doc: string, cursor = 0): EditorState {
     doc,
     selection: { anchor: cursor },
     extensions: [
-      markdown({ base: markdownLanguage, extensions: [GFM] }),
+      // Match the production parser surface for the gates we care
+      // about — GFM for emphasis variants and FrontMatterExtension so
+      // the FrontMatter ancestor check in isInsideCodeIsland actually
+      // sees a FrontMatter node when the doc starts with `---\n...\n---`.
+      markdown({ base: markdownLanguage, extensions: [GFM, FrontMatterExtension] }),
       editModeStateExtension(),
       userActiveExtension(),
     ],
@@ -35,9 +40,167 @@ describe('findInlineMarkAtEdge — Bold (`**`)', () => {
     expect(findInlineMarkAtEdge(state, 0, 'backward')).toBeNull();
   });
 
-  // armUserActive + setEditMode are wired in by Task 2 gating tests;
-  // touching them here keeps lint quiet between Task 1 and Task 2
-  // commits without introducing a real assertion.
-  void armUserActive;
-  void setEditMode;
+});
+
+describe('findInlineMarkAtEdge — Backspace boundaries', () => {
+  it('Backspace at node.to (just after closing **) fires', () => {
+    const doc = '**bold**';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at closeStart (end of visible label, before hidden **) fires', () => {
+    const doc = '**bold**';
+    // closeStart = to - 2 = 6 → caret between 'd' and the closing '**'
+    const state = stateFor(doc, doc.length - 2);
+    expect(findInlineMarkAtEdge(state, doc.length - 2, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at openEnd (start of visible label, after hidden **) fires', () => {
+    const doc = '**bold**';
+    // openEnd = from + 2 = 2 → caret between '**' and 'b'
+    const state = stateFor(doc, 2);
+    expect(findInlineMarkAtEdge(state, 2, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace in MIDDLE of label does not fire (label-editable)', () => {
+    const doc = '**bold**';
+    // caret between 'bo' and 'ld' (pos 4) — must NOT collapse the whole node
+    const state = stateFor(doc, 4);
+    expect(findInlineMarkAtEdge(state, 4, 'backward')).toBeNull();
+  });
+
+  it('Backspace JUST BEFORE node.from does not fire', () => {
+    const doc = '**bold** trailing';
+    const state = stateFor(doc, 0);
+    expect(findInlineMarkAtEdge(state, 0, 'backward')).toBeNull();
+  });
+
+  it('Both `**` and `__` heads are accepted', () => {
+    const doc = '__bold__';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Mismatched markers are rejected (head !== tail contract)', () => {
+    // CommonMark requires the same delimiter on both sides; Lezer
+    // does not emit StrongEmphasis for `**bold__`. inlineMarkBounds
+    // also enforces head === tail defensively so a future parser
+    // change cannot silently widen the contract.
+    const doc = '**bold__';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
+  });
+});
+
+describe('findInlineMarkAtEdge — Delete boundaries', () => {
+  it('Delete at node.from (just before opening **) fires', () => {
+    const doc = '**bold**';
+    const state = stateFor(doc, 0);
+    expect(findInlineMarkAtEdge(state, 0, 'forward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Delete at closeStart (end of label, before hidden **) fires', () => {
+    const doc = '**bold**';
+    const state = stateFor(doc, doc.length - 2);
+    expect(findInlineMarkAtEdge(state, doc.length - 2, 'forward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Delete in MIDDLE of label does not fire', () => {
+    const doc = '**bold**';
+    const state = stateFor(doc, 4);
+    expect(findInlineMarkAtEdge(state, 4, 'forward')).toBeNull();
+  });
+});
+
+describe('findInlineMarkAtEdge — gating', () => {
+  it('does not fire in Typora mode when the bold is on the active line', () => {
+    const doc = '**bold**';
+    const baseState = stateFor(doc, doc.length);
+    const view = new EditorView({
+      state: baseState,
+      parent: document.body.appendChild(document.createElement('div')),
+    });
+    view.dispatch({ effects: setEditMode.of('typora') });
+    armUserActive(view);
+    expect(findInlineMarkAtEdge(view.state, doc.length, 'backward')).toBeNull();
+    view.destroy();
+  });
+
+  it('fires in WYSIWYG mode regardless of active line', () => {
+    const doc = '**bold**';
+    const baseState = stateFor(doc, doc.length);
+    const view = new EditorView({
+      state: baseState,
+      parent: document.body.appendChild(document.createElement('div')),
+    });
+    view.dispatch({ effects: setEditMode.of('wysiwyg') });
+    armUserActive(view);
+    expect(findInlineMarkAtEdge(view.state, doc.length, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+    view.destroy();
+  });
+
+  it('does not fire inside fenced code blocks', () => {
+    const doc = '```\n**not really bold**\n```\n';
+    const boldFakeEnd = doc.indexOf('**\n```');
+    const state = stateFor(doc, boldFakeEnd);
+    expect(findInlineMarkAtEdge(state, boldFakeEnd, 'backward')).toBeNull();
+  });
+
+  it('does not fire inside inline code spans (`` `**…**` ``)', () => {
+    // CommonMark forbids emphasis inside code spans; the InlineCode
+    // ancestor check in isInsideCodeIsland is the belt-and-braces
+    // guard. Principle §3 (code-island sovereignty).
+    const doc = 'see `**not bold**` end';
+    const closeBacktick = doc.lastIndexOf('`') + 1;
+    const state = stateFor(doc, closeBacktick);
+    expect(findInlineMarkAtEdge(state, closeBacktick, 'backward')).toBeNull();
+  });
+
+  it('does not fire inside front matter (YAML block at doc start)', () => {
+    // FrontMatter content is opaque YAML; even if a value visually
+    // contains `**…**`, it must not collapse atomically.
+    const doc = '---\ntitle: **draft**\n---\nbody\n';
+    const inFm = doc.indexOf('**draft**') + '**draft**'.length;
+    const state = stateFor(doc, inFm);
+    expect(findInlineMarkAtEdge(state, inFm, 'backward')).toBeNull();
+  });
+
+  it('does not fire in Markdown (Source) mode regardless of active line', () => {
+    // Markdown mode strips liveDecorations; emphasis.ts does not
+    // run; the `**` markers are user-visible source. Atomic ranges
+    // installed from the syntax tree alone would freeze caret motion
+    // — wrong. shouldApplyAtomic must short-circuit on this mode.
+    const doc = '**bold**';
+    const baseState = stateFor(doc, doc.length);
+    const view = new EditorView({
+      state: baseState,
+      parent: document.body.appendChild(document.createElement('div')),
+    });
+    view.dispatch({ effects: setEditMode.of('markdown') });
+    armUserActive(view);
+    expect(findInlineMarkAtEdge(view.state, doc.length, 'backward')).toBeNull();
+    view.destroy();
+  });
 });
