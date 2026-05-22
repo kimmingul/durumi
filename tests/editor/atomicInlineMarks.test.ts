@@ -296,3 +296,76 @@ describe('findInlineMarkAtEdge — Italic (`*` / `_`)', () => {
     expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
   });
 });
+
+describe('findInlineMarkAtEdge — Strikethrough (`~~`)', () => {
+  // Spec-driven design: STRIKE_SPEC uses markerLen=2 against
+  // 'Strikethrough' nodes. Boundary positions for `~~strike~~` (length 10):
+  //   from=0, openEnd=2, closeStart=8, to=10.
+
+  it('Backspace at node.to (just after closing ~~) fires on Strikethrough', () => {
+    const doc = '~~strike~~';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at closeStart (end of label, before hidden ~~) fires — REGRESSION GUARD', () => {
+    const doc = '~~strike~~';
+    // closeStart = to - 2 = 8 → caret between 'e' and the closing '~~'
+    const state = stateFor(doc, doc.length - 2);
+    expect(findInlineMarkAtEdge(state, doc.length - 2, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at openEnd (start of label, after hidden ~~) fires', () => {
+    const doc = '~~strike~~';
+    // openEnd = from + 2 = 2 → caret between '~~' and 's'
+    const state = stateFor(doc, 2);
+    expect(findInlineMarkAtEdge(state, 2, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace in middle of strike label does not fire (label-editable)', () => {
+    const doc = '~~strike~~';
+    // caret between 'str' and 'ike' (pos 5)
+    const state = stateFor(doc, 5);
+    expect(findInlineMarkAtEdge(state, 5, 'backward')).toBeNull();
+  });
+
+  it('Delete at node.from (just before opening ~~) fires', () => {
+    const doc = '~~strike~~';
+    const state = stateFor(doc, 0);
+    expect(findInlineMarkAtEdge(state, 0, 'forward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Both backspace cases on a mismatched-marker doc are skipped (parser-quirk guard)', () => {
+    // Parser does not emit Strikethrough for `~~text` without a closing `~~`.
+    // inlineMarkBounds also enforces head === tail defensively.
+    const doc = '~~text';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
+  });
+
+  it('Strikethrough inside Bold (`**foo ~~bar~~ baz**`) — inner Strikethrough fires independently at its boundary', () => {
+    // Verifies the spec-driven array iteration: the same syntax-tree
+    // walk matches StrongEmphasis at the outer node AND Strikethrough
+    // at the inner node without one masking the other.
+    const doc = '**foo ~~bar~~ baz**';
+    const innerStrikeEnd = doc.indexOf('~~bar~~') + '~~bar~~'.length;
+    const innerStrikeStart = doc.indexOf('~~bar~~');
+    const state = stateFor(doc, innerStrikeEnd);
+    expect(findInlineMarkAtEdge(state, innerStrikeEnd, 'backward')).toEqual({
+      from: innerStrikeStart,
+      to: innerStrikeEnd,
+    });
+  });
+});

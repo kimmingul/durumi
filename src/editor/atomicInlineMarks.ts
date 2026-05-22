@@ -61,7 +61,13 @@ const ITALIC_SPEC: InlineMarkSpec = {
   validMarkers: ['*', '_'],
 };
 
-const INLINE_MARK_SPECS: readonly InlineMarkSpec[] = [BOLD_SPEC, ITALIC_SPEC];
+const STRIKE_SPEC: InlineMarkSpec = {
+  nodeName: 'Strikethrough',
+  markerLen: 2,
+  validMarkers: ['~~'],
+};
+
+const INLINE_MARK_SPECS: readonly InlineMarkSpec[] = [BOLD_SPEC, ITALIC_SPEC, STRIKE_SPEC];
 
 /** Ancestor names that suppress markdown emphasis parsing (Principle §3). */
 const CODE_ISLAND_NODE_NAMES: ReadonlySet<string> = new Set([
