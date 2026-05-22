@@ -25,6 +25,7 @@ import { viewModes } from './viewModes';
 import { makeTheme } from './theme';
 import { handlePaste, handleDrop } from './imagePaste';
 import { atomicMediaExtension } from './atomicMedia';
+import { atomicInlineMarksExtension } from './atomicInlineMarks';
 import { citationAutocomplete } from './autocomplete/citationAutocomplete';
 import { citationHoverTooltip } from './decorations/citationHover';
 import { defaultGhostTextRefs, ghostTextExtension } from './ai/ghostText';
@@ -107,6 +108,11 @@ export function MarkdownEditor({
         // `[label](url)` instead of nicking one source char (which would
         // break the markdown and reveal raw text). See atomicMedia.ts.
         atomicMediaExtension(),
+        // v0.2.24 — atomic boundaries for inline marks. Same contract
+        // as atomicMediaExtension above but for the uniform
+        // open/label/close shape. Ships with Bold (`**` / `__`); later
+        // PRs append Italic / Strike / Highlight / Code / Sub / Sup.
+        atomicInlineMarksExtension(),
         wysiwygEscapeFilter(),
         citationAutocomplete(),
         citationHoverTooltip(),
