@@ -6,6 +6,7 @@ import { __test } from '../../src/editor/atomicInlineMarks';
 import { editModeStateExtension, setEditMode } from '../../src/editor/editMode';
 import { userActiveExtension } from '../../src/editor/decorations/activeLine';
 import { FrontMatterExtension } from '../../src/editor/markdownExt/frontMatter';
+import { InlineExtrasExtension } from '../../src/editor/markdownExt/inlineExtras';
 import { EditorView } from '@codemirror/view';
 
 const { findInlineMarkAtEdge } = __test;
@@ -19,7 +20,7 @@ function stateFor(doc: string, cursor = 0): EditorState {
       // about — GFM for emphasis variants and FrontMatterExtension so
       // the FrontMatter ancestor check in isInsideCodeIsland actually
       // sees a FrontMatter node when the doc starts with `---\n...\n---`.
-      markdown({ base: markdownLanguage, extensions: [GFM, FrontMatterExtension] }),
+      markdown({ base: markdownLanguage, extensions: [GFM, FrontMatterExtension, InlineExtrasExtension] }),
       editModeStateExtension(),
       userActiveExtension(),
     ],
@@ -347,7 +348,7 @@ describe('findInlineMarkAtEdge — Strikethrough (`~~`)', () => {
     });
   });
 
-  it('Both backspace cases on a mismatched-marker doc are skipped (parser-quirk guard)', () => {
+  it('Backspace on mismatched-marker doc skipped (parser-quirk guard)', () => {
     // Parser does not emit Strikethrough for `~~text` without a closing `~~`.
     // inlineMarkBounds also enforces head === tail defensively.
     const doc = '~~text';
@@ -366,6 +367,74 @@ describe('findInlineMarkAtEdge — Strikethrough (`~~`)', () => {
     expect(findInlineMarkAtEdge(state, innerStrikeEnd, 'backward')).toEqual({
       from: innerStrikeStart,
       to: innerStrikeEnd,
+    });
+  });
+});
+
+describe('findInlineMarkAtEdge — Highlight (`==`)', () => {
+  // HIGHLIGHT_SPEC uses markerLen=2 against Highlight nodes from
+  // InlineExtrasExtension. Boundary positions for `==hl==` (length 6):
+  //   from=0, openEnd=2, closeStart=4, to=6.
+
+  it('Backspace at node.to fires on ==hl==', () => {
+    const doc = '==hl==';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at closeStart fires (zero-width hidden marker regression)', () => {
+    const doc = '==hl==';
+    const closeStart = doc.length - 2;
+    const state = stateFor(doc, closeStart);
+    expect(findInlineMarkAtEdge(state, closeStart, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at openEnd fires', () => {
+    const doc = '==hl==';
+    const openEnd = 2;
+    const state = stateFor(doc, openEnd);
+    expect(findInlineMarkAtEdge(state, openEnd, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace in middle of label does NOT fire (label-editable)', () => {
+    const doc = '==hl==';
+    const middle = doc.indexOf('l');
+    const state = stateFor(doc, middle);
+    expect(findInlineMarkAtEdge(state, middle, 'backward')).toBeNull();
+  });
+
+  it('Delete at node.from fires', () => {
+    const doc = '==hl==';
+    const state = stateFor(doc, 0);
+    expect(findInlineMarkAtEdge(state, 0, 'forward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Mismatched marker rejected (==hl__ head !== tail)', () => {
+    const doc = '==hl__';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
+  });
+
+  it('Highlight inside Bold (`**foo ==bar== baz**`) inner Highlight fires at its boundary independently', () => {
+    const doc = '**foo ==bar== baz**';
+    const innerHighlightEnd = doc.indexOf('==bar==') + '==bar=='.length;
+    const innerHighlightFrom = doc.indexOf('==bar==');
+    const state = stateFor(doc, innerHighlightEnd);
+    expect(findInlineMarkAtEdge(state, innerHighlightEnd, 'backward')).toEqual({
+      from: innerHighlightFrom,
+      to: innerHighlightEnd,
     });
   });
 });
