@@ -438,3 +438,63 @@ describe('findInlineMarkAtEdge — Highlight (`==`)', () => {
     });
   });
 });
+
+describe('findInlineMarkAtEdge — Subscript (`~`)', () => {
+  it('Backspace at node.to (just after closing ~) fires on Subscript', () => {
+    const doc = 'H~2~O';
+    const pos = 4; // 'H~2~' end
+    const state = stateFor(doc, pos);
+    expect(findInlineMarkAtEdge(state, pos, 'backward')).toEqual({ from: 1, to: 4 });
+  });
+
+  it('Backspace at closeStart (zero-width regression guard) fires', () => {
+    const doc = 'H~2~O';
+    const pos = 3; // between '2' and closing '~'
+    const state = stateFor(doc, pos);
+    expect(findInlineMarkAtEdge(state, pos, 'backward')).toEqual({ from: 1, to: 4 });
+  });
+
+  it('Backspace at openEnd fires', () => {
+    const doc = 'H~2~O';
+    const pos = 2; // between opening '~' and '2'
+    const state = stateFor(doc, pos);
+    expect(findInlineMarkAtEdge(state, pos, 'backward')).toEqual({ from: 1, to: 4 });
+  });
+
+  it('Backspace in MIDDLE does NOT fire', () => {
+    const doc = 'a~xyz~b';
+    const pos = 3; // between 'x' and 'y'
+    const state = stateFor(doc, pos);
+    expect(findInlineMarkAtEdge(state, pos, 'backward')).toBeNull();
+  });
+
+  it('Delete at node.from fires', () => {
+    const doc = 'H~2~O';
+    const pos = 1; // before opening '~'
+    const state = stateFor(doc, pos);
+    expect(findInlineMarkAtEdge(state, pos, 'forward')).toEqual({ from: 1, to: 4 });
+  });
+
+  it('Subscript parser requires non-whitespace inside; "~ ~" does not parse', () => {
+    const doc = '~ ~';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
+  });
+
+  it('Mismatched "~text^" is rejected', () => {
+    const doc = '~text^';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
+  });
+
+  it('Subscript INSIDE Bold (**H~2~O**)', () => {
+    const doc = '**H~2~O**';
+    const subStart = doc.indexOf('~2~');
+    const subEnd = subStart + '~2~'.length;
+    const state = stateFor(doc, subEnd);
+    expect(findInlineMarkAtEdge(state, subEnd, 'backward')).toEqual({
+      from: subStart,
+      to: subEnd,
+    });
+  });
+});

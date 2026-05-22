@@ -73,11 +73,18 @@ const HIGHLIGHT_SPEC: InlineMarkSpec = {
   validMarkers: ['=='],
 };
 
+const SUB_SPEC: InlineMarkSpec = {
+  nodeName: 'Subscript',
+  markerLen: 1,
+  validMarkers: ['~'],
+};
+
 const INLINE_MARK_SPECS: readonly InlineMarkSpec[] = [
   BOLD_SPEC,
   ITALIC_SPEC,
   STRIKE_SPEC,
   HIGHLIGHT_SPEC,
+  SUB_SPEC,
 ];
 
 /** Ancestor names that suppress markdown emphasis parsing (Principle §3). */
