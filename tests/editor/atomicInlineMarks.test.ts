@@ -204,3 +204,95 @@ describe('findInlineMarkAtEdge — gating', () => {
     view.destroy();
   });
 });
+
+describe('findInlineMarkAtEdge — Italic (`*` / `_`)', () => {
+  // Spec-driven design: ITALIC_SPEC uses markerLen=1 against
+  // 'Emphasis' nodes. Boundary positions for `*ital*` (length 6):
+  //   from=0, openEnd=1, closeStart=5, to=6.
+
+  it('Backspace at node.to (just after closing *) fires on Emphasis', () => {
+    const doc = '*ital*';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at closeStart (end of label, before hidden *) fires', () => {
+    const doc = '*ital*';
+    // closeStart = to - 1 = 5 → caret between 'l' and the closing '*'
+    const state = stateFor(doc, doc.length - 1);
+    expect(findInlineMarkAtEdge(state, doc.length - 1, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace at openEnd (start of label, after hidden *) fires', () => {
+    const doc = '*ital*';
+    // openEnd = from + 1 = 1 → caret between '*' and 'i'
+    const state = stateFor(doc, 1);
+    expect(findInlineMarkAtEdge(state, 1, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Backspace in middle of italic label does not fire (label-editable)', () => {
+    const doc = '*ital*';
+    // caret between 'it' and 'al' (pos 3)
+    const state = stateFor(doc, 3);
+    expect(findInlineMarkAtEdge(state, 3, 'backward')).toBeNull();
+  });
+
+  it('Delete at node.from (just before opening *) fires', () => {
+    const doc = '*ital*';
+    const state = stateFor(doc, 0);
+    expect(findInlineMarkAtEdge(state, 0, 'forward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Both `*` and `_` italic delimiters are accepted', () => {
+    const doc = '_ital_';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toEqual({
+      from: 0,
+      to: doc.length,
+    });
+  });
+
+  it('Mismatched italic markers (`*ital_`) are rejected by head === tail', () => {
+    // CommonMark would not emit Emphasis here; the head === tail
+    // check in inlineMarkBounds is the belt-and-braces guard.
+    const doc = '*ital_';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
+  });
+
+  it('Italic INSIDE Bold (`**foo *bar* baz**`) — both atomic ranges fire independently', () => {
+    // Verifies the spec-driven array iteration: the same syntax-
+    // tree walk should match StrongEmphasis at the outer node AND
+    // Emphasis at the inner node without one masking the other.
+    // Caret at the end of the inner italic `*bar*` (just after
+    // its closing `*`) must fire on the italic, not the bold.
+    const doc = '**foo *bar* baz**';
+    const innerItalicEnd = doc.indexOf('*bar*') + '*bar*'.length;
+    const state = stateFor(doc, innerItalicEnd);
+    const italicFrom = doc.indexOf('*bar*');
+    expect(findInlineMarkAtEdge(state, innerItalicEnd, 'backward')).toEqual({
+      from: italicFrom,
+      to: innerItalicEnd,
+    });
+  });
+
+  it('Single asterisk (`*` not followed by content) does not fire', () => {
+    // Bare punctuation — no Emphasis node emitted, so no atomic
+    // delete trigger. Char-by-char delete must proceed normally.
+    const doc = 'a * b';
+    const state = stateFor(doc, doc.length);
+    expect(findInlineMarkAtEdge(state, doc.length, 'backward')).toBeNull();
+  });
+});
