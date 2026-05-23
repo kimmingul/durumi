@@ -23,10 +23,17 @@ describe('toggleSup', () => {
     expect(v.state.doc.toString()).toBe('E=mc2');
     v.destroy();
   });
-  it('inserts an empty pair at the caret when no selection', () => {
+  it('inserts placeholder selected at the caret when no selection (v0.2.29)', () => {
+    // v0.2.29 changed empty-selection toolbar invocations to insert a
+    // localized placeholder selected, so the next keystroke replaces
+    // it. Previously this inserted `<sup></sup>` — a zero-width slot
+    // that disrupted IME composition and toolbar UX.
     const v = makeView('x', 1, 1);
     toggleSup(v);
-    expect(v.state.doc.toString()).toBe('x<sup></sup>');
+    expect(v.state.doc.toString()).toBe('x<sup>위첨자</sup>');
+    const sel = v.state.selection.main;
+    expect(sel.from).toBe(6); // after `<sup>`
+    expect(sel.to).toBe(9); // end of `위첨자`
     v.destroy();
   });
 });
@@ -42,6 +49,15 @@ describe('toggleSub', () => {
     const v = makeView('H<sub>2</sub>O', 6, 7);
     toggleSub(v);
     expect(v.state.doc.toString()).toBe('H2O');
+    v.destroy();
+  });
+  it('inserts placeholder selected at the caret when no selection (v0.2.29)', () => {
+    const v = makeView('H', 1, 1);
+    toggleSub(v);
+    expect(v.state.doc.toString()).toBe('H<sub>첨자</sub>');
+    const sel = v.state.selection.main;
+    expect(sel.from).toBe(6); // after `<sub>`
+    expect(sel.to).toBe(8); // end of `첨자`
     v.destroy();
   });
 });

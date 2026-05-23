@@ -18,10 +18,10 @@ export function markdownKeymap(): Extension {
     ]),
   );
   const mdKeys = keymap.of([
-    { key: 'Mod-b', run: (view) => toggleWrap(view, '**'), preventDefault: true },
-    { key: 'Mod-i', run: (view) => toggleWrap(view, '*'), preventDefault: true },
-    { key: 'Mod-Shift-k', run: (view) => toggleWrap(view, '`'), preventDefault: true },
-    { key: 'Mod-Shift-x', run: (view) => toggleWrap(view, '~~'), preventDefault: true },
+    { key: 'Mod-b', run: (view) => toggleWrap(view, '**', '**', '굵게'), preventDefault: true },
+    { key: 'Mod-i', run: (view) => toggleWrap(view, '*', '*', '기울임'), preventDefault: true },
+    { key: 'Mod-Shift-k', run: (view) => toggleWrap(view, '`', '`', '코드'), preventDefault: true },
+    { key: 'Mod-Shift-x', run: (view) => toggleWrap(view, '~~', '~~', '취소선'), preventDefault: true },
     { key: 'Mod-Alt-m', run: wrapComment, preventDefault: true },
     {
       key: 'Mod-Shift-m',

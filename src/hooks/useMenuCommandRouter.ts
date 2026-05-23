@@ -192,10 +192,10 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         setLang(resolveRendererLang(prefs.language));
         return;
       }
-      if (cmd === 'bold' && view) { toggleWrap(view, '**'); view.focus(); return; }
-      if (cmd === 'italic' && view) { toggleWrap(view, '*'); view.focus(); return; }
-      if (cmd === 'code' && view) { toggleWrap(view, '`'); view.focus(); return; }
-      if (cmd === 'strikethrough' && view) { toggleWrap(view, '~~'); view.focus(); return; }
+      if (cmd === 'bold' && view) { toggleWrap(view, '**', '**', '굵게'); view.focus(); return; }
+      if (cmd === 'italic' && view) { toggleWrap(view, '*', '*', '기울임'); view.focus(); return; }
+      if (cmd === 'code' && view) { toggleWrap(view, '`', '`', '코드'); view.focus(); return; }
+      if (cmd === 'strikethrough' && view) { toggleWrap(view, '~~', '~~', '취소선'); view.focus(); return; }
       if (cmd === 'insertTable' && view) { insertTableHelper(view); view.focus(); return; }
       if (cmd === 'toggleTask' && view) { toggleTaskHelper(view); view.focus(); return; }
       if (cmd === 'codeBlock' && view) { insertCodeBlockHelper(view); view.focus(); return; }
