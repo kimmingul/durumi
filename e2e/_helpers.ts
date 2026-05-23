@@ -182,3 +182,78 @@ export async function getEditorDoc(page: Page): Promise<string> {
     return content?.innerText ?? '';
   });
 }
+
+/**
+ * v0.2.29 — Synthesize a Korean Hangul composition via the Chrome
+ * DevTools Protocol.
+ *
+ * Why this exists: 4 prior release cycles (v0.2.19/.20/.21/.23/.28)
+ * false-greened on automated tests because `page.keyboard.type` does
+ * NOT exercise IME composition events — it sends synthesized
+ * keystrokes, which the markdown escape filter and the atomic-range
+ * facets handle in a code path completely separate from
+ * `compositionstart` / `compositionupdate` / `compositionend`. Real
+ * Korean input goes through the latter; the former is a different
+ * (and irrelevant) world. Manual macOS smoke was the only signal
+ * that ever caught the actual bugs.
+ *
+ * `Input.imeSetComposition` (Chrome DevTools Protocol, experimental
+ * but supported by Chromium-based runtimes including Electron)
+ * dispatches real composition events into the focused element. The
+ * test author hands a list of intermediate syllables — e.g. for the
+ * Korean letter `한` the user's 2-set IME progresses through
+ * `['ㅎ', '하', '한']` — and the final committed text. The helper
+ * sends each intermediate state, then commits the final text via
+ * `Input.insertText`.
+ *
+ * Use this helper for any e2e that exercises code paths affected
+ * by IME composition:
+ *   - atomic ranges (`src/editor/atomicMedia.ts`, `src/editor/atomicInlineMarks.ts`)
+ *   - marker-hide widgets (`src/editor/decorations/emphasis.ts` etc.)
+ *   - contentEditable cells (table cells, `src/editor/markdownExt/tableEdit.ts`)
+ *   - WYSIWYG escape filter (`src/editor/wysiwygEscape.ts`)
+ *   - any transactionFilter that handles `input.type` events
+ *
+ * Caveat: CDP `Input.imeSetComposition` synthesizes events at the
+ * W3C `CompositionEvent` API level. Real macOS Korean 2-set IME has
+ * an additional OS-level conversion layer that CDP does NOT
+ * replicate (e.g. specific Hanja conversion, Japanese reconversion).
+ * The manual macOS Korean smoke at release sign-off remains the
+ * final gate; this helper covers ~99% of the surface that automation
+ * could ever catch.
+ *
+ * If the runtime doesn't support `Input.imeSetComposition`, this
+ * function throws — wrap in a try/catch and `test.skip` if you want
+ * graceful degradation (see `e2e/toolbar-ime-composition.spec.ts`
+ * for the probe pattern).
+ *
+ * @param page         the Playwright Page (must have focus on the target editor)
+ * @param syllables    ordered intermediate states, e.g. ['ㅎ', '하', '한']
+ * @param commitText   the final text to insert (typically the last syllable)
+ *
+ * @example
+ *   // Compose '한' (ㅎ + ㅏ + ㄴ → 한)
+ *   await composeKorean(page, ['ㅎ', '하', '한'], '한');
+ *   // Compose '학교' as two separate syllables
+ *   await composeKorean(page, ['ㅎ', '하', '학'], '학');
+ *   await composeKorean(page, ['ㄱ', '교'], '교');
+ */
+export async function composeKorean(
+  page: Page,
+  syllables: string[],
+  commitText: string,
+): Promise<void> {
+  const session = await page.context().newCDPSession(page);
+  try {
+    for (const text of syllables) {
+      await session.send('Input.imeSetComposition', {
+        text,
+        selectionStart: text.length,
+        selectionEnd: text.length,
+      });
+    }
+    await session.send('Input.insertText', { text: commitText });
+  } finally {
+    await session.detach();
+  }
+}

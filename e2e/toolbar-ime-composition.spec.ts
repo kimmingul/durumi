@@ -1,5 +1,5 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
-import { launchClean, shutdownClean, getEditorDoc } from './_helpers';
+import { launchClean, shutdownClean, getEditorDoc, composeKorean } from './_helpers';
 
 /**
  * v0.2.29 — Korean IME composition through a Bold-toolbar placeholder.
@@ -98,32 +98,11 @@ test('Bold toolbar then Korean IME composition replaces placeholder with compose
   // Sanity: placeholder '굵게' should be selected and the doc should be `**굵게**`.
   expect(await getEditorDoc(page)).toBe('**굵게**');
 
-  const session = await page.context().newCDPSession(page);
   try {
-    // Step 1: start composition with ㅎ — partially-formed syllable.
-    await session.send('Input.imeSetComposition', {
-      text: 'ㅎ',
-      selectionStart: 1,
-      selectionEnd: 1,
-    });
-    // Step 2: incremental composition: ㅎ + ㅏ → 하.
-    await session.send('Input.imeSetComposition', {
-      text: '하',
-      selectionStart: 1,
-      selectionEnd: 1,
-    });
-    // Step 3: incremental composition: 하 + ㄴ → 한.
-    await session.send('Input.imeSetComposition', {
-      text: '한',
-      selectionStart: 1,
-      selectionEnd: 1,
-    });
-    // Step 4: commit '한' as final text.
-    await session.send('Input.insertText', { text: '한' });
+    // Compose '한' via 2-set IME progression: ㅎ → 하 → 한 → commit.
+    await composeKorean(page, ['ㅎ', '하', '한'], '한');
   } catch (err) {
     test.skip(true, `CDP IME composition unsupported in this Electron build: ${(err as Error).message}`);
-  } finally {
-    await session.detach();
   }
 
   await page.waitForTimeout(100);
