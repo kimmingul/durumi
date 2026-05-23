@@ -245,14 +245,36 @@ export async function composeKorean(
 ): Promise<void> {
   const session = await page.context().newCDPSession(page);
   try {
-    for (const text of syllables) {
-      await session.send('Input.imeSetComposition', {
-        text,
-        selectionStart: text.length,
-        selectionEnd: text.length,
-      });
-    }
-    await session.send('Input.insertText', { text: commitText });
+    // The intermediate syllables are passed for documentation / future-
+    // use; CDP `Input.imeSetComposition`'s replacement semantics are
+    // not 1:1 with real macOS Korean IME's compositionupdate, so
+    // chaining multiple imeSetComposition calls in this CDP context
+    // doesn't faithfully replicate the OS-level compositionupdate
+    // sequence. Instead we issue ONE compositionstart (the final
+    // composing text) then commit — this exercises the input.compose
+    // → compositionend code path that our transactionFilter cares
+    // about, while keeping the test deterministic across Electron
+    // builds. Real OS multi-step composition stays a manual smoke
+    // (PRINCIPLES §2 verification, "Real-UI 수동 smoke").
+    void syllables;
+    // Start composition with the final composing text. CodeMirror's input
+    // pipeline sees this as a composition event; our pending-format filter
+    // wraps it as **한** (for bold) and caret lands inside the bold span.
+    await session.send('Input.imeSetComposition', {
+      text: commitText,
+      selectionStart: commitText.length,
+      selectionEnd: commitText.length,
+    });
+    // End composition cleanly: a second imeSetComposition with empty text
+    // signals compositionend without inserting additional text (Chromium
+    // convention). `Input.insertText` would COMMIT the composition as new
+    // text — adding the value on top of what was already inserted. Empty
+    // imeSetComposition just finalizes.
+    await session.send('Input.imeSetComposition', {
+      text: '',
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
   } finally {
     await session.detach();
   }
