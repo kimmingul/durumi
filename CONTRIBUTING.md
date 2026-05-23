@@ -178,6 +178,38 @@ deeper rationale on items 8–10.
     a small text island" shape as cells; the right pattern for those
     is the existing active-line collapse (invariant #1).
 
+### v0.2.29 IME automation invariant
+
+13. **CDP `Input.imeSetComposition` is the automated gate for IME-
+    affecting changes.** Real Korean (Japanese / Chinese) IME
+    composition was the source of 4 consecutive false-green cycles
+    (v0.2.19/.20/.21/.23/.28) because Playwright's
+    `page.keyboard.type` and `view.dispatch({changes})` both bypass
+    `compositionstart` / `compositionupdate` / `compositionend`
+    events. v0.2.29 verified that Chrome DevTools Protocol's
+    `Input.imeSetComposition` + `Input.insertText` synthesize real
+    composition events into the focused Electron window.
+
+    Any PR that changes code reading or producing IME composition
+    events — atomic ranges (`src/editor/atomicMedia.ts`,
+    `src/editor/atomicInlineMarks.ts`), marker-hide widgets
+    (`src/editor/decorations/{emphasis,strikethrough,highlight,...}.ts`),
+    contentEditable cells (`src/editor/markdownExt/tableEdit.ts`),
+    the WYSIWYG escape filter (`src/editor/wysiwygEscape.ts`), or
+    any `transactionFilter` that handles `input.type` events —
+    MUST include an e2e test using the `composeKorean(page,
+    syllables, commitText)` helper in `e2e/_helpers.ts`. PR template
+    §2a enforces this at the merge gate.
+
+    Caveat: CDP IME ≠ macOS Korean 2-set IME 100%. The OS-level
+    conversion layer (Hanja, Japanese reconversion) is not
+    replicated by CDP. Manual macOS Korean smoke at `pnpm dev`
+    remains the release sign-off gate (PR template §2b).
+
+    Reference implementation: `e2e/toolbar-ime-composition.spec.ts`.
+    The probe pattern at the top of that file demonstrates graceful
+    `test.skip` when a future Electron build drops CDP IME support.
+
 See `memory/durumi_project.md` for details and rationale.
 
 ## Commit style
