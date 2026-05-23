@@ -1,6 +1,6 @@
 import { keymap } from '@codemirror/view';
 import { Prec, type Extension } from '@codemirror/state';
-import { toggleWrap } from './toggleWrap';
+import { applyInlineFormat } from './pendingInlineFormat';
 import { setHeading } from './setHeading';
 import { insertTable } from './insertTable';
 import { insertCodeBlock } from './insertCodeBlock';
@@ -18,10 +18,10 @@ export function markdownKeymap(): Extension {
     ]),
   );
   const mdKeys = keymap.of([
-    { key: 'Mod-b', run: (view) => toggleWrap(view, '**', '**', '굵게'), preventDefault: true },
-    { key: 'Mod-i', run: (view) => toggleWrap(view, '*', '*', '기울임'), preventDefault: true },
-    { key: 'Mod-Shift-k', run: (view) => toggleWrap(view, '`', '`', '코드'), preventDefault: true },
-    { key: 'Mod-Shift-x', run: (view) => toggleWrap(view, '~~', '~~', '취소선'), preventDefault: true },
+    { key: 'Mod-b', run: (view) => applyInlineFormat(view, 'bold'), preventDefault: true },
+    { key: 'Mod-i', run: (view) => applyInlineFormat(view, 'italic'), preventDefault: true },
+    { key: 'Mod-Shift-k', run: (view) => applyInlineFormat(view, 'code'), preventDefault: true },
+    { key: 'Mod-Shift-x', run: (view) => applyInlineFormat(view, 'strike'), preventDefault: true },
     { key: 'Mod-Alt-m', run: wrapComment, preventDefault: true },
     {
       key: 'Mod-Shift-m',

@@ -26,6 +26,7 @@ import { makeTheme } from './theme';
 import { handlePaste, handleDrop } from './imagePaste';
 import { atomicMediaExtension } from './atomicMedia';
 import { atomicInlineMarksExtension } from './atomicInlineMarks';
+import { pendingInlineFormatExtension } from './keymap/pendingInlineFormat';
 import { citationAutocomplete } from './autocomplete/citationAutocomplete';
 import { citationHoverTooltip } from './decorations/citationHover';
 import { defaultGhostTextRefs, ghostTextExtension } from './ai/ghostText';
@@ -113,6 +114,13 @@ export function MarkdownEditor({
         // open/label/close shape. Ships with Bold (`**` / `__`); later
         // PRs append Italic / Strike / Highlight / Code / Sub / Sup.
         atomicInlineMarksExtension(),
+        // v0.2.29 — Word-style "pending inline format" type-ahead. When
+        // a toolbar/shortcut is invoked with EMPTY selection, the format
+        // is stored as pending and the next-typed text gets wrapped. See
+        // keymap/pendingInlineFormat.ts. Runs BEFORE wysiwygEscapeFilter
+        // so the wrap is applied to the original character, not its
+        // escape-rewritten form.
+        pendingInlineFormatExtension(),
         wysiwygEscapeFilter(),
         citationAutocomplete(),
         citationHoverTooltip(),

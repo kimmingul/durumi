@@ -1,7 +1,11 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { indentMore, indentLess } from '@codemirror/commands';
-import { toggleWrap, toggleSup, toggleSub } from '../editor/keymap/toggleWrap';
+import {
+  applyInlineFormat,
+  getPendingFormat,
+  type InlineFormat,
+} from '../editor/keymap/pendingInlineFormat';
 import { setHeading, clearHeading } from '../editor/keymap/setHeading';
 import { insertTable } from '../editor/keymap/insertTable';
 import { insertCodeBlock } from '../editor/keymap/insertCodeBlock';
@@ -280,6 +284,12 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     if (!view) return EMPTY_MARKS;
     return inlineMarksAt(view.state, view.state.selection.main.head);
   });
+  // v0.2.29 — Word-style pending inline format (empty-selection toolbar/
+  // shortcut sets this; the next-typed character is wrapped and the state
+  // clears). Driven by `pendingInlineFormatField` in the editor state.
+  const [pendingFormat, setPendingFormat] = useState<InlineFormat | null>(() =>
+    view ? getPendingFormat(view.state) : null,
+  );
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkInitialText, setLinkInitialText] = useState('');
   // v0.2.19 - when set, confirmLink replaces this range (an existing
@@ -297,12 +307,14 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     if (!view) {
       setStyleValue('body');
       setMarks(EMPTY_MARKS);
+      setPendingFormat(null);
       lastViewRef.current = null;
       return;
     }
     const refresh = () => {
       setStyleValue(detectStyle(view));
       setMarks(inlineMarksAt(view.state, view.state.selection.main.head));
+      setPendingFormat(getPendingFormat(view.state));
     };
     refresh();
     if (view === lastViewRef.current) return;
@@ -311,10 +323,14 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     dom.addEventListener('keyup', refresh);
     dom.addEventListener('mouseup', refresh);
     dom.addEventListener('focus', refresh, true);
+    // v0.2.29 — IME composition doesn't fire keyup; listen to compositionend
+    // so the pending-format visual indicator updates after Korean input.
+    dom.addEventListener('compositionend', refresh);
     return () => {
       dom.removeEventListener('keyup', refresh);
       dom.removeEventListener('mouseup', refresh);
       dom.removeEventListener('focus', refresh, true);
+      dom.removeEventListener('compositionend', refresh);
     };
   }, [view, content]);
 
@@ -402,6 +418,11 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     if (!view) return;
     fn(view);
     view.focus();
+    // v0.2.29 — toolbar onClick dispatches do not fire keyup/mouseup, so
+    // the pending-format indicator would otherwise lag a keystroke behind
+    // the dispatch. Refresh React state synchronously after the dispatch.
+    setMarks(inlineMarksAt(view.state, view.state.selection.main.head));
+    setPendingFormat(getPendingFormat(view.state));
   }
 
   function onStyleChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -519,8 +540,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               label={t('toolbar.bold')}
               shortcut="B"
               disabled={disabled}
-              active={marks.bold}
-              onClick={() => run((v) => toggleWrap(v, '**'))}
+              active={marks.bold || pendingFormat === 'bold'}
+              onClick={() => run((v) => applyInlineFormat(v, 'bold'))}
               testId="toolbar-bold"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -536,8 +557,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               label={t('toolbar.italic')}
               shortcut="I"
               disabled={disabled}
-              active={marks.italic}
-              onClick={() => run((v) => toggleWrap(v, '*'))}
+              active={marks.italic || pendingFormat === 'italic'}
+              onClick={() => run((v) => applyInlineFormat(v, 'italic'))}
               testId="toolbar-italic"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -552,8 +573,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
             <ToolButton
               label={t('toolbar.strike')}
               disabled={disabled}
-              active={marks.strike}
-              onClick={() => run((v) => toggleWrap(v, '~~'))}
+              active={marks.strike || pendingFormat === 'strike'}
+              onClick={() => run((v) => applyInlineFormat(v, 'strike'))}
               testId="toolbar-strike"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -568,8 +589,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
             <ToolButton
               label={t('toolbar.code')}
               disabled={disabled}
-              active={marks.code}
-              onClick={() => run((v) => toggleWrap(v, '`'))}
+              active={marks.code || pendingFormat === 'code'}
+              onClick={() => run((v) => applyInlineFormat(v, 'code'))}
               testId="toolbar-code"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -584,8 +605,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
             <ToolButton
               label={t('toolbar.sup')}
               disabled={disabled}
-              active={marks.sup}
-              onClick={() => run((v) => toggleSup(v))}
+              active={marks.sup || pendingFormat === 'sup'}
+              onClick={() => run((v) => applyInlineFormat(v, 'sup'))}
               testId="toolbar-sup"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -600,8 +621,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
             <ToolButton
               label={t('toolbar.sub')}
               disabled={disabled}
-              active={marks.sub}
-              onClick={() => run((v) => toggleSub(v))}
+              active={marks.sub || pendingFormat === 'sub'}
+              onClick={() => run((v) => applyInlineFormat(v, 'sub'))}
               testId="toolbar-sub"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
