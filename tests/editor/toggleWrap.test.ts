@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { wrapSelection, unwrapIfWrapped, toggleWrap } from '../../src/editor/keymap/toggleWrap';
+import { wrapSelection, unwrapIfWrapped } from '../../src/editor/keymap/toggleWrap';
 
 function makeView(doc: string, anchor: number, head: number) {
   const state = EditorState.create({ doc, selection: { anchor, head } });
@@ -23,45 +23,8 @@ describe('toggleWrap', () => {
   });
 });
 
-describe('toggleWrap — empty selection with placeholder (v0.2.29)', () => {
-  it('empty selection inserts `before + placeholder + after` and selects the placeholder', () => {
-    const v = makeView('hello ', 6, 6);
-    toggleWrap(v, '**', '**', '굵게');
-    expect(v.state.doc.toString()).toBe('hello **굵게**');
-    const sel = v.state.selection.main;
-    // anchor at start of placeholder, head at end of placeholder
-    expect(sel.from).toBe(8);
-    expect(sel.to).toBe(10);
-    v.destroy();
-  });
-
-  it('non-empty selection still wraps the selection, ignoring the placeholder', () => {
-    const v = makeView('hello world', 6, 11); // 'world' selected
-    toggleWrap(v, '**', '**', '굵게');
-    expect(v.state.doc.toString()).toBe('hello **world**');
-    v.destroy();
-  });
-
-  it('no placeholder + empty selection falls back to existing behaviour (BC for non-toolbar callers)', () => {
-    const v = makeView('hello ', 6, 6);
-    toggleWrap(v, '**');
-    expect(v.state.doc.toString()).toBe('hello ****');
-    v.destroy();
-  });
-
-  it('does NOT produce HorizontalRule-parsing source on empty line + Bold', () => {
-    const v = makeView('', 0, 0);
-    toggleWrap(v, '**', '**', '굵게');
-    expect(v.state.doc.toString()).toBe('**굵게**');
-    expect(v.state.doc.toString()).not.toBe('****');
-    v.destroy();
-  });
-
-  it('does NOT produce FencedCode-parsing source on empty line + Strike', () => {
-    const v = makeView('', 0, 0);
-    toggleWrap(v, '~~', '~~', '취소선');
-    expect(v.state.doc.toString()).toBe('~~취소선~~');
-    expect(v.state.doc.toString()).not.toBe('~~~~');
-    v.destroy();
-  });
-});
+// v0.2.29 — empty-selection behavior moved to pendingInlineFormat.ts
+// (Word-style "pending format" state). The placeholder approach pioneered
+// here in an earlier v0.2.29 commit turned out NOT to cover the toolbar
+// onClick path (false-green 6th pattern) — see PR #8 history. Tests for
+// the new empty-selection contract live in tests/editor/pendingInlineFormat.test.ts.
