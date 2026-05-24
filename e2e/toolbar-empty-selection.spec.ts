@@ -1,26 +1,28 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
-import { launchClean, shutdownClean, getEditorDoc, composeKorean } from './_helpers';
+import { launchClean, shutdownClean, getEditorDoc } from './_helpers';
 
 /**
- * v0.2.29 — Word-style pending inline format: empty-selection
- * toolbar/shortcut sets pending state, the next-typed text gets
- * wrapped, then pending clears.
+ * v0.2.29 — empty-selection toolbar contract.
  *
- * History: an earlier v0.2.29 commit tried a "placeholder text"
- * approach but only wired it through menu IPC + keymap shortcuts.
- * The toolbar BUTTON onClick was missed (false-green 6th pattern),
- * and the user's real install reproduced the v0.2.28 bug exactly.
- * v0.2.29 final implementation lives in
- * `src/editor/keymap/pendingInlineFormat.ts`: a StateField + a
- * `EditorState.transactionFilter` that wraps the first input.type
- * OR input.compose event after a pending toggle. ALL three callers
- * (toolbar button, Cmd+B shortcut, menu IPC) now route through
- * `applyInlineFormat(view, format)`.
+ * History: v0.2.28 inserted `${before}${after}` (e.g. `****`) on empty
+ * selection — collided with CommonMark block parsers AND broke Korean
+ * IME composition. v0.2.29 tried two alternative designs (placeholder
+ * text, then Word-style pending format with a transactionFilter) but
+ * both broke real macOS Korean IME because rewriting the doc mid-
+ * composition desyncs CodeMirror's compose-range tracking. The
+ * WYSIWYG-on-source pattern (CM6 + atomic ranges over markdown source)
+ * is fundamentally IME-fragile.
  *
- * This spec drives the menu IPC channel — the canonical path the
- * toolbar button + shortcut also use after this refactor. Korean
- * IME composition is also exercised via CDP `composeKorean()`,
- * directly verifying the v0.2.28 user-reported failure mode.
+ * Final v0.2.29 contract (accepts the constraint):
+ *
+ *   - Empty selection + inline-mark toolbar (Bold/Italic/Strike/Code/
+ *     Sub/Sup) → NO doc change. Toolbar surfaces a transient "Select
+ *     text first" hint (`[data-testid="toolbar-empty-hint"]`) near
+ *     the clicked button, auto-fades after ~1.8s.
+ *   - Non-empty selection → wrap/unwrap as before (toggleWrap).
+ *
+ * Word-like type-ahead format deferred to v0.3.x architectural work
+ * (see DOCUMENT_MODE_PRINCIPLES.md §7 "Buried Problem").
  */
 
 let app: ElectronApplication;
@@ -62,85 +64,44 @@ async function clearAndFocus(): Promise<void> {
   });
 }
 
-async function fireMenuIpc(cmd: string): Promise<void> {
-  await app.evaluate(({ BrowserWindow }, c) => {
-    const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    w?.webContents.send('menu:command', c);
-  }, cmd);
-  await page.waitForTimeout(50);
+async function clickToolbarButton(testId: string): Promise<void> {
+  await page.click(`[data-testid="${testId}"]`);
+  await page.waitForTimeout(30);
 }
 
-const CASES = [
-  { cmd: 'bold', before: '**', after: '**', broken: '****' },
-  { cmd: 'italic', before: '*', after: '*', broken: '**' },
-  { cmd: 'strikethrough', before: '~~', after: '~~', broken: '~~~~' },
-  { cmd: 'code', before: '`', after: '`', broken: '``' },
+const INLINE_BUTTONS = [
+  { testId: 'toolbar-bold' },
+  { testId: 'toolbar-italic' },
+  { testId: 'toolbar-strike' },
+  { testId: 'toolbar-code' },
+  { testId: 'toolbar-sub' },
+  { testId: 'toolbar-sup' },
 ];
 
-for (const { cmd, before, after, broken } of CASES) {
-  test(`toolbar ${cmd} on empty line: doc unchanged (pending state only)`, async () => {
+for (const { testId } of INLINE_BUTTONS) {
+  test(`${testId} on empty selection: doc unchanged + hint visible`, async () => {
     await clearAndFocus();
-    await fireMenuIpc(cmd);
-    // v0.2.29 contract: the toolbar dispatch alone makes NO document change.
-    // The pending state is set; doc remains empty until the user types.
+    await clickToolbarButton(testId);
     expect(await getEditorDoc(page)).toBe('');
+    // Hint is rendered and visible
+    const hint = page.locator('[data-testid="toolbar-empty-hint"]');
+    await expect(hint).toBeVisible();
   });
 
-  test(`toolbar ${cmd} on empty line + ASCII type → wraps the typed text`, async () => {
+  test(`${testId} on empty line does NOT produce malformed markdown (****, ~~~~, etc.)`, async () => {
     await clearAndFocus();
-    await fireMenuIpc(cmd);
-    await page.keyboard.type('h');
-    expect(await getEditorDoc(page)).toBe(`${before}h${after}`);
-  });
-
-  test(`toolbar ${cmd} on empty line does NOT produce the v0.2.28-broken shape (${broken})`, async () => {
-    await clearAndFocus();
-    await fireMenuIpc(cmd);
-    await page.keyboard.type('h');
-    expect(await getEditorDoc(page)).not.toBe(broken);
+    await clickToolbarButton(testId);
+    const doc = await getEditorDoc(page);
+    expect(doc).not.toBe('****');
+    expect(doc).not.toBe('~~~~');
+    expect(doc).not.toBe('**');
+    expect(doc).not.toBe('``');
+    expect(doc).not.toContain('<sub></sub>');
+    expect(doc).not.toContain('<sup></sup>');
   });
 }
 
-test('toolbar bold + Korean IME composition (composeKorean) → **한**', async () => {
-  // This is the exact v0.2.28 user-reported scenario, automated.
-  // Before v0.2.29: doc became `**ㅏㄴ글볼드**ㅎ` (Korean letters
-  // in wrong positions because `****` HR widget hijacked caret +
-  // IME composition desynced).
-  // After v0.2.29: pending bold + first compose event ('ㅎ') wraps
-  // as `**ㅎ**`, caret lands inside the well-formed bold span,
-  // subsequent composition updates flow naturally → final '**한**'.
-  await clearAndFocus();
-  await fireMenuIpc('bold');
-  try {
-    await composeKorean(page, ['ㅎ', '하', '한'], '한');
-  } catch (err) {
-    test.skip(true, `CDP IME composition unsupported: ${(err as Error).message}`);
-  }
-  expect(await getEditorDoc(page)).toBe('**한**');
-});
-
-test('toolbar bold then bold again (toggle) → pending cleared, no wrap on next type', async () => {
-  await clearAndFocus();
-  await fireMenuIpc('bold');
-  await fireMenuIpc('bold');
-  await page.keyboard.type('h');
-  expect(await getEditorDoc(page)).toBe('h');
-});
-
-test('toolbar bold then caret move (ArrowLeft) → pending cleared, no wrap on next type', async () => {
-  await clearAndFocus();
-  // Seed a char so ArrowLeft has somewhere to move to.
-  await page.keyboard.type('a');
-  // Cursor now at pos 1. Toggle pending bold; cursor move clears it.
-  await fireMenuIpc('bold');
-  await page.keyboard.press('ArrowLeft');
-  await page.keyboard.type('h');
-  // 'h' inserted at pos 0 without bold wrapping → 'ha'.
-  expect(await getEditorDoc(page)).toBe('ha');
-});
-
-test('non-empty selection + toolbar bold still wraps the selection (regression)', async () => {
-  // Seed text and select 'hello'.
+test('non-empty selection + toolbar bold still wraps the selection (regression guard)', async () => {
   await clearAndFocus();
   await page.keyboard.type('hello world');
   await page.evaluate(() => {
@@ -154,6 +115,16 @@ test('non-empty selection + toolbar bold still wraps the selection (regression)'
     view.dispatch({ selection: { anchor: 0, head: 5 }, userEvent: 'select' });
     view.focus();
   });
-  await fireMenuIpc('bold');
+  await clickToolbarButton('toolbar-bold');
   expect(await getEditorDoc(page)).toBe('**hello** world');
+});
+
+test('toolbar bold hint auto-fades after ~1.8s', async () => {
+  await clearAndFocus();
+  await clickToolbarButton('toolbar-bold');
+  const hint = page.locator('[data-testid="toolbar-empty-hint"]');
+  await expect(hint).toBeVisible();
+  // Hint clears via setTimeout(..., 1800).
+  await page.waitForTimeout(2000);
+  await expect(hint).toHaveCount(0);
 });
