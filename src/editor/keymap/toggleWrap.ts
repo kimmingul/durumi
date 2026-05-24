@@ -38,6 +38,12 @@ export function toggleWrap(view: EditorView, before: string, after: string = bef
  * Wrap the current selection in `<sup>…</sup>` (toggles off when the
  * selection is already wrapped). Markdown-it has no native superscript syntax,
  * so the raw HTML round-trips cleanly through every renderer in Durumi.
+ *
+ * For EMPTY selections, the production caller routes through
+ * `applyInlineFormat(view, 'sup')` (see `pendingInlineFormat.ts`) which
+ * sets a Word-style pending state instead of inserting `<sup></sup>`.
+ * This function preserves the legacy direct-wrap behaviour for any
+ * non-toolbar caller that might still use it.
  */
 export function toggleSup(view: EditorView): boolean {
   return toggleWrap(view, '<sup>', '</sup>');
@@ -45,7 +51,7 @@ export function toggleSup(view: EditorView): boolean {
 
 /**
  * Wrap the current selection in `<sub>…</sub>` (toggles off when already
- * wrapped). Same rationale as `toggleSup`.
+ * wrapped). See `toggleSup` for rationale and the v0.2.29 routing note.
  */
 export function toggleSub(view: EditorView): boolean {
   return toggleWrap(view, '<sub>', '</sub>');

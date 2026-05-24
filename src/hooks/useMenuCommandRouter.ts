@@ -9,7 +9,7 @@ import { useMemoPanelStore } from '../store/memoPanelStore';
 import { useLanguage, resolveRendererLang } from '../i18n/t';
 import { currentParagraph } from '../editor/paragraphContext';
 import { focusModeField, setFocusMode, setTypewriterMode, typewriterModeField } from '../editor/viewModes';
-import { toggleWrap } from '../editor/keymap/toggleWrap';
+import { applyInlineFormat } from '../editor/keymap/pendingInlineFormat';
 import { setHeading } from '../editor/keymap/setHeading';
 import { insertTable as insertTableHelper } from '../editor/keymap/insertTable';
 import { insertCodeBlock as insertCodeBlockHelper } from '../editor/keymap/insertCodeBlock';
@@ -192,10 +192,10 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         setLang(resolveRendererLang(prefs.language));
         return;
       }
-      if (cmd === 'bold' && view) { toggleWrap(view, '**'); view.focus(); return; }
-      if (cmd === 'italic' && view) { toggleWrap(view, '*'); view.focus(); return; }
-      if (cmd === 'code' && view) { toggleWrap(view, '`'); view.focus(); return; }
-      if (cmd === 'strikethrough' && view) { toggleWrap(view, '~~'); view.focus(); return; }
+      if (cmd === 'bold' && view) { applyInlineFormat(view, 'bold'); view.focus(); return; }
+      if (cmd === 'italic' && view) { applyInlineFormat(view, 'italic'); view.focus(); return; }
+      if (cmd === 'code' && view) { applyInlineFormat(view, 'code'); view.focus(); return; }
+      if (cmd === 'strikethrough' && view) { applyInlineFormat(view, 'strike'); view.focus(); return; }
       if (cmd === 'insertTable' && view) { insertTableHelper(view); view.focus(); return; }
       if (cmd === 'toggleTask' && view) { toggleTaskHelper(view); view.focus(); return; }
       if (cmd === 'codeBlock' && view) { insertCodeBlockHelper(view); view.focus(); return; }

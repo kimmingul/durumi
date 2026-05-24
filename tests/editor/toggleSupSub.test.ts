@@ -23,7 +23,13 @@ describe('toggleSup', () => {
     expect(v.state.doc.toString()).toBe('E=mc2');
     v.destroy();
   });
-  it('inserts an empty pair at the caret when no selection', () => {
+  it('inserts an empty pair at the caret when no selection (legacy direct-wrap path)', () => {
+    // v0.2.29 — toolbar Sub/Sup with empty selection routes through
+    // `applyInlineFormat(view, 'sup')` (Word-style pending) instead.
+    // This direct `toggleSup(view)` call is the legacy path retained
+    // for any non-toolbar caller; it still produces `<sup></sup>` as
+    // before. Tests for the new empty-selection contract live in
+    // tests/editor/pendingInlineFormat.test.ts.
     const v = makeView('x', 1, 1);
     toggleSup(v);
     expect(v.state.doc.toString()).toBe('x<sup></sup>');

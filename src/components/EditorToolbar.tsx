@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { indentMore, indentLess } from '@codemirror/commands';
-import { toggleWrap, toggleSup, toggleSub } from '../editor/keymap/toggleWrap';
+import { applyInlineFormat, type InlineFormat } from '../editor/keymap/pendingInlineFormat';
 import { setHeading, clearHeading } from '../editor/keymap/setHeading';
 import { insertTable } from '../editor/keymap/insertTable';
 import { insertCodeBlock } from '../editor/keymap/insertCodeBlock';
@@ -280,6 +280,23 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     if (!view) return EMPTY_MARKS;
     return inlineMarksAt(view.state, view.state.selection.main.head);
   });
+  // v0.2.29 — transient hint shown when the user clicks an inline-mark
+  // toolbar button with an EMPTY selection. Word-style "pending format"
+  // was attempted earlier in v0.2.29 but broke real macOS Korean IME
+  // composition (CodeMirror + atomic ranges over markdown source =
+  // WYSIWYG-on-Source, IME-fragile by construction). Until Document
+  // mode is rearchitected (v0.3.x), we accept the simpler contract:
+  // empty selection + toolbar = no-op + hint to select text first.
+  const [emptyHint, setEmptyHint] = useState<{ rect: DOMRect; message: string } | null>(null);
+  const emptyHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (emptyHintTimerRef.current) {
+        clearTimeout(emptyHintTimerRef.current);
+        emptyHintTimerRef.current = null;
+      }
+    };
+  }, []);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkInitialText, setLinkInitialText] = useState('');
   // v0.2.19 - when set, confirmLink replaces this range (an existing
@@ -402,6 +419,33 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     if (!view) return;
     fn(view);
     view.focus();
+    // v0.2.29 — toolbar onClick dispatches don't fire keyup/mouseup, so
+    // refresh the active-mark indicators (`marks`) synchronously.
+    setMarks(inlineMarksAt(view.state, view.state.selection.main.head));
+  }
+
+  /**
+   * v0.2.29 — inline-format toolbar buttons (Bold/Italic/Strike/Code/Sub/
+   * Sup) route through this. If the selection is empty, `applyInlineFormat`
+   * returns `false` and we surface a transient hint anchored at the
+   * clicked button so the user understands the click was acknowledged
+   * but inline-format toggling requires selecting text first. Real
+   * Word-style type-ahead is deferred to v0.3.x architectural work.
+   */
+  function runFormat(format: InlineFormat, event: React.MouseEvent<HTMLButtonElement>): void {
+    if (!view) return;
+    const applied = applyInlineFormat(view, format);
+    view.focus();
+    setMarks(inlineMarksAt(view.state, view.state.selection.main.head));
+    if (applied) return;
+    // Empty-selection no-op: show hint near the button.
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    if (emptyHintTimerRef.current) clearTimeout(emptyHintTimerRef.current);
+    setEmptyHint({ rect, message: t('toolbar.selectTextFirst') });
+    emptyHintTimerRef.current = setTimeout(() => {
+      setEmptyHint(null);
+      emptyHintTimerRef.current = null;
+    }, 1800);
   }
 
   function onStyleChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -520,7 +564,7 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               shortcut="B"
               disabled={disabled}
               active={marks.bold}
-              onClick={() => run((v) => toggleWrap(v, '**'))}
+              onClick={(e) => runFormat('bold', e)}
               testId="toolbar-bold"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -537,7 +581,7 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               shortcut="I"
               disabled={disabled}
               active={marks.italic}
-              onClick={() => run((v) => toggleWrap(v, '*'))}
+              onClick={(e) => runFormat('italic', e)}
               testId="toolbar-italic"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -553,7 +597,7 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               label={t('toolbar.strike')}
               disabled={disabled}
               active={marks.strike}
-              onClick={() => run((v) => toggleWrap(v, '~~'))}
+              onClick={(e) => runFormat('strike', e)}
               testId="toolbar-strike"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -569,7 +613,7 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               label={t('toolbar.code')}
               disabled={disabled}
               active={marks.code}
-              onClick={() => run((v) => toggleWrap(v, '`'))}
+              onClick={(e) => runFormat('code', e)}
               testId="toolbar-code"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -585,7 +629,7 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               label={t('toolbar.sup')}
               disabled={disabled}
               active={marks.sup}
-              onClick={() => run((v) => toggleSup(v))}
+              onClick={(e) => runFormat('sup', e)}
               testId="toolbar-sup"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -601,7 +645,7 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
               label={t('toolbar.sub')}
               disabled={disabled}
               active={marks.sub}
-              onClick={() => run((v) => toggleSub(v))}
+              onClick={(e) => runFormat('sub', e)}
               testId="toolbar-sub"
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
@@ -969,6 +1013,22 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
           onClose={() => setTablePopover(null)}
           onPick={pickTableSize}
         />
+      )}
+      {emptyHint && (
+        <div
+          className="editor-toolbar-empty-hint"
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            top: emptyHint.rect.bottom + 6,
+            left: emptyHint.rect.left,
+            zIndex: 1000,
+          }}
+          data-testid="toolbar-empty-hint"
+        >
+          {emptyHint.message}
+        </div>
       )}
     </div>
   );
