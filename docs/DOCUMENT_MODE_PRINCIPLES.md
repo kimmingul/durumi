@@ -51,10 +51,12 @@ PR에서 어떤 원칙을 양보해야 할 때는 본 문서를 갱신해 예외
 
 ### 검증
 - **Unit**: 필수지만 **불충분**. composition-like transaction 시뮬레이션만으로는 OS-level IME 동작을 재현하지 못함.
-- **Real-UI**: Electron 위에서 실제 한국어 입력을 active line / table cell / link label / memo body / math / alert 각각에서 수행하여 합성 corruption 없음을 확인.
+- **Automated IME (v0.2.29~)**: IME composition을 만지는 코드(atomic ranges, marker hide, contentEditable cell, escape filter, transactionFilter on `input.type`) 변경 시 **CDP `Input.imeSetComposition` 기반 e2e 의무**. `e2e/_helpers.ts`의 `composeKorean(page, syllables, commitText)` helper로 wrapping. 예: [e2e/toolbar-ime-composition.spec.ts](../e2e/toolbar-ime-composition.spec.ts). 4-cycle false-green (v0.2.19/.20/.21/.23/.28) 가 정확히 이 자동화 layer 부재로 발생했음.
+- **Real-UI 수동 smoke**: release sign-off gate. CDP 자동 합성과 실제 macOS Korean 2-set IME의 OS-level 동작이 1% edge case에서 분기 가능 (Hanja 변환, Japanese reconversion 등). 사용자 install-and-test cycle 유지.
 
 ### Anti-pattern
-- "Playwright fixture에서 `page.keyboard.insertText('가')`가 통과했으니 IME 안전하다"고 결론짓는 것 — fixture는 IME composition을 우회한다.
+- "Playwright fixture에서 `page.keyboard.insertText('가')`가 통과했으니 IME 안전하다"고 결론짓는 것 — fixture는 IME composition을 우회한다. `page.keyboard.type('한')`도 동일 — 합성 이벤트가 아니라 synthesized keystroke로 처리됨.
+- "Unit + automated CDP composition 둘 다 green이면 manual smoke 생략 가능" — 1% edge case가 4-cycle false-green을 만든다. 둘 다 통과 후에도 release sign-off 전 manual Korean smoke는 필수.
 
 ---
 
