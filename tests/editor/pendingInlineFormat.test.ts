@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { EditorState, EditorSelection } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import {
+  __resetComposingSnapshotForTest,
   applyInlineFormat,
   clearPendingInlineFormat,
   getPendingFormat,
@@ -9,6 +10,10 @@ import {
   togglePendingInlineFormat,
 } from '../../src/editor/keymap/pendingInlineFormat';
 import { editModeStateExtension, setEditMode } from '../../src/editor/editMode';
+
+beforeEach(() => {
+  __resetComposingSnapshotForTest();
+});
 
 /**
  * v0.2.29 — Word-style pending inline format state machine.
@@ -186,28 +191,88 @@ describe('transactionFilter — input.type wrapping', () => {
   });
 });
 
-describe('transactionFilter — input.compose (IME) wrapping', () => {
-  it('first input.compose after pending bold wraps the composing text', () => {
+describe('compositionend (IME) wrap — deferred to end of composition', () => {
+  // The wrap happens via DOM compositionstart/end events, not via the
+  // transactionFilter. Rewriting an `input.compose` transaction mid-
+  // composition would desync CodeMirror's compose-range tracking,
+  // which is exactly the v0.2.28 bug AND a regression in an earlier
+  // v0.2.29 attempt that handled input.compose in the filter.
+
+  it('input.compose alone (without compositionstart) does NOT wrap', () => {
+    // The transactionFilter intentionally no-ops on input.compose.
     const v = makeView('', 0);
     applyInlineFormat(v, 'bold');
-    // Simulate first IME composition event with 'ㅎ'.
     v.dispatch(v.state.update({ changes: { from: 0, insert: 'ㅎ' }, userEvent: 'input.compose' }));
-    expect(v.state.doc.toString()).toBe('**ㅎ**');
-    expect(getPendingFormat(v.state)).toBeNull();
+    expect(v.state.doc.toString()).toBe('ㅎ');
+    // Pending preserved across input.compose because tr.docChanged is true,
+    // so the "selection-only clear" branch doesn't fire.
+    expect(getPendingFormat(v.state)).toBe('bold');
     v.destroy();
   });
 
-  it('subsequent input.compose updates inside the new bold span do NOT re-wrap', () => {
+  it('full composition flow: compositionstart → input.compose → compositionend → wraps the composed text', () => {
     const v = makeView('', 0);
     applyInlineFormat(v, 'bold');
-    // First compose event: 'ㅎ' → **ㅎ**, caret at pos 3
-    v.dispatch(v.state.update({ changes: { from: 0, insert: 'ㅎ' }, userEvent: 'input.compose' }));
-    expect(v.state.doc.toString()).toBe('**ㅎ**');
-    // Subsequent compose: IME replaces 'ㅎ' at pos 2..3 with '하'
-    v.dispatch(
-      v.state.update({ changes: { from: 2, to: 3, insert: '하' }, userEvent: 'input.compose' }),
-    );
-    expect(v.state.doc.toString()).toBe('**하**');
+    // Snapshot at compositionstart: pending=bold, startPos=0.
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionstart', { data: '' }));
+    // Composing 'ㅎ' inserted at pos 0; real IME advances caret to end of
+    // composing text (pos 1).
+    v.dispatch({ changes: { from: 0, insert: 'ㅎ' }, selection: { anchor: 1 }, userEvent: 'input.compose' });
+    // Subsequent compositionupdate replaces 'ㅎ' at 0..1 with '한'.
+    v.dispatch({ changes: { from: 0, to: 1, insert: '한' }, selection: { anchor: 1 }, userEvent: 'input.compose' });
+    expect(v.state.doc.toString()).toBe('한');
+    // compositionend fires: handler wraps from startPos (0) to caret (1) → '**한**'
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionend', { data: '한' }));
+    expect(v.state.doc.toString()).toBe('**한**');
+    expect(getPendingFormat(v.state)).toBeNull();
+    // Caret lands between '한' and closing '**' → pos 3.
+    expect(v.state.selection.main.head).toBe(3);
+    v.destroy();
+  });
+
+  it('compositionend with NO pending state does NOT wrap', () => {
+    const v = makeView('', 0);
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionstart', { data: '' }));
+    v.dispatch({ changes: { from: 0, insert: '한' }, selection: { anchor: 1 }, userEvent: 'input.compose' });
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionend', { data: '한' }));
+    expect(v.state.doc.toString()).toBe('한');
+    v.destroy();
+  });
+
+  it('multi-step IME compositionupdate sequence (ㅎ→하→한) still ends at **한**', () => {
+    // This is the EXACT v0.2.28 user-reported scenario: multi-step
+    // Korean 2-set IME composition through pending bold.
+    const v = makeView('', 0);
+    applyInlineFormat(v, 'bold');
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionstart', { data: '' }));
+    // Each jamo: composing text replaces previous; caret tracks end of composing.
+    v.dispatch({ changes: { from: 0, insert: 'ㅎ' }, selection: { anchor: 1 }, userEvent: 'input.compose' });
+    v.dispatch({ changes: { from: 0, to: 1, insert: '하' }, selection: { anchor: 1 }, userEvent: 'input.compose' });
+    v.dispatch({ changes: { from: 0, to: 1, insert: '한' }, selection: { anchor: 1 }, userEvent: 'input.compose' });
+    expect(v.state.doc.toString()).toBe('한');
+    expect(getPendingFormat(v.state)).toBe('bold'); // preserved across compose events
+    // Composition ends — wrap fires.
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionend', { data: '한' }));
+    expect(v.state.doc.toString()).toBe('**한**');
+    v.destroy();
+  });
+
+  it('multi-syllable composition (한글볼드) wraps the full composed text once at compositionend', () => {
+    // User intends: pending bold + type '한글볼드' → final '**한글볼드**'.
+    // Real Korean IME fires compositionstart on first jamo, compositionend
+    // on final commit. All intermediate syllables accumulate inside a
+    // single composition session.
+    const v = makeView('', 0);
+    applyInlineFormat(v, 'bold');
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionstart', { data: '' }));
+    // Each successive syllable extends the composing text; caret tracks end.
+    v.dispatch({ changes: { from: 0, insert: '한' }, selection: { anchor: 1 }, userEvent: 'input.compose' });
+    v.dispatch({ changes: { from: 1, insert: '글' }, selection: { anchor: 2 }, userEvent: 'input.compose' });
+    v.dispatch({ changes: { from: 2, insert: '볼' }, selection: { anchor: 3 }, userEvent: 'input.compose' });
+    v.dispatch({ changes: { from: 3, insert: '드' }, selection: { anchor: 4 }, userEvent: 'input.compose' });
+    expect(v.state.doc.toString()).toBe('한글볼드');
+    v.contentDOM.dispatchEvent(new CompositionEvent('compositionend', { data: '드' }));
+    expect(v.state.doc.toString()).toBe('**한글볼드**');
     v.destroy();
   });
 });

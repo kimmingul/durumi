@@ -144,7 +144,12 @@ test('non-empty selection + toolbar bold still wraps the selection (regression)'
   await clearAndFocus();
   await page.keyboard.type('hello world');
   await page.evaluate(() => {
-    const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view;
+    const content = document.querySelector('.cm-content') as HTMLElement | null;
+    const view = (
+      content as unknown as {
+        cmTile?: { root?: { view?: { dispatch: (spec: object) => void; focus: () => void } } };
+      }
+    )?.cmTile?.root?.view;
     if (!view) return;
     view.dispatch({ selection: { anchor: 0, head: 5 }, userEvent: 'select' });
     view.focus();

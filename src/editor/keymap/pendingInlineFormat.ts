@@ -6,7 +6,7 @@ import {
   Transaction,
   type Extension,
 } from '@codemirror/state';
-import type { EditorView } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 import { setEditMode } from '../editMode';
 import { toggleWrap } from './toggleWrap';
 
@@ -22,13 +22,20 @@ import { toggleWrap } from './toggleWrap';
  * format" UX:
  *   1. Empty selection + toolbar Bold (or Cmd+B) sets the format as
  *      "pending" — no doc change, toolbar button visually highlights.
- *   2. The next user-typed character (ASCII OR IME composition first
- *      event) is wrapped: `h` becomes `**h**` with caret positioned
- *      INSIDE the span (between `h` and the closing `**`), so further
- *      typing continues inside the bold span naturally.
- *   3. Pending state clears as soon as the wrap is applied, OR on
- *      caret movement (selection change without doc change), OR on
- *      mode switch.
+ *   2. The next user-typed character is wrapped:
+ *      - ASCII (`input.type`): the transactionFilter rewrites the
+ *        first typed-char transaction to wrap as `${before}h${after}`,
+ *        caret positioned INSIDE the new span so further typing
+ *        continues inside.
+ *      - IME composition: the wrap is DEFERRED to `compositionend`
+ *        (via a DOM event handler). Rewriting during composition
+ *        would desync CodeMirror's compose-range tracking — that was
+ *        the v0.2.28 bug AND a regression in an earlier v0.2.29
+ *        attempt that rewrote on `input.compose`. The wrap happens
+ *        ONCE after the IME finalizes, around the full composed text.
+ *   3. Pending state clears as soon as the wrap is applied (ASCII)
+ *      or `compositionend` finishes (IME), OR on caret movement
+ *      (selection change without doc change), OR on mode switch.
  *   4. Selection + Bold still wraps the selection as before
  *      (`toggleWrap` path) — pending state is only set when selection
  *      is empty.
@@ -37,15 +44,6 @@ import { toggleWrap } from './toggleWrap';
  * toggling a different format while one is pending replaces the
  * previous. Multi-format stacking (Cmd+B then Cmd+I → bold+italic
  * pending) is a v0.2.30 enhancement candidate.
- *
- * IME safety: the transactionFilter intercepts BOTH `input.type`
- * (ASCII keystrokes) and `input.compose` (IME composition events).
- * Wrapping happens on the FIRST event — for Korean IME, that's the
- * first composing syllable (`ㅎ`), which becomes `**ㅎ**`. The
- * atomic-range facets register around the well-formed StrongEmphasis
- * node; subsequent composition updates (`ㅎ → 하 → 한`) flow inside
- * the label naturally. Verified with CDP `Input.imeSetComposition`
- * in e2e/toolbar-ime-composition.spec.ts.
  */
 
 export type InlineFormat = 'bold' | 'italic' | 'strike' | 'code' | 'sub' | 'sup';
@@ -88,18 +86,18 @@ export const pendingInlineFormatField = StateField.define<InlineFormat | null>({
     for (const effect of tr.effects) {
       if (effect.is(togglePendingInlineFormat)) {
         hadExplicitEffect = true;
-        // Same format toggled twice → clear; different → replace.
         pending = pending === effect.value ? null : effect.value;
       } else if (effect.is(clearPendingInlineFormat)) {
         hadExplicitEffect = true;
         pending = null;
       } else if (effect.is(setEditMode)) {
-        // Mode switch clears pending (Document ↔ Live ↔ Source).
         pending = null;
       }
     }
     if (hadExplicitEffect) return pending;
     // Caret moved without doc change → clear (Word-style).
+    // During IME composition transactions are docChanged && selectionSet,
+    // so this branch does NOT fire mid-composition.
     if (tr.selection && !tr.docChanged) return null;
     return pending;
   },
@@ -107,20 +105,6 @@ export const pendingInlineFormatField = StateField.define<InlineFormat | null>({
 
 function getPending(state: EditorState): InlineFormat | null {
   return state.field(pendingInlineFormatField, false) ?? null;
-}
-
-/**
- * Dispatcher used by toolbar/keymap/menu when the user invokes an
- * inline-format command with an EMPTY selection. Pure helper —
- * caller decides whether to use this path vs falling through to
- * `toggleWrap` (which handles non-empty selections).
- */
-export function setPendingFormat(view: { dispatch: (spec: object) => void }, format: InlineFormat): void {
-  view.dispatch({ effects: togglePendingInlineFormat.of(format) });
-}
-
-export function clearPendingFormat(view: { dispatch: (spec: object) => void }): void {
-  view.dispatch({ effects: clearPendingInlineFormat.of(null) });
 }
 
 /**
@@ -132,33 +116,26 @@ export function getPendingFormat(state: EditorState): InlineFormat | null {
 }
 
 /**
- * TransactionFilter that wraps the first user-typed text after a
- * pending format toggle. Handles BOTH `input.type` (ASCII / paste)
- * AND `input.compose` (IME composition).
- *
- * Loop guard: our own re-emitted transactions carry the
- * `input.type.pending-format` / `input.compose.pending-format`
- * userEvent and are skipped.
+ * TransactionFilter that wraps the first ASCII / paste input after a
+ * pending format toggle. Only matches `input.type`, NOT `input.compose`
+ * — IME composition is handled by the `compositionend` DOM listener
+ * (see `composeWrapPlugin` below) to avoid mid-composition doc
+ * rewrites that would desync CodeMirror's compose-range tracking.
  */
 function pendingFormatFilter(): Extension {
   return EditorState.transactionFilter.of((tr) => {
     const pending = getPending(tr.startState);
     if (!pending) return tr;
 
-    // Only intercept user text-input transactions.
-    const isType = tr.isUserEvent('input.type');
-    const isCompose = tr.isUserEvent('input.compose');
-    if (!isType && !isCompose) return tr;
+    if (!tr.isUserEvent('input.type')) return tr;
 
     // Loop guard.
     const ev = tr.annotation(Transaction.userEvent);
-    if (ev === 'input.type.pending-format' || ev === 'input.compose.pending-format') {
-      return tr;
-    }
+    if (ev === 'input.type.pending-format') return tr;
 
     if (tr.changes.empty) return tr;
 
-    // Single-cursor only — multi-cursor + wrap gets tangled.
+    // Single-cursor only.
     if (tr.startState.selection.ranges.length !== 1) return tr;
 
     const { before, after } = FORMAT_MARKERS[pending];
@@ -175,14 +152,11 @@ function pendingFormatFilter(): Extension {
     tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
       if (bail) return;
       if (inserted.length === 0) {
-        // Pure deletion under a pending state shouldn't wrap — bail.
         bail = true;
         return;
       }
       const insertedText = inserted.sliceString(0);
       specs.push({ from: fromA, to: toA, insert: before + insertedText + after });
-      // Caret lands between the inserted text and the closing marker so
-      // further typing continues inside the new span.
       caretEnd = fromA + before.length + insertedText.length;
     });
 
@@ -192,14 +166,63 @@ function pendingFormatFilter(): Extension {
       changes: specs,
       selection: EditorSelection.cursor(caretEnd),
       scrollIntoView: true,
-      userEvent: isCompose ? 'input.compose.pending-format' : 'input.type.pending-format',
+      userEvent: 'input.type.pending-format',
       effects: clearPendingInlineFormat.of(null),
     };
   });
 }
 
+/**
+ * IME composition wrap path. CodeMirror does not let us safely rewrite
+ * `input.compose` transactions without breaking the IME's tracking of
+ * the composing range. Instead we listen for the DOM-level
+ * `compositionstart` and `compositionend` events:
+ *
+ *   - On compositionstart with a pending format set, snapshot
+ *     `{ pending, startPos }`. The pending state STAYS set (the
+ *     transactionFilter no-ops on `input.compose`).
+ *   - As composition flows, `input.compose` transactions insert /
+ *     replace the composing text inside the doc; pending state is
+ *     preserved because every such transaction has both
+ *     `docChanged` and `selection`.
+ *   - On compositionend, if the snapshot was non-null, wrap the
+ *     just-composed text (from startPos to current caret) in the
+ *     pending format's markers and clear pending.
+ *
+ * Module-level state suffices for Durumi (single editor view).
+ * Multi-view support is a v0.2.30+ refinement.
+ */
+let composingSnapshot: { pending: InlineFormat; startPos: number } | null = null;
+
+const composeWrapHandlers = EditorView.domEventHandlers({
+  compositionstart(_event, view) {
+    const pending = getPending(view.state);
+    if (!pending) {
+      composingSnapshot = null;
+      return;
+    }
+    composingSnapshot = { pending, startPos: view.state.selection.main.head };
+  },
+  compositionend(_event, view) {
+    if (!composingSnapshot) return;
+    const { pending, startPos } = composingSnapshot;
+    composingSnapshot = null;
+    const endPos = view.state.selection.main.head;
+    if (endPos <= startPos) return; // nothing composed (or caret stayed put)
+    const composedText = view.state.sliceDoc(startPos, endPos);
+    if (composedText.length === 0) return;
+    const { before, after } = FORMAT_MARKERS[pending];
+    view.dispatch({
+      changes: { from: startPos, to: endPos, insert: before + composedText + after },
+      selection: EditorSelection.cursor(startPos + before.length + composedText.length),
+      effects: clearPendingInlineFormat.of(null),
+      userEvent: 'input.compose.pending-format-wrap',
+    });
+  },
+});
+
 export function pendingInlineFormatExtension(): Extension {
-  return [pendingInlineFormatField, pendingFormatFilter()];
+  return [pendingInlineFormatField, pendingFormatFilter(), composeWrapHandlers];
 }
 
 /**
@@ -207,12 +230,11 @@ export function pendingInlineFormatExtension(): Extension {
  * the Word-style decision:
  *
  *   - Selection is empty → set the format as pending (next-typed text
- *     wraps via the transactionFilter).
+ *     wraps via the transactionFilter for ASCII or compositionend for IME).
  *   - Selection is non-empty → call `toggleWrap` to wrap/unwrap the
  *     existing selection synchronously (legacy behaviour, unchanged).
  *
- * Returns true if the dispatch happened, false otherwise. Callers can
- * use the return as the boolean keymap-handler contract result.
+ * Returns true if the dispatch happened.
  */
 export function applyInlineFormat(view: EditorView, format: InlineFormat): boolean {
   const sel = view.state.selection.main;
@@ -222,4 +244,12 @@ export function applyInlineFormat(view: EditorView, format: InlineFormat): boole
   }
   const { before, after } = FORMAT_MARKERS[format];
   return toggleWrap(view, before, after);
+}
+
+/**
+ * Test helper — reset the module-level composing snapshot between
+ * unit tests. Production code never needs this.
+ */
+export function __resetComposingSnapshotForTest(): void {
+  composingSnapshot = null;
 }
