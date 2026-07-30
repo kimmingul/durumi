@@ -15,7 +15,7 @@
 | UI 표면 | Electron 데스크톱 GUI (macOS + Windows 11), React 18 + CodeMirror 6 | 인터뷰 `ui_surface` |
 | 팀 구성 | 단독 메인테이너의 공개 오픈소스 — CLA/CONTRIBUTING/PR 템플릿을 갖춘 오픈코어 | `README.md:673-701`, `CONTRIBUTING.md`, 인터뷰 `team_sharing` |
 
-**드리프트 참고**: `README.md:7`은 "Current version: v0.2.28"로 아직 갱신되지 않았다 — `package.json`의 0.2.29가 SSOT이며, 이 드리프트는 아래 `findings`에도 기록했다.
+**버전 SSOT**: `package.json:4`가 단일 원천이다. 이전에 `README.md:7`이 v0.2.28로, 아웃바운드 User-Agent 3곳이 v0.1.6/0.1.7/0.1.8로 정체되어 있었으나 `b19a016`에서 모두 `package.json` 기준으로 통일했다 — 상세는 `tech.md` §13.1.
 
 ## 2. 문제와 대상 사용자
 

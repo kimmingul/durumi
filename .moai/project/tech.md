@@ -137,12 +137,17 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
 문서화된 사실을 숨기지 않는다 — 코드 자체에 남아 있는 알려진 결함이다.
 
-- **세 곳에서 서로 다른 하드코딩 버전 문자열이 User-Agent로 외부에 나간다** — `electron/bibliographyFetch.ts:14`는 `'0.1.6'`, `electron/referenceDownload.ts:352`는 `'Durumi/0.1.7 (https://github.com/kimmingul/durumi)'`, `electron/aiClient.ts:53`은 `'0.1.8'`을 각각 상수로 갖고 있다. 셋 다 `package.json:4`의 실제 버전(`0.2.29`)과 다르고 서로도 다르며, `app.getVersion()`에서 파생되지 않는다. Crossref/PubMed/ORCID에 보내는 클라이언트 식별이 3중으로 부정확하다.
-- **`README.md:7`이 "Current version: v0.2.28"로 정체되어 있다** — `package.json:4`(SSOT)는 `0.2.29`다.
 - **Windows는 빌드·배포되지만 검증되지 않는다** — `release.yml`이 `windows-latest`에서 NSIS 인스톨러를 게시하지만(§9), CI 어느 잡도 Windows에서 테스트를 실행하지 않고, `process.platform === 'win32'`를 모킹하는 유닛 테스트도 없다. `electron/pandoc.ts:13-14,56,66`과 `electron/pdf.ts:26-28`의 Windows 전용 코드 경로는 실행 검증 없이 존재한다(인터뷰 확정 제약 4).
 - **`prefs:set` 값 도메인 미검증 / 렌더러 에러 경계 부재 / 로깅 서브시스템 부재** — 세부는 `structure.md` §10(모듈 경계 이슈)을 참고. 로깅은 파일 sink·레벨 구분 없는 ad-hoc `console.*` 호출 18건뿐이며, `src/i18n/dict.ts:39`가 사용자에게 약속하는 "see logs"에 대응하는 접근 가능한 로그가 실제로는 없다.
 
 `dist-build/`(빌드 산출물)는 `.gitignore:257`에 정상적으로 등록되어 있으며 추적되지 않는다 — 결함이 아니라 정상적인 로컬 빌드 아티팩트다.
+
+### 13.1 해소된 결함
+
+- **아웃바운드 User-Agent 버전 3중 불일치** (해소: `b19a016`) — `bibliographyFetch.ts`/`referenceDownload.ts`/`aiClient.ts`가 각각 `'0.1.6'`/`'0.1.7'`/`'0.1.8'`을 하드코딩해 Crossref·PubMed·ORCID에 실제와 다른 버전을 보내고 있었다. `electron/userAgent.ts`가 `package.json`의 `version`을 named import(tree-shake 가능)해 단일 원천이 되고, 5개 UA 조립 지점이 전부 이를 쓴다. 중복이던 `buildUserAgent()`는 삭제. 회귀 방지는 `tests/electron/userAgent.test.ts` 15케이스 — 실제 송출 헤더를 `fetchImpl`로 캡처하는 재현 테스트와 소스 수준 하드코딩 금지 가드를 함께 둔다.
+- **`README.md` 버전 드리프트** (해소: `b19a016`) — `Current version`을 `v0.2.29`로, 빌드 예시 파일명을 `0.1.13` → `0.2.29`로, 테스트 수를 `1250`(v0.1.13) → `1734`, e2e를 `16` → `203`(31 spec)으로 실측 갱신.
+
+**e2e 게이트 로컬 실행 불가(환경)**: `node_modules`의 Electron 바이너리가 내려와 있지 않아(`electron/dist/`에 `Electron.app` 부재) 이 작업 환경에서 `pnpm test:e2e`가 `ENOENT`로 실패한다. 코드 결함이 아니며 CI(`macos-latest`, fresh install)는 영향받지 않는다. 로컬에서 게이트 2를 돌리려면 Electron 설치 스크립트를 다시 실행해야 한다.
 
 ---
 
