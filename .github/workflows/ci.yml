@@ -8,8 +8,16 @@ on:
 
 jobs:
   check:
-    name: typecheck / lint / test
-    runs-on: ubuntu-latest
+    name: typecheck / lint / test (${{ matrix.os }})
+    # Windows는 release.yml이 NSIS 인스톨러를 빌드·게시하는데도 어떤 잡도
+    # Windows에서 테스트를 돌리지 않았다. pandoc 탐지의 Program Files 경로,
+    # .exe 배너 파싱, pdf의 드라이브 문자 처리가 검증 없이 배포되고 있었다.
+    # fail-fast: false — 한쪽이 깨져도 다른 쪽 결과를 끝까지 본다.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
