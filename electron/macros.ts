@@ -1,6 +1,7 @@
 import { app, shell } from 'electron';
 import { promises as fs, watch as fsWatch } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { logWarn } from './log';
 
 export interface Macro {
   name: string;
@@ -62,11 +63,11 @@ export async function getMacros(): Promise<Macro[]> {
         await fs.writeFile(p, JSON.stringify(TEMPLATE, null, 2), 'utf8');
         return TEMPLATE.macros;
       } catch (writeErr) {
-        console.warn('[macros] failed to initialize macros.json', writeErr);
+        void logWarn('macros', 'failed to initialize macros.json', writeErr);
         return [];
       }
     }
-    console.warn('[macros] parse failed', err);
+    void logWarn('macros', 'parse failed', err);
     return [];
   }
 }
@@ -83,7 +84,7 @@ export function watchMacros(cb: (macros: Macro[]) => void): () => void {
       }, 300);
     });
   } catch (err) {
-    console.warn('[macros] watch failed', err);
+    void logWarn('macros', 'watch failed', err);
   }
   return () => {
     if (timer) clearTimeout(timer);

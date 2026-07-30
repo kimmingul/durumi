@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as pathLib from 'node:path';
 import { dialog, BrowserWindow } from 'electron';
 import type { DirEntry } from '../shared/ipc-contract';
+import { logWarn } from './log';
 
 /**
  * Atomic write: tmp file in the target's directory → fs.rename → cleanup
@@ -71,7 +72,7 @@ export async function listDirectory(absPath: string): Promise<DirEntry[]> {
   try {
     entries = (await readdir(absPath, { withFileTypes: true })) as never;
   } catch (err) {
-    console.warn('listDirectory: failed to read', absPath, err);
+    void logWarn('fs', `listDirectory: failed to read ${absPath}`, err);
     return [];
   }
   const out: DirEntry[] = [];

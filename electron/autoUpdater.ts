@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { getPreferences } from './preferences';
 import { resolveLang, t } from './i18n';
+import { logWarn } from './log';
 
 let initialized = false;
 
@@ -20,7 +21,7 @@ export function registerAutoUpdater(win: BrowserWindow): void {
 
   autoUpdater.autoDownload = false;
   autoUpdater.on('error', (err) => {
-    console.warn('[auto-updater] error', err);
+    void logWarn('auto-updater', 'error', err);
   });
 
   autoUpdater.on('update-available', async (info) => {
@@ -50,7 +51,7 @@ export function registerAutoUpdater(win: BrowserWindow): void {
   if (!app.isPackaged) return; // dev mode: skip auto-check
   setTimeout(() => {
     void autoUpdater.checkForUpdates().catch((err) => {
-      console.warn('[auto-updater] check failed', err);
+      void logWarn('auto-updater', 'check failed', err);
     });
   }, 30_000);
 }

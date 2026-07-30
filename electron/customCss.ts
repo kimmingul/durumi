@@ -1,6 +1,7 @@
 import { app, shell } from 'electron';
 import { promises as fs, watch as fsWatch, type FSWatcher } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { logWarn } from './log';
 
 const TEMPLATE = `/* Durumi custom CSS — edit and save. Reloads automatically.
  * Examples:
@@ -25,11 +26,11 @@ export async function getCustomCss(): Promise<string> {
         await fs.writeFile(p, TEMPLATE, 'utf8');
         return TEMPLATE;
       } catch (writeErr) {
-        console.warn('[customCss] failed to initialize template', writeErr);
+        void logWarn('customCss', 'failed to initialize template', writeErr);
         return '';
       }
     }
-    console.warn('[customCss] failed to read', err);
+    void logWarn('customCss', 'failed to read', err);
     return '';
   }
 }
@@ -47,7 +48,7 @@ export function watchCustomCss(cb: (css: string) => void): () => void {
       }, 300);
     });
   } catch (err) {
-    console.warn('[customCss] watch failed', err);
+    void logWarn('customCss', 'watch failed', err);
   }
   return () => {
     if (timer) clearTimeout(timer);

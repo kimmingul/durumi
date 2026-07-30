@@ -4,6 +4,7 @@ import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import type { Preferences, PreferencesPatch, StyleSet } from '@shared/ipc-contract';
 import { sanitizePreferencesPatch } from '@shared/prefsValidation';
+import { logWarn } from './log';
 
 /**
  * v0.1.11 Phase 3 — Durumi-default StyleSet, duplicated from
@@ -239,7 +240,7 @@ export async function setPreferences(rawPatch: PreferencesPatch): Promise<void> 
   // 별개 계층이며 `assertPrefsPatchAllowed`가 담당한다.
   const { patch, rejected } = sanitizePreferencesPatch(rawPatch);
   if (rejected.length > 0) {
-    console.warn(`[prefs] rejected out-of-domain values: ${rejected.join(', ')}`);
+    void logWarn('prefs', `rejected out-of-domain values: ${rejected.join(', ')}`);
   }
   const current = await getPreferences();
   // v0.2.17 — the patch is `DeepPartial<Preferences>` (PreferencesPatch),
