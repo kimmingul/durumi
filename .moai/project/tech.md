@@ -147,7 +147,15 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 - **아웃바운드 User-Agent 버전 3중 불일치** (해소: `b19a016`) — `bibliographyFetch.ts`/`referenceDownload.ts`/`aiClient.ts`가 각각 `'0.1.6'`/`'0.1.7'`/`'0.1.8'`을 하드코딩해 Crossref·PubMed·ORCID에 실제와 다른 버전을 보내고 있었다. `electron/userAgent.ts`가 `package.json`의 `version`을 named import(tree-shake 가능)해 단일 원천이 되고, 5개 UA 조립 지점이 전부 이를 쓴다. 중복이던 `buildUserAgent()`는 삭제. 회귀 방지는 `tests/electron/userAgent.test.ts` 15케이스 — 실제 송출 헤더를 `fetchImpl`로 캡처하는 재현 테스트와 소스 수준 하드코딩 금지 가드를 함께 둔다.
 - **`README.md` 버전 드리프트** (해소: `b19a016`) — `Current version`을 `v0.2.29`로, 빌드 예시 파일명을 `0.1.13` → `0.2.29`로, 테스트 수를 `1250`(v0.1.13) → `1734`, e2e를 `16` → `203`(31 spec)으로 실측 갱신.
 
-**e2e 게이트 로컬 실행 불가(환경)**: `node_modules`의 Electron 바이너리가 내려와 있지 않아(`electron/dist/`에 `Electron.app` 부재) 이 작업 환경에서 `pnpm test:e2e`가 `ENOENT`로 실패한다. 코드 결함이 아니며 CI(`macos-latest`, fresh install)는 영향받지 않는다. 로컬에서 게이트 2를 돌리려면 Electron 설치 스크립트를 다시 실행해야 한다.
+### 13.2 e2e 게이트 로컬 실행 불가 (환경 제약)
+
+일부 개발 환경에서 `pnpm test:e2e`가 코드와 무관하게 전량 실패한다 — 202 테스트가 `launchClean()` 픽스처에서 막히며, 증상은 `electron.launch: ... ENOENT`(바이너리 부재) 또는 `Process failed to launch!`다.
+
+원인은 `node_modules`의 Electron 바이너리가 존재하지 않는 것이다. `electron/dist/`에 `LICENSE`와 `LICENSES.chromium.html`(9.5 MB)은 있으나 `Electron.app`이 없다. `pnpm rebuild electron`은 exit 0으로 완료되고 `Electron.app`도 일시적으로 생성되지만, 관측된 환경에서는 1분 내에 다시 제거되었다 — 대용량 바이너리 쓰기를 되돌리는 샌드박스/도구 계층이 있는 것으로 보인다.
+
+**코드 결함이 아니다**: 동일 커밋(`a943d1e`)에서 CI의 `E2E (macOS)` 워크플로가 `macos-latest` + fresh install로 **success**했다. 게이트 2는 CI에서 유효하게 검증된다.
+
+실질적 제약: 그런 환경에서는 에디터·원자성·IME 관련 변경의 **로컬 반복 검증이 불가능**하고 매번 CI를 기다려야 한다. 릴리스 게이트 3(수동 한글 IME 스모크, §8)은 실제 앱 실행이 필요하므로 별도의 정상 환경이 요구된다.
 
 ---
 
