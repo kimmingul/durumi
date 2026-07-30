@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 const writes = new Map<string, Uint8Array>();
 const dirs = new Set<string>();
@@ -44,10 +45,14 @@ describe('saveImage', () => {
       'image/png',
       '/foo/bar.md',
     )) as { relPath: string };
+    // relPath is deliberately forward-slash — it goes into a markdown link,
+    // so it stays POSIX-style on every platform.
     expect(r.relPath.startsWith('assets/img-')).toBe(true);
     expect(r.relPath.endsWith('.png')).toBe(true);
-    expect([...writes.keys()][0]?.startsWith('/foo/assets/img-')).toBe(true);
-    expect(dirs.has('/foo/assets')).toBe(true);
+    // The on-disk paths, by contrast, come from `join()` and use the native
+    // separator, so the expectations must be joined the same way.
+    expect([...writes.keys()][0]?.startsWith(join('/foo', 'assets', 'img-'))).toBe(true);
+    expect(dirs.has(join('/foo', 'assets'))).toBe(true);
   });
 
   it('uses .jpg for image/jpeg', async () => {

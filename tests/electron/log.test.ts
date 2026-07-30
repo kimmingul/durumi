@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 const fileStore = new Map<string, string>();
 
@@ -36,8 +37,11 @@ vi.mock('node:fs', () => {
   return { default: { promises }, promises };
 });
 
-const LOG_PATH = '/tmp/durumi-test-log/durumi.log';
-const ROTATED_PATH = '/tmp/durumi-test-log/durumi.log.1';
+// log.ts 는 path.join 으로 경로를 만든다. 기대 경로도 같은 방식으로 만들어야
+// Windows(백슬래시)에서 목 저장소 키가 어긋나지 않는다.
+const USER_DATA = '/tmp/durumi-test-log';
+const LOG_PATH = join(USER_DATA, 'durumi.log');
+const ROTATED_PATH = `${LOG_PATH}.1`;
 
 beforeEach(() => {
   fileStore.clear();

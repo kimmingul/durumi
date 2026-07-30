@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 // Mock fs/promises BEFORE importing the module under test.
 vi.mock('node:fs/promises', () => {
@@ -106,7 +107,9 @@ describe('listDirectory', () => {
     readdirMock.mockResolvedValueOnce([dirent('a.md', false)]);
     statMock.mockResolvedValue({ mtimeMs: 42 });
     const out = await listDirectory('/Users/me/notes');
-    expect(out[0]!.path).toBe('/Users/me/notes/a.md');
+    // listDirectory builds entry paths with `join`, so the expectation must be
+    // joined the same way — on Windows the separator is a backslash.
+    expect(out[0]!.path).toBe(join('/Users/me/notes', 'a.md'));
   });
 });
 

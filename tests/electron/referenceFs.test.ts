@@ -111,7 +111,11 @@ describe('resolveFileField', () => {
   });
 
   it('strips Zotero "path:application/pdf" suffix', () => {
-    expect(resolveFileField(bibPath, ':files/x.pdf:application/pdf')).toContain('files/x.pdf');
+    // The stripped remainder is joined against the bib dir, so the fragment we
+    // look for uses the native separator (backslash on Windows).
+    expect(resolveFileField(bibPath, ':files/x.pdf:application/pdf')).toContain(
+      join('files', 'x.pdf'),
+    );
   });
 });
 

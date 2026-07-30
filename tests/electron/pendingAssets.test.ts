@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 /**
  * pendingAssets uses `app.getPath('userData')` for the root of its
@@ -42,10 +42,9 @@ describe('savePendingImage', () => {
     const a = await savePendingImage(new Uint8Array([1]), 'image/png');
     const b = await savePendingImage(new Uint8Array([2]), 'image/jpeg');
     expect(a.absPath).not.toBe(b.absPath);
-    // Same session dir.
-    expect(a.absPath.slice(0, a.absPath.lastIndexOf('/'))).toBe(
-      b.absPath.slice(0, b.absPath.lastIndexOf('/')),
-    );
+    // Same session dir. `dirname` splits on the native separator, so this
+    // holds on Windows too (a literal '/' scan would not).
+    expect(dirname(a.absPath)).toBe(dirname(b.absPath));
     // Mime-driven extension.
     expect(b.absPath.endsWith('.jpg')).toBe(true);
   });
@@ -85,8 +84,9 @@ describe('migratePendingInContent', () => {
     expect(r.changed).toBe(true);
     expect(r.moved).toBe(1);
     expect(r.failed).toBe(0);
-    // Filename preserved, link rewritten to relative form.
-    const filename = pending.absPath.slice(pending.absPath.lastIndexOf('/') + 1);
+    // Filename preserved, link rewritten to relative form. `basename` splits on
+    // the native separator, so this holds on Windows too.
+    const filename = basename(pending.absPath);
     expect(r.content).toContain(`![](assets/${filename})`);
     expect(r.content).not.toContain(pending.absPath);
     // File now lives in <docDir>/assets/, not in the pending dir.

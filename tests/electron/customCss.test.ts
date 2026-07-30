@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 // In-memory file store shared between the mocked fs/promises and the tests.
 const fileStore = new Map<string, string>();
+
+const USER_DATA = '/tmp/durumi-test';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/durumi-test' },
@@ -59,7 +62,9 @@ beforeEach(() => {
   vi.resetModules();
 });
 
-const CSS_PATH = '/tmp/durumi-test/custom.css';
+// customCss.ts builds its path with `join(app.getPath('userData'), 'custom.css')`,
+// so the mocked-fs key must be built the same way (Windows yields backslashes).
+const CSS_PATH = join(USER_DATA, 'custom.css');
 
 describe('customCss', () => {
   it('initializes file with template on first call', async () => {

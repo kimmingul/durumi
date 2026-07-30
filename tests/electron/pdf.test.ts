@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(async (..._args: unknown[]) => undefined),
@@ -65,7 +66,9 @@ describe('exportToPdf', () => {
     // Two writeFile calls: the temp HTML, then the PDF.
     expect(writeFile).toHaveBeenCalledTimes(2);
     const tmpPath = writeFile.mock.calls[0]?.[0] as string;
-    expect(tmpPath.startsWith('/tmp/durumi-export-')).toBe(true);
+    // pdf.ts builds this with `join(tmpdir(), ...)`, so the expected prefix must
+    // be joined the same way — on Windows the separator is a backslash.
+    expect(tmpPath.startsWith(join('/tmp', 'durumi-export-'))).toBe(true);
     expect(tmpPath.endsWith('.html')).toBe(true);
 
     expect(unlink).toHaveBeenCalledWith(tmpPath);

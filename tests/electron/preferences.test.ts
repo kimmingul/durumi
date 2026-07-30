@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 // In-memory store for the mocked filesystem.
 const fileStore = new Map<string, string>();
+
+const USER_DATA = '/tmp/durumi-test-prefs';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/durumi-test-prefs' },
@@ -36,7 +39,10 @@ vi.mock('node:fs', () => {
   };
 });
 
-const PREFS_PATH = '/tmp/durumi-test-prefs/preferences.json';
+// preferences.ts builds its path with `join(app.getPath('userData'), ...)`, so the
+// mocked-fs key must be built the same way — on Windows `join` yields backslashes
+// and a hardcoded POSIX literal would never match the lookup.
+const PREFS_PATH = join(USER_DATA, 'preferences.json');
 
 beforeEach(() => {
   fileStore.clear();

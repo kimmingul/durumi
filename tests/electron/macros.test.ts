@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 // Mock electron's `app` so we can resolve a fixed userData path.
 vi.mock('electron', () => ({
@@ -42,7 +43,9 @@ beforeEach(() => {
 
 describe('getMacrosPath', () => {
   it('returns a path under userData', () => {
-    expect(getMacrosPath()).toBe('/tmp/durumi-test-userdata-userData/macros.json');
+    // macros.ts builds this with `join(app.getPath('userData'), 'macros.json')`,
+    // so the expectation must be joined the same way (Windows uses backslashes).
+    expect(getMacrosPath()).toBe(join('/tmp/durumi-test-userdata-userData', 'macros.json'));
   });
 });
 
