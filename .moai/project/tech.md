@@ -137,8 +137,9 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
 문서화된 사실을 숨기지 않는다 — 코드 자체에 남아 있는 알려진 결함이다.
 
-- **Windows는 빌드·배포되지만 검증되지 않는다** — `release.yml`이 `windows-latest`에서 NSIS 인스톨러를 게시하지만(§9), CI 어느 잡도 Windows에서 테스트를 실행하지 않고, `process.platform === 'win32'`를 모킹하는 유닛 테스트도 없다. `electron/pandoc.ts:13-14,56,66`과 `electron/pdf.ts:26-28`의 Windows 전용 코드 경로는 실행 검증 없이 존재한다(인터뷰 확정 제약 4).
-- **`prefs:set` 값 도메인 미검증 / 렌더러 에러 경계 부재 / 로깅 서브시스템 부재** — 세부는 `structure.md` §10(모듈 경계 이슈)을 참고. 로깅은 파일 sink·레벨 구분 없는 ad-hoc `console.*` 호출 18건뿐이며, `src/i18n/dict.ts:39`가 사용자에게 약속하는 "see logs"에 대응하는 접근 가능한 로그가 실제로는 없다.
+- **Windows 런타임 검증은 아직 실측되지 않았다** — CI에 `windows-latest` 잡을 추가했고(§13.1) 플랫폼 무관하게 검증 가능한 부분은 유닛 테스트로 덮었지만, **Windows에서 스위트가 실제로 통과하는지는 그 잡의 첫 실행 결과로만 확인된다.** Windows e2e(Playwright + Electron)는 별도 인프라가 필요해 여전히 공백이다.
+- **i18n 키 파리티 테스트 부재** — `src/i18n/dict.ts`의 `en`/`ko` 사전이 같은 키 집합을 갖는지 기계적으로 확인하는 테스트가 없다. 한쪽에만 키를 추가해도 아무것도 실패하지 않고, 누락된 언어에서는 `t()`가 키 문자열을 그대로 노출한다.
+- **`tests/store/aiUsageStore.test.ts`의 실행 순서 의존** — 이 파일은 `localStorage` 전역이 이미 초기화된 워커에 배치될 때만 통과했다. Node 26의 실험적 내장 `localStorage`가 `--localstorage-file` 없이는 사용 불가라 jsdom 것을 가리기 때문이며, `tests/setup.ts`에 in-memory 폴리필을 넣어 해소했으나 **테스트가 전역 상태에 의존한다는 근본 형태는 남아 있다.**
 
 `dist-build/`(빌드 산출물)는 `.gitignore:257`에 정상적으로 등록되어 있으며 추적되지 않는다 — 결함이 아니라 정상적인 로컬 빌드 아티팩트다.
 
@@ -146,6 +147,10 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
 - **아웃바운드 User-Agent 버전 3중 불일치** (해소: `b19a016`) — `bibliographyFetch.ts`/`referenceDownload.ts`/`aiClient.ts`가 각각 `'0.1.6'`/`'0.1.7'`/`'0.1.8'`을 하드코딩해 Crossref·PubMed·ORCID에 실제와 다른 버전을 보내고 있었다. `electron/userAgent.ts`가 `package.json`의 `version`을 named import(tree-shake 가능)해 단일 원천이 되고, 5개 UA 조립 지점이 전부 이를 쓴다. 중복이던 `buildUserAgent()`는 삭제. 회귀 방지는 `tests/electron/userAgent.test.ts` 15케이스 — 실제 송출 헤더를 `fetchImpl`로 캡처하는 재현 테스트와 소스 수준 하드코딩 금지 가드를 함께 둔다.
 - **`README.md` 버전 드리프트** (해소: `b19a016`) — `Current version`을 `v0.2.29`로, 빌드 예시 파일명을 `0.1.13` → `0.2.29`로, 테스트 수를 `1250`(v0.1.13) → `1734`, e2e를 `16` → `203`(31 spec)으로 실측 갱신.
+- **`prefs:set` 값 도메인 미검증** (해소: `4ad2e30`) — 경로 필드만 `assertPrefsPatchAllowed`로 가드하고 숫자 범위·enum 멤버십은 무검증이라 음수·NaN·스키마 밖 문자열이 그대로 기록됐다. `shared/prefsValidation.ts`가 enum 8종을 drop, 숫자 5종을 clamp한다. 검증은 IPC 핸들러가 아니라 `setPreferences()` 데이터 계층에 있어 모든 호출자가 보호된다. 폭 경계는 `WIDTH_BOUNDS`로 단일 원천화해 렌더러 스토어 3개가 같은 값을 쓴다.
+- **렌더러 에러 경계·통합 에러 채널 부재** (해소: `4a31696`) — `src/components/ErrorBoundary.tsx`가 렌더 중 throw를 잡아 빈 창 대신 복구 화면을 보이고, `src/utils/errorSurface.ts`가 가드되지 않은 `unhandledrejection`(main의 `PathNotAllowedError` 등)을 토스트로 흘린다. 동일 메시지는 3초 창에서 중복 억제.
+- **로깅 서브시스템 부재** (해소: `64b66b4`) — `electron/log.ts`가 `assetProtocol.ts`의 파일 append 선례를 일반화했다. 레벨 3종, `<userData>/durumi.log`, 1MB 1세대 회전, 홈 경로 `~` 리댁션, 콘솔 이중 출력. `electron/`의 `console.*` 호출 10곳을 이전했고 남은 것은 주석뿐이다. `src/i18n/dict.ts`의 "see logs" 안내가 이제 실재하는 파일을 가리킨다.
+- **Windows 검증 공백 — 유닛 계층** (해소: `cb56975`) — `tests/electron/windowsPaths.test.ts`가 pandoc의 Program Files 경로 후보, `.exe` 배너 파싱, 백슬래시 경로 판정, `pdf.ts`의 `pathToFileURL` 회귀 가드를 덮는다. CI `check` 잡은 `ubuntu-latest` + `windows-latest` matrix(`fail-fast: false`)로 확장했다. 런타임 실측은 §13 첫 항목 참조.
 
 ### 13.2 e2e 게이트 로컬 실행 불가 (환경 제약)
 
