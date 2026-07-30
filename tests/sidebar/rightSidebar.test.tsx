@@ -109,9 +109,51 @@ function mount() {
   };
 }
 
-async function flush(ms = 30): Promise<void> {
+/**
+ * Poll until `predicate()` is truthy, then return.
+ *
+ * Replaces the previous fixed-delay `flush(30)`: a 30ms sleep is not a
+ * guarantee that the sidebar's async effects (prefsGet / aiKeyStatus /
+ * bibliography reads and their setStates) have settled, so on a loaded CI
+ * runner the assertion could run before the render it was waiting for.
+ *
+ * Kept act()-wrapped, matching this file's original flush(), so React 18
+ * flushes effects between polls exactly as before.
+ */
+async function waitFor(
+  predicate: () => boolean,
+  description: string,
+  { timeout = 2000, interval = 10 }: { timeout?: number; interval?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `waitFor timed out after ${timeout}ms waiting for: ${description}`,
+      );
+    }
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, interval));
+    });
+  }
+}
+
+/**
+ * Deterministic settle step for ABSENCE assertions.
+ *
+ * Polling cannot express "still absent": a not-present predicate is satisfied
+ * on the first tick and proves nothing. Instead we drain the microtask queue
+ * and a handful of macrotask turns inside act(), so every pending promise
+ * continuation and effect has had a chance to render before we assert that
+ * nothing appeared. Bounded and deterministic — not an arbitrary wall-clock
+ * sleep.
+ */
+async function settle(turns = 5): Promise<void> {
   await act(async () => {
-    await new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < turns; i += 1) {
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 0));
+    }
   });
 }
 
@@ -158,7 +200,9 @@ describe('RightSidebar', () => {
   it('renders nothing when the store reports visible=false', async () => {
     installApiMock();
     const { host, cleanup } = mount();
-    await flush();
+    // Absence assertion: cannot be polled (an "is absent" predicate is true
+    // immediately), so drain pending effects deterministically instead.
+    await settle();
     // Component returns null — nothing should be in the host.
     expect(host.querySelector('[data-testid="right-sidebar-tab-references"]')).toBeNull();
     expect(host.querySelector('[data-testid="right-sidebar-tab-ai"]')).toBeNull();
@@ -170,7 +214,12 @@ describe('RightSidebar', () => {
     installApiMock();
     useRightSidebarStore.setState({ visible: true, activeTab: 'references' });
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(
+      () =>
+        host.querySelector('[data-testid="right-sidebar-tab-references"]') !== null &&
+        host.querySelector('[data-testid="right-sidebar-tab-ai"]') !== null,
+      'both tab buttons to render',
+    );
     const refBtn = host.querySelector('[data-testid="right-sidebar-tab-references"]');
     const aiBtn = host.querySelector('[data-testid="right-sidebar-tab-ai"]');
     expect(refBtn).not.toBeNull();
@@ -182,7 +231,10 @@ describe('RightSidebar', () => {
     installApiMock();
     useRightSidebarStore.setState({ visible: true, activeTab: 'references' });
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(
+      () => host.querySelector('[data-testid="references-tab"]') !== null,
+      'the references tab body to render',
+    );
     // The references tab body uses data-testid="references-tab" on its root.
     expect(host.querySelector('[data-testid="references-tab"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="ai-tab"]')).toBeNull();
@@ -193,7 +245,10 @@ describe('RightSidebar', () => {
     installApiMock();
     useRightSidebarStore.setState({ visible: true, activeTab: 'ai' });
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(
+      () => host.querySelector('[data-testid="ai-tab"]') !== null,
+      'the AI tab body to render',
+    );
     expect(host.querySelector('[data-testid="ai-tab"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="references-tab"]')).toBeNull();
     cleanup();
@@ -203,13 +258,19 @@ describe('RightSidebar', () => {
     installApiMock();
     useRightSidebarStore.setState({ visible: true, activeTab: 'references' });
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(
+      () => host.querySelector('[data-testid="right-sidebar-tab-ai"]') !== null,
+      'the AI tab button to render',
+    );
     expect(useRightSidebarStore.getState().activeTab).toBe('references');
     const aiBtn = host.querySelector('[data-testid="right-sidebar-tab-ai"]') as HTMLButtonElement;
     expect(aiBtn).not.toBeNull();
     act(() => { aiBtn.click(); });
     expect(useRightSidebarStore.getState().activeTab).toBe('ai');
-    await flush();
+    await waitFor(
+      () => host.querySelector('[data-testid="ai-tab"]') !== null,
+      'the AI tab body to render after the click',
+    );
     // And after the re-render, the AI body is visible.
     expect(host.querySelector('[data-testid="ai-tab"]')).not.toBeNull();
     cleanup();
@@ -219,7 +280,10 @@ describe('RightSidebar', () => {
     installApiMock();
     useRightSidebarStore.setState({ visible: true, activeTab: 'ai' });
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(
+      () => host.querySelector('[data-testid="right-sidebar-tab-references"]') !== null,
+      'the References tab button to render',
+    );
     expect(useRightSidebarStore.getState().activeTab).toBe('ai');
     const refBtn = host.querySelector('[data-testid="right-sidebar-tab-references"]') as HTMLButtonElement;
     act(() => { refBtn.click(); });

@@ -60,8 +60,36 @@ function mount(props: Partial<React.ComponentProps<typeof AiTab>> = {}) {
   };
 }
 
-async function flush(ms = 20): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms));
+/**
+ * Poll until `predicate()` is truthy, then return.
+ *
+ * Replaces the previous fixed-delay `flush(20)`: a 20ms sleep is not a
+ * guarantee that AiTab's async provider effect (prefsGet + aiKeyStatus + a
+ * setState) has settled, so on a loaded CI runner the assertion could run
+ * before the render it was waiting for.
+ *
+ * Deliberately NOT act()-wrapped: this file's original flush() was not either,
+ * and preserving that discipline keeps React 18's act semantics unchanged here.
+ */
+async function waitFor(
+  predicate: () => boolean,
+  description: string,
+  { timeout = 2000, interval = 10 }: { timeout?: number; interval?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `waitFor timed out after ${timeout}ms waiting for: ${description}`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, interval));
+  }
+}
+
+/** The provider row only renders once the async provider effect has resolved. */
+function providerLoaded(host: HTMLElement): boolean {
+  return host.querySelector('[data-testid="ai-tab-provider"]') !== null;
 }
 
 beforeEach(() => {
@@ -89,7 +117,7 @@ describe('AiTab', () => {
   it('renders the provider row when a key is configured', async () => {
     installApiMock();
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(() => providerLoaded(host), 'the provider row to render');
     expect(host.querySelector('[data-testid="ai-tab-provider"]')).not.toBeNull();
     cleanup();
   });
@@ -97,7 +125,10 @@ describe('AiTab', () => {
   it('shows the no-key warning when no provider is configured', async () => {
     installApiMock({ hasKey: false });
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(
+      () => host.querySelector('[data-testid="ai-tab-no-key"]') !== null,
+      'the no-key warning to render',
+    );
     expect(host.querySelector('[data-testid="ai-tab-no-key"]')).not.toBeNull();
     cleanup();
   });
@@ -105,7 +136,9 @@ describe('AiTab', () => {
   it('disables selection commands when there is no selection', async () => {
     installApiMock();
     const { host, cleanup } = mount({ selectionText: '' });
-    await flush();
+    // Wait for the provider effect to settle, so "disabled" reflects the
+    // loaded state rather than the not-yet-loaded initial render.
+    await waitFor(() => providerLoaded(host), 'the provider effect to settle');
     const cmdBtns = host.querySelectorAll('[data-testid^="ai-tab-cmd-"]');
     expect(cmdBtns.length).toBeGreaterThan(0);
     cmdBtns.forEach((btn) => {
@@ -117,7 +150,7 @@ describe('AiTab', () => {
   it('enables selection commands when text is selected AND key is set', async () => {
     installApiMock();
     const { host, cleanup } = mount({ selectionText: 'some selected text here' });
-    await flush();
+    await waitFor(() => providerLoaded(host), 'the provider effect to settle');
     const polishBtn = host.querySelector('[data-testid="ai-tab-cmd-polishEnglish"]') as HTMLButtonElement;
     expect(polishBtn.disabled).toBe(false);
     cleanup();
@@ -126,7 +159,8 @@ describe('AiTab', () => {
   it('calls onOpenPalette when a command button is clicked', async () => {
     installApiMock();
     const m = mount({ selectionText: 'sample selected text' });
-    await flush();
+    // The button is only clickable once the provider effect has enabled it.
+    await waitFor(() => providerLoaded(m.host), 'the provider effect to settle');
     const polishBtn = m.host.querySelector('[data-testid="ai-tab-cmd-polishEnglish"]') as HTMLButtonElement;
     act(() => { polishBtn.click(); });
     expect(m.onOpenPalette).toHaveBeenCalled();
@@ -136,7 +170,8 @@ describe('AiTab', () => {
   it('calls onSuggestCitations when the citation suggest button fires', async () => {
     installApiMock();
     const m = mount();
-    await flush();
+    // The button is disabled until the provider effect confirms a key.
+    await waitFor(() => providerLoaded(m.host), 'the provider effect to settle');
     const btn = m.host.querySelector('[data-testid="ai-tab-suggest-citations"]') as HTMLButtonElement;
     act(() => { btn.click(); });
     expect(m.onSuggestCitations).toHaveBeenCalled();
@@ -160,7 +195,10 @@ describe('AiTab', () => {
       sessionCalls: 1,
     } as never);
     const { host, cleanup } = mount();
-    await flush();
+    await waitFor(
+      () => (host.textContent ?? '').includes('palette'),
+      'the recent-activity row to render',
+    );
     expect(host.textContent).toContain('palette' satisfies string);
     cleanup();
   });

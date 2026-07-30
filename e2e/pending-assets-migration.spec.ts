@@ -249,6 +249,20 @@ test('renderer actually renders a pending image whose path contains a space', as
     const img = page.locator('img.cm-md-image').first();
     await img.waitFor({ state: 'attached', timeout: 5000 });
 
+    // Attached is NOT loaded. The widget is in the DOM as soon as the
+    // decoration mounts, but the bytes still have to travel through the
+    // durumi-asset:// protocol handler and be decoded. Asserting
+    // `complete` right after `attached` is a race — it was the flake that
+    // failed this spec on a loaded CI runner while passing locally.
+    await page.waitForFunction(
+      () => {
+        const i = document.querySelector('img.cm-md-image') as HTMLImageElement | null;
+        return !!i && i.complete && i.naturalWidth > 0;
+      },
+      undefined,
+      { timeout: 5000 },
+    );
+
     const inspection = await img.evaluate((el) => {
       const i = el as HTMLImageElement;
       let p: string | null = null;
