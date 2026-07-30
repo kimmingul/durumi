@@ -138,10 +138,7 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 문서화된 사실을 숨기지 않는다 — 코드 자체에 남아 있는 알려진 결함이다.
 
 - **Windows e2e 공백** — 유닛 계층은 이제 `windows-latest`에서 실제로 통과한다(§13.1). 그러나 Playwright + Electron 기반 e2e는 여전히 macOS 전용이며, Windows에서 앱을 실제로 띄우는 검증은 없다. 별도 러너 인프라가 필요하다.
-- **e2e 스위트 플레이키** — `E2E (macOS)` 202 케이스 중 1건이 간헐적으로 실패한다. 관측된 두 건은 서로 다른 테스트였고(`pending-assets-migration.spec.ts:189`, `b1-features.spec.ts:361`) 재실행 시 통과했다. 전자는 원인이 특정된다 — `state: 'attached'`(DOM 부착)만 기다린 뒤 `img.complete`(바이트 페치·디코드 완료)를 단정해, 둘 사이에 경합이 있다. 런타임이 완전히 동일한 두 커밋(`3fe4a24` 실패 2회 / `12b8a0f` 통과)이 갈렸다는 점이 제품 결함이 아님을 뒷받침한다.
-- **느린 러너에서 불안정한 테스트 3건** — `tests/editor/lezerEscapeTrace.test.ts`, `tests/sidebar/aiTab.test.tsx`, `tests/sidebar/rightSidebar.test.tsx`는 Windows 첫 실행에서 실패했다가 재실행에서 통과했다. 뒤 두 파일은 고정 지연(`flush()` 20ms / 30ms)에 의존해 React effect + promise 체인이 정착하기를 기다리는 형태다. 조건 폴링(`waitFor`)으로 바꾸면 단언을 약화시키지 않고 해소된다.
-- **i18n 키 파리티 테스트 부재** — `src/i18n/dict.ts`의 `en`/`ko` 사전이 같은 키 집합을 갖는지 기계적으로 확인하는 테스트가 없다. 한쪽에만 키를 추가해도 아무것도 실패하지 않고, 누락된 언어에서는 `t()`가 키 문자열을 그대로 노출한다.
-- **i18n 키 파리티 테스트 부재** — `src/i18n/dict.ts`의 `en`/`ko` 사전이 같은 키 집합을 갖는지 기계적으로 확인하는 테스트가 없다. 한쪽에만 키를 추가해도 아무것도 실패하지 않고, 누락된 언어에서는 `t()`가 키 문자열을 그대로 노출한다.
+- **`tests/editor/lezerEscapeTrace.test.ts` 원인 미특정** — Windows 첫 실행에서 실패했다가 이후 실행에서는 계속 통과한다. 파일시스템·경로·줄바꿈·로케일 의존이 전혀 없고(9개 중 5개는 단언 없는 `console.log` 진단 전용), 실제 실패 메시지를 다시 확보하지 못해 원인을 특정하지 못했다. 추측성 수정은 하지 않았다.
 - **`tests/store/aiUsageStore.test.ts`의 실행 순서 의존** — 이 파일은 `localStorage` 전역이 이미 초기화된 워커에 배치될 때만 통과했다. Node 26의 실험적 내장 `localStorage`가 `--localstorage-file` 없이는 사용 불가라 jsdom 것을 가리기 때문이며, `tests/setup.ts`에 in-memory 폴리필을 넣어 해소했으나 **테스트가 전역 상태에 의존한다는 근본 형태는 남아 있다.**
 
 `dist-build/`(빌드 산출물)는 `.gitignore:257`에 정상적으로 등록되어 있으며 추적되지 않는다 — 결함이 아니라 정상적인 로컬 빌드 아티팩트다.
@@ -159,6 +156,9 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
   의도적으로 유지한 forward-slash 단언이 있다 — `images.ts`의 `relPath`(마크다운 링크용)와 `referenceFs.ts:176`의 `toBibRelative`(.bib 저장 필드의 OS 간 round-trip)는 제품이 일부러 POSIX를 반환하므로 그 단언이 옳다.
 
+- **e2e 이미지 로드 경합** (해소: `5ac417d`) — `pending-assets-migration.spec.ts`가 `state: 'attached'`(DOM 부착)만 기다린 뒤 `img.complete`(바이트 페치·디코드 완료)를 단정해 CI 러너 부하에 따라 갈렸다. `waitForFunction`으로 `complete && naturalWidth > 0`을 기다린다. 런타임이 동일한 두 커밋(`3fe4a24` 실패 2회 / `12b8a0f` 통과)이 갈렸다는 점이 제품 결함이 아님을 뒷받침했다.
+- **고정 지연 의존 테스트** (해소: `5ac417d`) — `tests/sidebar/{aiTab,rightSidebar}.test.tsx`의 `flush(20ms)`/`flush(30ms)` 14개 호출 지점을 조건 폴링 `waitFor`로 전환했다. presence 13곳은 조건 충족까지 폴링하고, "여전히 없음"을 증명할 수 없는 absence 1곳은 microtask/macrotask를 유한 횟수 배수하는 결정적 settle로 대체했다. 단언은 하나도 삭제·완화하지 않았고, 술어를 never-true로 변조하면 타임아웃으로 실패함을 확인해 공허 통과가 아님을 검증했다.
+- **i18n 키 파리티 가드** (해소: `5ac417d`) — `tests/i18n/dictParity.test.ts`가 en/ko 키 집합 일치, 빈 값 없음, 플레이스홀더(`{name}`) 집합 일치를 검사한다. 플레이스홀더까지 보는 이유는 한쪽에서 빠지면 그 값이 조용히 사라지기 때문이다. 현재 사전은 동기 상태이므로 향후 드리프트 방지 가드다.
 ### 13.2 e2e 게이트 로컬 실행 불가 (환경 제약)
 
 일부 개발 환경에서 `pnpm test:e2e`가 코드와 무관하게 전량 실패한다 — 202 테스트가 `launchClean()` 픽스처에서 막히며, 증상은 `electron.launch: ... ENOENT`(바이너리 부재) 또는 `Process failed to launch!`다.
