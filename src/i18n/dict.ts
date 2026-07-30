@@ -16,6 +16,11 @@ export type Lang = 'en' | 'ko';
 export const dictionaries: Record<Lang, Record<string, string>> = {
   en: {
     ...menuLabels.en,
+    'app.error.title': 'Something went wrong',
+    'app.error.body':
+      'The editor hit an unexpected error and stopped rendering this view. Your file on disk is unchanged.',
+    'app.error.reload': 'Reload the editor',
+    'app.error.unhandled': 'Operation failed: {message}',
     'ai.citeSuggest.title': 'Citation suggestions',
     'ai.citeSuggest.paragraph': 'Current paragraph',
     'ai.citeSuggest.run': 'Suggest citations from {count} entries',
@@ -574,6 +579,11 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'ai.palette.after': '이후',
     'ai.palette.accept': '적용',
     'ai.palette.back': '뒤로',
+    'app.error.title': '문제가 발생했습니다',
+    'app.error.body':
+      '에디터에 예기치 못한 오류가 발생해 이 화면을 그리지 못했습니다. 디스크의 파일은 그대로입니다.',
+    'app.error.reload': '에디터 다시 불러오기',
+    'app.error.unhandled': '작업 실패: {message}',
     'ai.palette.bridgeUnavailable': 'AI 명령 팔레트를 사용할 수 없습니다 — 자세한 내용은 로그를 확인하세요.',
     'ai.cmd.polishEnglish.label': '영어 다듬기',
     'ai.cmd.polishEnglish.desc': '의미를 바꾸지 않고 문법과 흐름 개선',
