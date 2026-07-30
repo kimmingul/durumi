@@ -1,4 +1,5 @@
 import type { BibEntry } from '@shared/bibtex';
+import { APP_VERSION, durumiUserAgent } from './userAgent';
 
 /**
  * Outbound HTTP for the bibliography feature. All network calls live in main
@@ -11,7 +12,6 @@ import type { BibEntry } from '@shared/bibtex';
  */
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const DURUMI_VERSION = '0.1.6';
 
 export interface FetchOptions {
   /** Crossref polite-pool email (optional but recommended). */
@@ -405,9 +405,7 @@ export async function httpText(
   if (typeof fetcher !== 'function') {
     return { ok: false, code: 'network', message: 'fetch is unavailable' };
   }
-  const ua = `Durumi/${DURUMI_VERSION} (https://github.com/kimmingul/durumi)${
-    opts.email ? ` mailto:${opts.email}` : ''
-  }`;
+  const ua = durumiUserAgent(opts.email);
   const controller = new AbortController();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -470,7 +468,7 @@ export async function resolveORCID(
     const r = await fetcher(url, {
       method: 'GET',
       headers: {
-        'User-Agent': `Durumi/${DURUMI_VERSION}`,
+        'User-Agent': `Durumi/${APP_VERSION}`,
         'Accept': 'application/json',
       },
       signal: controller.signal,
@@ -738,7 +736,7 @@ export async function httpJson<T>(
   if (typeof fetcher !== 'function') {
     return { ok: false, code: 'network', message: 'fetch is unavailable' };
   }
-  const ua = buildUserAgent(opts.email);
+  const ua = durumiUserAgent(opts.email);
   const controller = new AbortController();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -784,9 +782,4 @@ export async function httpJson<T>(
   } finally {
     clearTimeout(timer);
   }
-}
-
-function buildUserAgent(email: string | null | undefined): string {
-  const base = `Durumi/${DURUMI_VERSION} (https://github.com/kimmingul/durumi)`;
-  return email ? `${base} mailto:${email}` : base;
 }

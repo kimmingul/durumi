@@ -11,6 +11,8 @@
 // Token counts come from the provider's response when available so the UI
 // can show "이번 호출 1,234 tokens" without estimating.
 
+import { durumiUserAgent } from './userAgent';
+
 export type AiProvider = 'anthropic' | 'openai-compatible';
 
 export interface AiMessage {
@@ -50,7 +52,6 @@ export type AiCallResponse =
   | AiCallError;
 
 const DEFAULT_TIMEOUT_MS = 60_000;
-const DURUMI_VERSION = '0.1.8';
 
 export async function aiChat(messages: AiMessage[], opts: AiCallOptions): Promise<AiCallResponse> {
   if (!opts.apiKey && opts.provider === 'anthropic') {
@@ -158,7 +159,7 @@ async function doFetch(
   if (typeof fetcher !== 'function') {
     return { ok: false, code: 'network', message: 'fetch unavailable' };
   }
-  const ua = `Durumi/${DURUMI_VERSION} (https://github.com/kimmingul/durumi)`;
+  const ua = durumiUserAgent();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {

@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import TurndownService from 'turndown';
 import type { BibEntry } from '@shared/bibtex';
 import { httpJson, httpText } from './bibliographyFetch';
+import { durumiUserAgent } from './userAgent';
 import {
   defaultDownloadPath,
   ensureReferenceDir,
@@ -349,7 +350,7 @@ async function downloadPdf(
   if (typeof fetcher !== 'function') {
     return { ok: false, code: 'http', message: 'fetch unavailable' };
   }
-  const ua = 'Durumi/0.1.7 (https://github.com/kimmingul/durumi)' + (opts.email ? ` mailto:${opts.email}` : '');
+  const ua = durumiUserAgent(opts.email);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30_000);
   try {
