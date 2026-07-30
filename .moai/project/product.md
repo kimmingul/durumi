@@ -10,7 +10,7 @@
 | 정의 | "a paper crane for medical research" — Typora 스타일 크로스플랫폼 마크다운 에디터 | `package.json:5` |
 | 현재 버전 | v0.2.29 | `package.json:4`, HEAD `b3272fd chore: release v0.2.29` |
 | 라이선스 | Apache-2.0 | `package.json:7`, `README.md:675-685` |
-| 저장소 | github.com/kimmingul/durumi | `package.json:8-11` |
+| 저장소 | github.com/kimmingul/durumi | `package.json:9-12` |
 | 저자 | Min-Gul Kim | `package.json:6` |
 | UI 표면 | Electron 데스크톱 GUI (macOS + Windows 11), React 18 + CodeMirror 6 | 인터뷰 `ui_surface` |
 | 팀 구성 | 단독 메인테이너의 공개 오픈소스 — CLA/CONTRIBUTING/PR 템플릿을 갖춘 오픈코어 | `README.md:673-701`, `CONTRIBUTING.md`, 인터뷰 `team_sharing` |
@@ -24,7 +24,7 @@
 Durumi는 이 간극을 겨냥한다는 근거가 코드에 직접 남아 있다:
 - `shared/manuscriptTemplates.ts`(457줄)의 IMRaD/CONSORT/PRISMA/CARE/STROBE 보고 가이드라인 스켈레톤
 - `docs/reference-management.md`의 서지 워크플로 가이드와 `electron/bibliographyFetch.ts`의 Crossref/PubMed/KoreaMed/ORCID 연동
-- 매크로 프리셋(`p < 0.05`, `95% CI`, `HR/OR/RR` 등 11종)이 의학통계 표기를 겨냥
+- 매크로 프리셋(`electron/macros.ts:13-26` 기본 프리셋 총 12종 중, `p < 0.05`/`95% CI`/`mean ± SD`/`sample size`/`HR`/`OR`/`RR` 의학통계 프리셋 7종, `electron/macros.ts:17-23`)이 의학통계 표기를 겨냥
 
 ## 3. 핵심 가치 제안
 
@@ -42,7 +42,7 @@ Durumi는 이 간극을 겨냥한다는 근거가 코드에 직접 남아 있다
 - **서지·참고문헌 관리** — 로컬 `.bib` 파일을 상위 32단계까지 walk-up 탐색하며, Crossref/PubMed/KoreaMed/ORCID/DOI resolver로 원격 검색·추가가 가능하다. 추가된 항목은 `reference/<key>.{pdf,md}`로 로컬 미러링되며(Crossref link → PMC → Unpaywall → HTML 스크랩 → 초록 스텁 순서로 시도), 사용자가 직접 `reference/`에 넣은 파일도 사이드바에서 등록할 수 있는 양방향 동기화가 있다. 근거: `electron/bibliography.ts`, `bibliographyFetch.ts`, `referenceDownload.ts`, `referenceFs.ts`, `referenceImport.ts`.
 - **내보내기** — HTML(`markdown-it` 파이프라인 + KaTeX + Mermaid SVG 인라인), PDF(오프스크린 `printToPDF`), DOCX/LaTeX(Pandoc 경유)를 지원한다. 근거: `src/export/`, `electron/pdf.ts`, `electron/pandoc.ts`.
 - **AI 보조** — Anthropic Messages API와 OpenAI 호환 엔드포인트(Ollama·LM Studio 포함) 두 종류의 프로바이더를 SDK 없이 직접 구현했다. 선택 영역 재작성(7개 명령), 문단 단위 인용 제안(할루시네이션 가드 포함), 옵트인 고스트텍스트 자동완성, 사용량/비용 대시보드를 제공한다. API 키는 `safeStorage`로 암호화 저장되며, 저장 실패 시 평문 폴백을 정직하게 표시한다. 근거: `electron/aiClient.ts`, `aiKeys.ts`, `src/editor/ai/ghostText.ts`.
-- **매크로** — 의학통계 표기(`p < 0.05`, `95% CI`, `HR/OR/RR` 등) 11종 기본 프리셋을 포함한 키바인딩 스니펫 시스템. `macros.json`을 `fs.watch`로 라이브 리로드한다. 근거: `electron/macros.ts`, `src/editor/keymap/macros.ts`.
+- **매크로** — 기본 프리셋 12종(`electron/macros.ts:13-26`)을 포함한 키바인딩 스니펫 시스템. 그중 의학통계 표기(`p < 0.05`, `95% CI`, `mean ± SD`, sample size, `HR`/`OR`/`RR`) 7종(`electron/macros.ts:17-23`)이 의학통계 전용이고, 나머지 5종은 날짜/구분선/인용/각주/NOTE 콜아웃 등 범용 저작 헬퍼다. `macros.json`을 `fs.watch`로 라이브 리로드한다. 근거: `electron/macros.ts`, `src/editor/keymap/macros.ts`.
 - **원고 템플릿** — IMRaD / CONSORT 2010 / PRISMA 2020 / CARE 2017 / STROBE(cohort, cross-sectional) 6종 보고 가이드라인 스켈레톤. 근거: `shared/manuscriptTemplates.ts`.
 - **표 편집** — 셀 단위 `contentEditable` 편집과 인라인 마크 렌더링을 지원하는 전용 아키텍처. 근거: `src/editor/decorations/table.ts`, `markdownExt/tableEdit.ts`.
 - **i18n** — 한국어/영어 UI, OS 로케일 자동감지. 근거: `src/i18n/dict.ts`(1,093줄), `shared/menuLabels.ts`.
@@ -77,7 +77,7 @@ Durumi는 이 간극을 겨냥한다는 근거가 코드에 직접 남아 있다
 | Live / 라이브 | `typora` | v0.1.0~v0.1.10의 기존 라이브 프리뷰 동작. 비활성 라인은 렌더링, 활성(캐럿) 라인은 원본 마크다운을 노출해 마커를 직접 편집할 수 있다. |
 | Source / 소스 | `markdown` | 순수 마크다운 + 문법 하이라이팅. 라이브 프리뷰 데코레이션이 전부 꺼진다. |
 
-내부 prefs 키(`wysiwyg | typora | markdown`)는 v0.1.13 사용자 대상 이름 변경(Document/Live/Source) 이후에도 하위호환을 위해 그대로 유지된다 (`src/editor/editMode.ts`, `README.md:29`). 아키텍처 관점의 계층 구조는 `structure.md` §4를 참고하라.
+내부 prefs 키(`wysiwyg | typora | markdown`)는 v0.1.13 사용자 대상 이름 변경(Document/Live/Source) 이후에도 하위호환을 위해 그대로 유지된다 (`src/editor/editMode.ts`, `README.md:29`). 아키텍처 관점의 계층 구조는 `structure.md` §6을 참고하라.
 
 ## 7. 제품 원칙 — Document Mode 6원칙
 
@@ -109,6 +109,8 @@ Durumi는 이 간극을 겨냥한다는 근거가 코드에 직접 남아 있다
 | 우선순위 | 항목 | 근거 |
 |---|---|---|
 | High | `RenderedSpan` 양방향 소스맵 계약 도입 — 현재 `src/editor/renderedSpan.ts`는 존재하지 않으며, `docs/DOCUMENT_MODE_PRINCIPLES.md` §7이 v0.3.x 마일스톤으로 제안한 상태다. v0.2가 사인오프로 닫힌 지금, v0.3 진입의 최우선 후보다. | `docs/DOCUMENT_MODE_PRINCIPLES.md` §7, 인터뷰 Stage A |
+| Medium | 렌더러 에러 경계·통합 IPC 에러 채널 도입 — 현재 `src/`/`electron/` 전체에 `ErrorBoundary`/`componentDidCatch`/`unhandledrejection` 핸들러가 전무하며, 토스트 인프라는 단 1개 에러 경로(`useAiPalette.ts:73`)에서만 쓰인다. `PathNotAllowedError` 등은 가드되지 않은 await 지점에서 unhandled rejection으로 새어나갈 수 있다. | `structure.md` §10, `tech.md` §13 |
+| Low | 최소 로깅 서브시스템 도입 — 현재 파일 sink도 레벨 구분도 없는 ad-hoc `console.*` 호출 18건뿐이며, `src/i18n/dict.ts:39`는 사용자에게 "see logs"를 약속하지만 접근 가능한 로그가 없다. | `tech.md` §13 |
 | Medium | AI 매뉴스크립트 리뷰 하네스 — 임상의/생명과학자/통계학자/윤리학자/리뷰어 관점의 독립 리뷰 에이전트 패널, 결과를 `%% @reviewer-clinician … %%` 메모로 표면화 | `README.md:361-368` |
 | Medium | 배경 데이터 → 그림 파이프라인 — 데이터 분석용 AI 실행 샌드박스와 마크다운 블록 연동 자동 그림 생성 | `README.md:370-373` |
 | Low | 지식 그래프/온톨로지 뷰 — 인용 네트워크의 Obsidian 스타일 그래프 뷰 | `README.md:375-377` |

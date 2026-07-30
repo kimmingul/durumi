@@ -6,7 +6,7 @@ Electron 데스크톱 앱의 런타임, 의존성, 빌드/테스트/배포 파�
 
 | 항목 | 값 | 근거 |
 |---|---|---|
-| 런타임 | Electron ^31.2.1 (Node 20.18 내장) | `package.json:79` |
+| 런타임 | Electron ^31.2.1 (Node 20.18 내장) | `package.json:79`, `electron.vite.config.ts:13` |
 | 최소 Node | `>=20` | `package.json:91-93` |
 | 언어 | TypeScript ^5.5.3, strict + `noUncheckedIndexedAccess` + `noFallthroughCasesInSwitch` + `isolatedModules` | `package.json:87`, `tsconfig.node.json`/`tsconfig.web.json` |
 | 패키지 매니저 | pnpm 9 | `.github/workflows/ci.yml:17-20` |
@@ -21,8 +21,8 @@ Electron 데스크톱 앱의 런타임, 의존성, 빌드/테스트/배포 파�
 | 에디터 코어 | `@codemirror/{state,view,commands,language,language-data,lang-markdown,search,autocomplete}` | CodeMirror 6은 확장 기반 아키텍처로 Durumi의 6단계 확장 계층(structure.md §6)을 지원. `language-data`는 코드블록 문법 하이라이팅을 지연 로드 |
 | 마크다운 파싱 | `@lezer/{common,highlight,markdown}` | CodeMirror 6의 네이티브 파서 프레임워크. Durumi 고유 문법(인용, 메모, CriticMarkup 등)을 `src/editor/markdownExt/`의 Lezer 확장으로 직접 구현하는 기반 |
 | 내보내기 파이프라인 | `markdown-it ^14.1.0` + `markdown-it-{attrs,footnote,github-alerts,mark,sub,sup,task-lists}`, `turndown ^7.2.4`, `@mixmark-io/domino`, `node-emoji`, `js-yaml` | 편집기 파서(Lezer)와 별개의 HTML 렌더 파이프라인. `turndown`은 참고문헌 다운로드 시 HTML→Markdown 변환(HTML 스크랩 폴백 경로)에 쓰인다 |
-| 렌더링 | `katex ^0.16.45`(수식), `mermaid ^11.14.0`(다이어그램, 지연 로드 약 700KB) | 두 라이브러리 모두 사실상 업계 표준. `mermaid`는 `securityLevel: 'strict'`로 인라인 SVG 렌더 |
-| PDF | `pdfjs-dist ^5.7.284` (지연 로드 약 2MB) | 로컬 PDF에서 DOI 추출(참고문헌 가져오기), PDF 텍스트 추출(AI 인용 제안 컨텍스트 보강)에 사용. HTML→PDF 자체 내보내기는 별도로 Electron 내장 `printToPDF`를 씀(서드파티 불필요) |
+| 렌더링 | `katex ^0.16.45`(수식), `mermaid ^11.14.0`(다이어그램, 지연 로드 — "~700KB minified", `src/editor/mermaid/renderer.ts:3` 주석) | 두 라이브러리 모두 사실상 업계 표준. `mermaid`는 `securityLevel: 'strict'`로 인라인 SVG 렌더 |
+| PDF | `pdfjs-dist ^5.7.284` (지연 로드 — "~2MB", `electron/pdfText.ts:11` 주석) | 로컬 PDF에서 DOI 추출(참고문헌 가져오기), PDF 텍스트 추출(AI 인용 제안 컨텍스트 보강)에 사용. HTML→PDF 자체 내보내기는 별도로 Electron 내장 `printToPDF`를 씀(서드파티 불필요) |
 | 플랫폼 | `electron-updater ^6.8.3`, `simple-git ^3.36.0` | 자동 업데이트, git 상태 조회 |
 | 빌드 | `electron-vite ^2.3.0`, `vite ^5.3.4`, `@vitejs/plugin-react`, `electron-builder ^24.13.3` | main/preload/renderer 3중 Rollup 빌드 + 패키징 |
 | 테스트 | `vitest ^2.0.3`, `jsdom ^24.1.0`, `@playwright/test ^1.45.1` | 유닛(jsdom) + 실제 Electron 앱 구동 e2e |
@@ -47,7 +47,7 @@ tsconfig.test.json      composite 아님, include: tests/**, e2e/**  ← 별도 
 
 루트 `tsconfig.json`은 `files: []`이고 `include`가 없다 — `references`만으로 구성된 컨테이너다. `tsconfig.json:2-9`의 주석이 그 이유를 직접 기록한다: 이 설정을 대상으로 맨 `tsc --noEmit`을 돌리면 **아무것도 체크하지 않는다**(`files`/`include`가 비어있으므로). 이 함정이 v0.2.16의 `aiHasKey` 회귀를 숨겼던 실제 원인이었다.
 
-`tsconfig.test.json`은 의도적으로 `composite`가 아니다 — composite 프로젝트 경계는 임포트되는 모든 파일을 명시적으로 열거해야 하는데, `src/`/`electron/`/`shared/`를 넘나드는 테스트 파일에는 이것이 비현실적이기 때문이다(`tsconfig.test.json:1-6`). composite가 아니므로 TS는 이 설정 아래에서 임포트되는 모든 파일을 전이적으로 타입체크한다 — 즉 테스트가 임포트하는 renderer/main 버그도 함께 잡힌다.
+`tsconfig.test.json`은 의도적으로 `composite`가 아니다 — composite 프로젝트 경계는 임포트되는 모든 파일을 명시적으로 열거해야 하는데, `src/`/`electron/`/`shared/`를 넘나드는 테스트 파일에는 이것이 비현실적이기 때문이다(`tsconfig.test.json:2-7`). composite가 아니므로 TS는 이 설정 아래에서 임포트되는 모든 파일을 전이적으로 타입체크한다 — 즉 테스트가 임포트하는 renderer/main 버그도 함께 잡힌다.
 
 이 때문에 `pnpm typecheck`는 **반드시 두 명령 모두**여야 한다:
 
@@ -90,7 +90,7 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
 - **Vitest** — `vitest.config.ts`: `environment: jsdom`, `globals: false`(테스트 파일에서 `describe`/`it`을 명시적으로 import해야 함), `setupFiles: tests/setup.ts`가 `ResizeObserver`와 `Range.getBoundingClientRect` 폴리필을 주입하고 `IS_REACT_ACT_ENVIRONMENT`를 설정한다.
 - **Playwright** — `playwright.config.ts`: `fullyParallel: false`, `workers: 1`. 각 e2e spec이 `launchClean()`으로 실제 Electron 앱을 임시 `--user-data-dir`와 함께 새로 띄우므로(`e2e/_helpers.ts`), 병렬 실행은 프로세스 자원 경합과 상태 오염 위험이 있어 의도적으로 직렬화되어 있다.
-- **CDP IME 하네스** — `e2e/_helpers.ts:200-278`의 `composeKorean(page, syllables, commitText)`이 Chrome DevTools Protocol의 `Input.imeSetComposition`을 사용해 실제 한글 조합 이벤트를 합성한다. 각 음절을 조합 상태로 보낸 뒤, 빈 텍스트의 조합으로 마무리한다(`Input.insertText`를 쓰지 않는 이유: 그것은 새 텍스트로 즉시 커밋되어 `compositionstart`/`compositionupdate`/`compositionend` 흐름 자체를 우회하기 때문). CDP가 IME를 지원하지 않는 미래 Electron 빌드에 대비한 graceful skip이 포함되어 있다.
+- **CDP IME 하네스** — `e2e/_helpers.ts:241-281`의 `composeKorean(page, syllables, commitText)`이 Chrome DevTools Protocol의 `Input.imeSetComposition`을 사용해 실제 한글 조합 이벤트를 합성한다. 각 음절을 조합 상태로 보낸 뒤, 빈 텍스트의 조합으로 마무리한다(`Input.insertText`를 쓰지 않는 이유: 그것은 새 텍스트로 즉시 커밋되어 `compositionstart`/`compositionupdate`/`compositionend` 흐름 자체를 우회하기 때문). CDP가 IME를 지원하지 않는 미래 Electron 빌드에 대비한 graceful skip이 포함되어 있다.
 
 ## 9. CI/CD — 3개 워크플로
 
@@ -132,6 +132,17 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 - **원자적 쓰기** — `electron/fs.ts`와 `bibliographyWrite.ts`는 같은 디렉터리에 임시 파일을 쓴 뒤 `fs.rename`으로 교체한다. 쓰기 도중 크래시가 나도 원본 파일이 손상되지 않는다.
 - **외부 URL / 경로 신뢰 게이트** — `pathGuard.ts`의 4-tier 모델(구조 상세는 `structure.md` §4)이 렌더러가 임의 경로를 요청하는 것을 막는다.
 - **네트워크 격리** — 모든 외부 HTTP는 main 프로세스에서만 발생(`structure.md` §2). 렌더러의 유일한 예외는 로컬 asset을 base64로 인라인하는 `fetch()` 1건(`src/export/inlineImages.ts:82`)이다.
+
+## 13. 알려진 결함 (드리프트·운영 공백)
+
+문서화된 사실을 숨기지 않는다 — 코드 자체에 남아 있는 알려진 결함이다.
+
+- **세 곳에서 서로 다른 하드코딩 버전 문자열이 User-Agent로 외부에 나간다** — `electron/bibliographyFetch.ts:14`는 `'0.1.6'`, `electron/referenceDownload.ts:352`는 `'Durumi/0.1.7 (https://github.com/kimmingul/durumi)'`, `electron/aiClient.ts:53`은 `'0.1.8'`을 각각 상수로 갖고 있다. 셋 다 `package.json:4`의 실제 버전(`0.2.29`)과 다르고 서로도 다르며, `app.getVersion()`에서 파생되지 않는다. Crossref/PubMed/ORCID에 보내는 클라이언트 식별이 3중으로 부정확하다.
+- **`README.md:7`이 "Current version: v0.2.28"로 정체되어 있다** — `package.json:4`(SSOT)는 `0.2.29`다.
+- **Windows는 빌드·배포되지만 검증되지 않는다** — `release.yml`이 `windows-latest`에서 NSIS 인스톨러를 게시하지만(§9), CI 어느 잡도 Windows에서 테스트를 실행하지 않고, `process.platform === 'win32'`를 모킹하는 유닛 테스트도 없다. `electron/pandoc.ts:13-14,56,66`과 `electron/pdf.ts:26-28`의 Windows 전용 코드 경로는 실행 검증 없이 존재한다(인터뷰 확정 제약 4).
+- **`prefs:set` 값 도메인 미검증 / 렌더러 에러 경계 부재 / 로깅 서브시스템 부재** — 세부는 `structure.md` §10(모듈 경계 이슈)을 참고. 로깅은 파일 sink·레벨 구분 없는 ad-hoc `console.*` 호출 18건뿐이며, `src/i18n/dict.ts:39`가 사용자에게 약속하는 "see logs"에 대응하는 접근 가능한 로그가 실제로는 없다.
+
+`dist-build/`(빌드 산출물)는 `.gitignore:257`에 정상적으로 등록되어 있으며 추적되지 않는다 — 결함이 아니라 정상적인 로컬 빌드 아티팩트다.
 
 ---
 

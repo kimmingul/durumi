@@ -1,0 +1,39 @@
+# .moai/project/harness-spec.yaml — machine-readable harness generation input
+# Source: .moai/project/interview.md (Phase 4 two-stage interview)
+# Regenerated on every /moai project run (overwrite semantics)
+
+# --- REQUIRED base fields (interview Stage A) ---
+domain: desktop-markdown-editor
+goal: >-
+  v0.2가 사인오프로 닫힌 상태에서 v0.3 진입을 준비하는 활성 제품.
+  문서는 현재 권능과 함께 v0.3 방향(RenderedSpan 양방향 소스맵 계약 도입)을 로드맵으로 기록한다.
+constraints:
+  - "Document Mode 6원칙 준수 (docs/DOCUMENT_MODE_PRINCIPLES.md §0 우선순위: 소스 무결성 → IME 안전 → 코드섬 주권 → 렌더 의도/소스 백드 → 명시적 스코프 → 경계 원자성). 원칙 양보 시 해당 문서에 예외 명시 등록 필수."
+  - "수동 macOS 한글 IME 스모크가 대체 불가능한 릴리스 게이트 (CDP Input.imeSetComposition은 OS 변환 계층을 재현하지 못함)."
+  - "Electron 보안 경계 불변식 유지: sandbox/contextIsolation/nodeIntegration=false, 렌더러 직접 네트워크·file:// 접근 금지, pathGuard 4-tier 신뢰 모델 및 assertPrefsPatchAllowed 우회 차단."
+  - "크로스플랫폼 검증 공백: e2e가 macOS 전용이며 Windows/Linux는 CI 미검증 (electron/pandoc.ts의 Windows 경로는 실행 미검증)."
+scope: >-
+  In-scope: 3-모드 에디터(Document/Live/Source), 서지·참고문헌 관리, 메모/CriticMarkup,
+  내보내기(HTML·PDF·pandoc), AI 보조, 매크로, i18n(en/ko).
+  Out-of-scope: 웹/모바일 클라이언트, 실시간 협업, 클라우드 동기화 서버, 자체 백엔드.
+
+# --- EXTENDED fields (interview Stage B — mandatory Round 4) ---
+verification: >-
+  3단계 게이트: (1) pnpm typecheck (= tsc --build && tsc --noEmit -p tsconfig.test.json, 양쪽 모두 필수)
+  → pnpm lint → pnpm test; (2) pnpm test:e2e (macOS Playwright + 실제 Electron);
+  (3) 릴리스 전 수동 macOS 한글 IME 스모크 (대체 불가).
+external_systems:
+  - "Crossref (서지 검색 / DOI 해석)"
+  - "PubMed (서지 검색)"
+  - "KoreaMed (서지 검색)"
+  - "ORCID (저자 조회)"
+  - "Unpaywall (오픈액세스 PDF 탐색)"
+  - "DOI resolver (doi.org)"
+  - "Anthropic Messages API (AI 보조)"
+  - "OpenAI 호환 chat completions — OpenAI / Ollama / LM Studio / 커스텀 base URL (AI 보조)"
+  - "GitHub Releases (electron-updater 자동 업데이트)"
+  - "Homebrew (pandoc 선택적 설치)"
+  - "로컬 git (simple-git 변경 상태 조회)"
+  # 데이터베이스 없음 — 설정과 서지 데이터는 파일(JSON, .bib)로 관리
+ui_surface: has-ui
+team_sharing: solo
