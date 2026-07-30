@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { WIDTH_BOUNDS } from '@shared/prefsValidation';
 
 export type SidebarTab = 'files' | 'outline' | 'search' | 'comments' | 'changes';
 
@@ -22,8 +23,9 @@ interface SidebarState {
   clearGitStatus: (root: string) => void;
 }
 
-const MIN_WIDTH = 180;
-const MAX_WIDTH = 480;
+// 폭 경계의 단일 원천은 @shared/prefsValidation 이다. main 쪽
+// setPreferences() 도 같은 값으로 clamp하므로 양쪽이 어긋날 수 없다.
+const { min: MIN_WIDTH, max: MAX_WIDTH } = WIDTH_BOUNDS.sidebar;
 
 export const useSidebarStore = create<SidebarState>((set) => ({
   visible: true,

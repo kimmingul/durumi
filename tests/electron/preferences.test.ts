@@ -207,3 +207,35 @@ describe('recentFolders persistence (v0.2.10)', () => {
     expect(prefs.workspaceFolders).toEqual(['/x']);
   });
 });
+
+describe('setPreferences: value-domain validation', () => {
+  it('clamps a negative ghostTextSessionCap instead of persisting it', async () => {
+    const mod = await import('../../electron/preferences');
+    await mod.setPreferences({ ai: { ghostTextSessionCap: -1 } });
+    const prefs = await mod.getPreferences();
+    expect(prefs.ai.ghostTextSessionCap).toBe(0);
+  });
+
+  it('clamps an absurd sidebar width to the panel maximum', async () => {
+    const mod = await import('../../electron/preferences');
+    await mod.setPreferences({ sidebar: { width: 1e9 } });
+    const prefs = await mod.getPreferences();
+    expect(prefs.sidebar.width).toBe(480);
+  });
+
+  it('drops an out-of-schema enum and keeps the previous value', async () => {
+    const mod = await import('../../electron/preferences');
+    const before = (await mod.getPreferences()).theme;
+    await mod.setPreferences({ theme: 'neon' as never });
+    const prefs = await mod.getPreferences();
+    expect(prefs.theme).toBe(before);
+  });
+
+  it('leaves valid values untouched', async () => {
+    const mod = await import('../../electron/preferences');
+    await mod.setPreferences({ theme: 'dark', sidebar: { width: 300 } });
+    const prefs = await mod.getPreferences();
+    expect(prefs.theme).toBe('dark');
+    expect(prefs.sidebar.width).toBe(300);
+  });
+});

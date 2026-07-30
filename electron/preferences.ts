@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import type { Preferences, PreferencesPatch, StyleSet } from '@shared/ipc-contract';
+import { sanitizePreferencesPatch } from '@shared/prefsValidation';
 
 /**
  * v0.1.11 Phase 3 — Durumi-default StyleSet, duplicated from
@@ -232,7 +233,14 @@ export async function getPreferences(): Promise<Preferences> {
   return cache;
 }
 
-export async function setPreferences(patch: PreferencesPatch): Promise<void> {
+export async function setPreferences(rawPatch: PreferencesPatch): Promise<void> {
+  // 값 도메인 검증은 IPC 핸들러가 아니라 여기(데이터 계층)에 둔다 — 렌더러
+  // 경로뿐 아니라 모든 호출자가 보호된다. 경로 필드의 신뢰 경계 방어는
+  // 별개 계층이며 `assertPrefsPatchAllowed`가 담당한다.
+  const { patch, rejected } = sanitizePreferencesPatch(rawPatch);
+  if (rejected.length > 0) {
+    console.warn(`[prefs] rejected out-of-domain values: ${rejected.join(', ')}`);
+  }
   const current = await getPreferences();
   // v0.2.17 — the patch is `DeepPartial<Preferences>` (PreferencesPatch),
   // so nested sub-objects must be merged one level deep rather than

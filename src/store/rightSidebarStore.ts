@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { WIDTH_BOUNDS } from '@shared/prefsValidation';
 
 // Right-side authoring assistance pane (v0.1.8.4). Holds the References
 // and AI tabs that previously lived on the left sidebar. State is fully
@@ -19,8 +20,8 @@ interface RightSidebarState {
   setWidth: (w: number) => void;
 }
 
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 560;
+// 폭 경계의 단일 원천은 @shared/prefsValidation (main의 setPreferences와 공유).
+const { min: MIN_WIDTH, max: MAX_WIDTH } = WIDTH_BOUNDS.rightSidebar;
 
 export const useRightSidebarStore = create<RightSidebarState>((set) => ({
   visible: false,

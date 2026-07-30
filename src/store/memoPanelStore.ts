@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { WIDTH_BOUNDS } from '@shared/prefsValidation';
 
 interface MemoPanelState {
   /** Persisted via preferences. */
@@ -20,8 +21,8 @@ interface MemoPanelState {
   setFocusedFrom: (from: number | null) => void;
 }
 
-const MIN_WIDTH = 220;
-const MAX_WIDTH = 560;
+// 폭 경계의 단일 원천은 @shared/prefsValidation (main의 setPreferences와 공유).
+const { min: MIN_WIDTH, max: MAX_WIDTH } = WIDTH_BOUNDS.memoPanel;
 
 export const useMemoPanelStore = create<MemoPanelState>((set, get) => ({
   width: 320,
