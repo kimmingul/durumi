@@ -137,7 +137,10 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
 문서화된 사실을 숨기지 않는다 — 코드 자체에 남아 있는 알려진 결함이다.
 
-- **Windows 런타임 검증은 아직 실측되지 않았다** — CI에 `windows-latest` 잡을 추가했고(§13.1) 플랫폼 무관하게 검증 가능한 부분은 유닛 테스트로 덮었지만, **Windows에서 스위트가 실제로 통과하는지는 그 잡의 첫 실행 결과로만 확인된다.** Windows e2e(Playwright + Electron)는 별도 인프라가 필요해 여전히 공백이다.
+- **Windows e2e 공백** — 유닛 계층은 이제 `windows-latest`에서 실제로 통과한다(§13.1). 그러나 Playwright + Electron 기반 e2e는 여전히 macOS 전용이며, Windows에서 앱을 실제로 띄우는 검증은 없다. 별도 러너 인프라가 필요하다.
+- **e2e 스위트 플레이키** — `E2E (macOS)` 202 케이스 중 1건이 간헐적으로 실패한다. 관측된 두 건은 서로 다른 테스트였고(`pending-assets-migration.spec.ts:189`, `b1-features.spec.ts:361`) 재실행 시 통과했다. 전자는 원인이 특정된다 — `state: 'attached'`(DOM 부착)만 기다린 뒤 `img.complete`(바이트 페치·디코드 완료)를 단정해, 둘 사이에 경합이 있다. 런타임이 완전히 동일한 두 커밋(`3fe4a24` 실패 2회 / `12b8a0f` 통과)이 갈렸다는 점이 제품 결함이 아님을 뒷받침한다.
+- **느린 러너에서 불안정한 테스트 3건** — `tests/editor/lezerEscapeTrace.test.ts`, `tests/sidebar/aiTab.test.tsx`, `tests/sidebar/rightSidebar.test.tsx`는 Windows 첫 실행에서 실패했다가 재실행에서 통과했다. 뒤 두 파일은 고정 지연(`flush()` 20ms / 30ms)에 의존해 React effect + promise 체인이 정착하기를 기다리는 형태다. 조건 폴링(`waitFor`)으로 바꾸면 단언을 약화시키지 않고 해소된다.
+- **i18n 키 파리티 테스트 부재** — `src/i18n/dict.ts`의 `en`/`ko` 사전이 같은 키 집합을 갖는지 기계적으로 확인하는 테스트가 없다. 한쪽에만 키를 추가해도 아무것도 실패하지 않고, 누락된 언어에서는 `t()`가 키 문자열을 그대로 노출한다.
 - **i18n 키 파리티 테스트 부재** — `src/i18n/dict.ts`의 `en`/`ko` 사전이 같은 키 집합을 갖는지 기계적으로 확인하는 테스트가 없다. 한쪽에만 키를 추가해도 아무것도 실패하지 않고, 누락된 언어에서는 `t()`가 키 문자열을 그대로 노출한다.
 - **`tests/store/aiUsageStore.test.ts`의 실행 순서 의존** — 이 파일은 `localStorage` 전역이 이미 초기화된 워커에 배치될 때만 통과했다. Node 26의 실험적 내장 `localStorage`가 `--localstorage-file` 없이는 사용 불가라 jsdom 것을 가리기 때문이며, `tests/setup.ts`에 in-memory 폴리필을 넣어 해소했으나 **테스트가 전역 상태에 의존한다는 근본 형태는 남아 있다.**
 
@@ -150,7 +153,11 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 - **`prefs:set` 값 도메인 미검증** (해소: `4ad2e30`) — 경로 필드만 `assertPrefsPatchAllowed`로 가드하고 숫자 범위·enum 멤버십은 무검증이라 음수·NaN·스키마 밖 문자열이 그대로 기록됐다. `shared/prefsValidation.ts`가 enum 8종을 drop, 숫자 5종을 clamp한다. 검증은 IPC 핸들러가 아니라 `setPreferences()` 데이터 계층에 있어 모든 호출자가 보호된다. 폭 경계는 `WIDTH_BOUNDS`로 단일 원천화해 렌더러 스토어 3개가 같은 값을 쓴다.
 - **렌더러 에러 경계·통합 에러 채널 부재** (해소: `4a31696`) — `src/components/ErrorBoundary.tsx`가 렌더 중 throw를 잡아 빈 창 대신 복구 화면을 보이고, `src/utils/errorSurface.ts`가 가드되지 않은 `unhandledrejection`(main의 `PathNotAllowedError` 등)을 토스트로 흘린다. 동일 메시지는 3초 창에서 중복 억제.
 - **로깅 서브시스템 부재** (해소: `64b66b4`) — `electron/log.ts`가 `assetProtocol.ts`의 파일 append 선례를 일반화했다. 레벨 3종, `<userData>/durumi.log`, 1MB 1세대 회전, 홈 경로 `~` 리댁션, 콘솔 이중 출력. `electron/`의 `console.*` 호출 10곳을 이전했고 남은 것은 주석뿐이다. `src/i18n/dict.ts`의 "see logs" 안내가 이제 실재하는 파일을 가리킨다.
-- **Windows 검증 공백 — 유닛 계층** (해소: `cb56975`) — `tests/electron/windowsPaths.test.ts`가 pandoc의 Program Files 경로 후보, `.exe` 배너 파싱, 백슬래시 경로 판정, `pdf.ts`의 `pathToFileURL` 회귀 가드를 덮는다. CI `check` 잡은 `ubuntu-latest` + `windows-latest` matrix(`fail-fast: false`)로 확장했다. 런타임 실측은 §13 첫 항목 참조.
+- **Windows 검증 공백 — 유닛 계층** (해소: `cb56975` + `12b8a0f`) — `tests/electron/windowsPaths.test.ts`가 pandoc의 Program Files 경로 후보, `.exe` 배너 파싱, 백슬래시 경로 판정, `pdf.ts`의 `pathToFileURL` 회귀 가드를 덮는다. CI `check` 잡은 `ubuntu-latest` + `windows-latest` matrix(`fail-fast: false`)로 확장했다.
+
+  **첫 실행에서 9개 파일 25 케이스가 실패했고, 전부 테스트 측 결함이었다** — 제품은 `path.join`으로 네이티브 구분자를 쓰는데 테스트가 POSIX 리터럴을 가정하고 있었다(목 파일시스템 키 불일치, 구분자 민감 문자열 단언). `12b8a0f`에서 8개 파일을 수정해 **`windows-latest`가 실제로 green**이 되었고, 제품 코드는 한 줄도 바뀌지 않았다. 오히려 `pendingAssets.ts:73,112` / `referenceFs.ts:66,176` / `images.ts:55-56` / `pdf.ts:26-28`은 이미 명시적으로 크로스플랫폼 대응이 되어 있었다.
+
+  의도적으로 유지한 forward-slash 단언이 있다 — `images.ts`의 `relPath`(마크다운 링크용)와 `referenceFs.ts:176`의 `toBibRelative`(.bib 저장 필드의 OS 간 round-trip)는 제품이 일부러 POSIX를 반환하므로 그 단언이 옳다.
 
 ### 13.2 e2e 게이트 로컬 실행 불가 (환경 제약)
 
