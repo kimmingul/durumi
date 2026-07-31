@@ -16,6 +16,7 @@ export type Lang = 'en' | 'ko';
 export const dictionaries: Record<Lang, Record<string, string>> = {
   en: {
     ...menuLabels.en,
+    'status.hint.headingSpace': 'Add a space after # to make it a heading',
     'app.error.title': 'Something went wrong',
     'app.error.body':
       'The editor hit an unexpected error and stopped rendering this view. Your file on disk is unchanged.',
@@ -579,6 +580,7 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'ai.palette.after': '이후',
     'ai.palette.accept': '적용',
     'ai.palette.back': '뒤로',
+    'status.hint.headingSpace': '# 뒤에 공백을 넣으면 제목이 됩니다',
     'app.error.title': '문제가 발생했습니다',
     'app.error.body':
       '에디터에 예기치 못한 오류가 발생해 이 화면을 그리지 못했습니다. 디스크의 파일은 그대로입니다.',

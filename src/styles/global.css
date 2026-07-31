@@ -81,6 +81,19 @@ body {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
+/*
+ * `#foo` 처럼 공백이 빠져 제목이 되지 않는 줄에 캐럿이 있을 때 뜨는 안내.
+ * 상태바는 flex + space-between 이므로 auto 마진으로 모드 토글 왼쪽에 붙인다.
+ * 존재 자체가 전이적이라 시선을 뺏지 않도록 muted 색을 유지한다.
+ */
+.status-bar-hint {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
 .status-bar-mode {
   display: inline-flex;
   align-items: center;

@@ -33,6 +33,8 @@ import type { Macro } from '@shared/ipc-contract';
 import { EditMode, editModeStateExtension, setEditMode } from './editMode';
 import { docPathStateExtension, setDocPath } from './docPath';
 import { wysiwygEscapeFilter } from './wysiwygEscape';
+import { headingHintPlugin } from './headingHint';
+import { useAppStore } from '../store/appStore';
 
 export interface MarkdownEditorProps {
   value: string;
@@ -118,6 +120,10 @@ export function MarkdownEditor({
         citationHoverTooltip(),
         ghostTextExtension({ refs: defaultGhostTextRefs }),
         spellcheckExclusion(),
+        // `#foo` 처럼 공백이 빠져 제목이 되지 않는 줄에 캐럿이 있으면
+        // 상태바에 안내를 띄운다. 판정만 하고 문서·데코레이션은 건드리지
+        // 않는다 (IME 조합 중 안전).
+        headingHintPlugin((show) => useAppStore.getState().setHeadingHint(show)),
         viewModes(),
         markdownKeymap(),
         macroCompartmentRef.current.of(buildMacroKeymap(macros)),

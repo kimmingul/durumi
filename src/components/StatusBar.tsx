@@ -33,6 +33,7 @@ export function StatusBar() {
   const content = useAppStore((s) => s.content);
   const isDirty = useAppStore((s) => s.isDirty);
   const editMode = useAppStore((s) => s.editMode);
+  const headingHint = useAppStore((s) => s.headingHint);
   const setEditMode = useAppStore((s) => s.setEditMode);
   // Subscribe to language so labels re-render on switch.
   useLanguage();
@@ -66,6 +67,16 @@ export function StatusBar() {
           </span></>
         )}
       </span>
+      {headingHint && (
+        <span
+          className="status-bar-hint"
+          role="status"
+          aria-live="polite"
+          data-testid="status-heading-hint"
+        >
+          {t('status.hint.headingSpace')}
+        </span>
+      )}
       <span className="status-bar-mode" role="radiogroup" aria-label={t('status.editMode.group')} data-testid="status-edit-mode">
         {MODES.map(({ mode, labelKey, icon, titleKey }) => (
           <button
