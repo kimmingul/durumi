@@ -4,7 +4,7 @@
 
 A cross-platform markdown editor (macOS + Windows 11) that grows from a Typora-style live-preview editor into an end-to-end manuscript studio for medical researchers. The crane (학, 鶴) is also a homophone for *learning* (學) — the brand carries the dual meaning of scholarship and the origami crane folded for someone's healing.
 
-**Current version: v0.2.29.** Highlights since v0.1.8.3:
+**Current version: v0.2.30.** Highlights since v0.1.8.3:
 
 - **v0.2.24 → v0.2.28 — Atomic inline-mark rollout**: the v0.2.23 widget-atomicity contract (`EditorView.atomicRanges` + `Prec.high` Backspace/Delete keymap) extended from Image/Link to five inline marks — **bold** `**`/`__`, *italic* `*`/`_`, ~~strike~~ `~~`, ==highlight== `==`, and ~subscript~ `~`. Spec-driven `src/editor/atomicInlineMarks.ts` adds a Markdown-mode gate that `atomicMedia.ts` lacked, plus expanded code-island guards (`FencedCode` / `CodeBlock` / `InlineCode` / `FrontMatter` / `MathBlock` / `InlineMath`) and `head === tail` enforcement. Caret in the label stays editable; Backspace/Delete at every boundary deletes the whole span in one keystroke; ArrowKeys skip the hidden markers atomically. v0.2.26-28 were implemented by Claude + Codex CLI + Gemini CLI in a parallel tri-model team round. See [docs/PROGRESS.md](docs/PROGRESS.md) for the per-mark breakdown.
 - **v0.2.23 — Untitled-doc image flow + dialog UX polish**: image inserts/pastes/drops in an unsaved buffer render immediately via a per-session pending-assets dir; the first save migrates the bytes into `<docDir>/assets/` and rewrites the markdown link. Save/Open/Export/pickFile dialogs default to the doc's folder or the open workspace instead of being yanked to `~/Downloads`. Image/Link widgets behave atomically — Backspace next to a rendered widget deletes the whole `![](url)` / `[label](url)` in one keystroke. ⌘+Click (macOS) / Ctrl+Click (Win/Linux) opens a link; plain click positions the caret for label editing. See [docs/PROGRESS.md](docs/PROGRESS.md) for the per-feature breakdown.
@@ -409,7 +409,7 @@ See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, sig
 ```bash
 pnpm typecheck          # 0 errors expected
 pnpm lint               # 0 errors / 0 warnings expected
-pnpm test               # 1734 Vitest unit tests (v0.2.29)
+pnpm test               # 1785 Vitest unit tests (v0.2.30)
 pnpm test:e2e           # 203 Playwright Electron tests (run pnpm build first)
 ```
 
@@ -608,7 +608,7 @@ build/
 ├── icon.svg                 Master logo (origami crane on 한지 paper)
 └── icon.png                 1024×1024 app icon (rendered from icon.svg)
 
-tests/                       Vitest unit tests (1734 in v0.2.29)
+tests/                       Vitest unit tests (1785 in v0.2.30)
 e2e/                         Playwright Electron tests (203 across 31 specs)
 docs/
 ├── durumi-markdown-reference.md   Korean markdown reference (~1311 lines)
