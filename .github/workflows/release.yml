@@ -35,18 +35,16 @@ jobs:
       - name: Build & publish (electron-builder, macOS)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Real-signing secrets (P3-3). Uncomment alongside the
-          # electron-builder.yml `mac:` template once the Apple Developer
-          # ID p12 + notarization credentials are added as repo secrets.
-          # See docs/RELEASE.md → "Path to real macOS signing" for the
-          # exact secret names and where each one comes from in
-          # developer.apple.com / appleid.apple.com.
-          #
-          # CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Real-signing secrets, activated 2026-07-31. All five must exist
+          # as repo secrets or electron-builder falls back to ad-hoc — which
+          # macOS now BLOCKS outright (`spctl` → "notarization indicates this
+          # code has been revoked"), not merely warns about.
+          # See docs/RELEASE.md → "Path to real macOS signing".
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm exec electron-builder --mac --publish always
 
   release-win:

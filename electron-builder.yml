@@ -16,22 +16,29 @@ mac:
       arch: [x64, arm64]
   category: public.app-category.productivity
   icon: build/icon.png
-  hardenedRuntime: false
-  identity: null  # ad-hoc signed (no Apple Developer ID); see docs/RELEASE.md
   # ────────────────────────────────────────────────────────────────────
-  # Real-signing template (P3-3). Uncomment when GitHub Secrets
-  # MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD / APPLE_ID /
-  # APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are configured. See
-  # docs/RELEASE.md → "Path to real macOS signing".
+  # Real signing, activated 2026-07-31 (was ad-hoc: `identity: null` +
+  # `hardenedRuntime: false`). The ad-hoc build was not merely
+  # "warned about" — macOS actively BLOCKED it:
   #
-  # Step 1: delete the `identity: null` line above.
-  # Step 2: flip `hardenedRuntime: false` above to `true`.
-  # Step 3: uncomment the entitlements + notarize lines below.
+  #   $ spctl -a -vv Durumi.app
+  #   notarization indicates this code has been revoked
   #
-  # entitlements: build/entitlements.mac.plist
-  # entitlementsInherit: build/entitlements.mac.plist
-  # gatekeeperAssess: false  # default; kept explicit for review clarity
-  # notarize: true            # electron-builder will notarize using APPLE_* env vars
+  # Apple revoked the ad-hoc-signed Electron 31.7.7 macOS binaries, and
+  # Durumi bundles them, so every download was quarantined as malware and
+  # moved to the Trash on macOS 26 / XProtect 5353. Verified against
+  # v0.2.29 and v0.2.30 DMGs and against the stock Electron binary from
+  # npm — a benign ad-hoc-signed control app returns only `rejected`,
+  # so `revoked` is specific, not the generic unsigned verdict.
+  #
+  # `identity` is intentionally absent: electron-builder then auto-selects
+  # the "Developer ID Application" certificate from the keychain (local)
+  # or from CSC_LINK (CI).
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  gatekeeperAssess: false  # default; kept explicit for review clarity
+  notarize: true           # electron-builder notarizes using the APPLE_* env vars
 win:
   target:
     - target: nsis

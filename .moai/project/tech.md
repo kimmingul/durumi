@@ -75,7 +75,7 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
 | 플랫폼 | 타깃 | 서명 상태 |
 |---|---|---|
-| macOS | DMG, `[x64, arm64]` | ad-hoc 서명 (`identity: null`, `hardenedRuntime: false`) — Gatekeeper 경고 우회 필요 |
+| macOS | DMG, `[x64, arm64]` | **Developer ID 실서명 + 공증** (`hardenedRuntime: true`, `notarize: true`, `identity` 미지정 → 키체인 자동선택). 2026-07-31에 ad-hoc에서 전환 — 사유는 §13.3 |
 | Windows | NSIS x64, non-oneClick | 미서명 (`verifyUpdateCodeSignature: false`) — SmartScreen 경고 발생 |
 
 배포 provider는 GitHub(`kimmingul/durumi`, channel `latest`)이며 `electron-updater`가 이를 소비한다. **실제 서명을 활성화하는 경로는 이미 문서화되어 있다** — `electron-builder.yml`에 macOS(Apple Developer ID + 공증)와 Windows(EV 인증서) 실서명용 설정 블록이 활성화 절차 주석과 함께 주석 처리되어 있고, `.github/workflows/release.yml`에도 대응하는 시크릿 참조 블록이 미러링되어 있다. 즉 "언젠가 서명을 켠다"가 코드 없는 계획이 아니라, 주석 해제만 하면 되는 준비된 경로다.
@@ -163,11 +163,45 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 
 일부 개발 환경에서 `pnpm test:e2e`가 코드와 무관하게 전량 실패한다 — 202 테스트가 `launchClean()` 픽스처에서 막히며, 증상은 `electron.launch: ... ENOENT`(바이너리 부재) 또는 `Process failed to launch!`다.
 
-원인은 `node_modules`의 Electron 바이너리가 존재하지 않는 것이다. `electron/dist/`에 `LICENSE`와 `LICENSES.chromium.html`(9.5 MB)은 있으나 `Electron.app`이 없다. `pnpm rebuild electron`은 exit 0으로 완료되고 `Electron.app`도 일시적으로 생성되지만, 관측된 환경에서는 1분 내에 다시 제거되었다 — 대용량 바이너리 쓰기를 되돌리는 샌드박스/도구 계층이 있는 것으로 보인다.
+증상은 `node_modules`의 Electron 바이너리가 사라지는 것이다. `electron/dist/`에 `LICENSE`와 `LICENSES.chromium.html`(9.5 MB)은 남지만 `Electron.app`이 없다. `pnpm rebuild electron`은 exit 0으로 완료되고 `Electron.app`도 생성되지만 곧 다시 제거된다.
 
-**코드 결함이 아니다**: 동일 커밋(`a943d1e`)에서 CI의 `E2E (macOS)` 워크플로가 `macos-latest` + fresh install로 **success**했다. 게이트 2는 CI에서 유효하게 검증된다.
+**원인은 §13.3의 notarization revoked와 동일하다** — macOS가 ad-hoc 서명 Electron 바이너리를 악성코드로 판정해 삭제하는 것이다. 처음에는 "대용량 바이너리 쓰기를 되돌리는 샌드박스 계층"으로 오진했으나, 앱 번들이 `/Applications`과 `~/Applications` 양쪽에서 사라지고 macOS가 "악성코드가 차단되어 휴지통으로 이동"을 표시하면서 실제 원인이 드러났다. 로드 도중 파일이 삭제되므로 프로세스는 `_dyld_start`에서 멈추고 RSS 32 KB에 머문다(정상 Electron 메인은 50 MB 이상).
+
+따라서 §13.3의 서명·공증 전환이 이 문제도 함께 해소한다. 정식 서명된 Electron 바이너리는 revoked 평가 경로를 타지 않는다.
+
+**코드 결함이 아니다**: 동일 커밋(`a943d1e`)에서 CI의 `E2E (macOS)` 워크플로가 `macos-latest` + fresh install로 **success**했다. CI 러너는 XProtect 정의가 다르거나 평가 경로가 달라 영향을 받지 않는다.
 
 실질적 제약: 그런 환경에서는 에디터·원자성·IME 관련 변경의 **로컬 반복 검증이 불가능**하고 매번 CI를 기다려야 한다. 릴리스 게이트 3(수동 한글 IME 스모크, §8)은 실제 앱 실행이 필요하므로 별도의 정상 환경이 요구된다.
+
+### 13.3 macOS 배포 차단 — ad-hoc Electron 바이너리의 notarization revoked
+
+**2026-07-31 발견. 배포 차단 사안이며 v0.2.29 배포본에도 이미 존재했다.**
+
+macOS 26.5.2 / XProtect 5353에서 Durumi DMG를 설치하면 앱이 실행되지 않고 "악성코드가 차단되어 휴지통으로 이동"으로 삭제된다. Apple 자체 도구의 판정:
+
+```
+$ spctl -a -vv Durumi.app
+notarization indicates this code has been revoked
+
+$ syspolicy_check distribution Durumi.app
+Codesign Error — Severity: Fatal — Type: Notary Error
+Notarization indicates this code has been revoked and is no longer allowed to execute.
+```
+
+**Durumi 코드의 문제가 아니다.** 대조 실험으로 범위를 특정했다:
+
+| 대상 | 판정 |
+|---|---|
+| 무해한 ad-hoc 서명 앱 (직접 생성한 대조군) | `rejected` |
+| Durumi v0.2.30 DMG 원본 | `revoked` |
+| Durumi v0.2.29 DMG 원본 (이미 배포됨) | `revoked` |
+| Electron 31.7.7 npm 배포본 (Durumi 무관) | `revoked` |
+
+일반 미서명 앱은 `rejected`에 그치는 반면 Electron 31.7.7의 ad-hoc 서명 바이너리는 `revoked`를 받는다 — Apple이 해당 바이너리를 특정해 차단했고, Durumi가 이를 번들하므로 함께 막힌다. 상위 Electron 버전이 영향을 받지 않는지는 확인하지 못했다.
+
+**대응**: `electron-builder.yml`의 `mac:`을 ad-hoc(`identity: null`, `hardenedRuntime: false`)에서 Developer ID 실서명 + 공증으로 전환했고, `release.yml`의 서명 시크릿 5종을 활성화했다. 정식 서명·공증된 앱은 revoked 평가 경로를 타지 않는다. CI에서 서명이 동작하려면 저장소 시크릿 `MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD` / `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`가 모두 설정되어야 하며, 하나라도 없으면 electron-builder가 ad-hoc으로 되돌아가 같은 차단이 재현된다.
+
+**Windows는 미해결**: NSIS는 여전히 미서명(`verifyUpdateCodeSignature: false`)이라 SmartScreen 경고가 발생한다. 별도 OV/EV 인증서가 필요하다(`docs/RELEASE.md` → Path to real Windows signing).
 
 ---
 
