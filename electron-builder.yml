@@ -38,7 +38,16 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   gatekeeperAssess: false  # default; kept explicit for review clarity
-  notarize: true           # electron-builder notarizes using the APPLE_* env vars
+  # `notarize: true` alone is NOT enough on electron-builder 24.13.3 — it does
+  # not forward APPLE_TEAM_ID to @electron/notarize, which then fails with
+  # "The teamId property is required when using notarization with password
+  # credentials". The object form passes it explicitly.
+  #
+  # teamId is not a secret: it is embedded in every signed binary
+  # (`codesign -dvvv` → TeamIdentifier) and in the certificate subject.
+  # APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD still come from env/secrets.
+  notarize:
+    teamId: XB673TQF3A
 win:
   target:
     - target: nsis
