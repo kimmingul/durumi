@@ -90,8 +90,8 @@ about (see `.moai/project/tech.md` §13.3).
 
 - Windows signing is a manual step in every release. Moving to a cloud-HSM
   certificate would restore full automation at extra annual cost.
-- No signed Windows build has been installed on a real Windows machine
-  yet — SmartScreen behaviour is expected-good but unverified.
+- The signed Windows build was installed and launched successfully on
+  Windows 11 (2026-08-01) — install and first run were not blocked.
 
 
 ## Path to real macOS signing
@@ -351,8 +351,12 @@ update cycle that exercises it** — a mismatch rejects every update silently.
 
 ### Not done yet
 
-- No Windows machine has installed a signed build; SmartScreen behaviour is
-  expected-good (EV grants reputation immediately) but unverified.
+- Verified on Windows 11 (2026-08-01): the signed installer installs and the
+  app launches, without being blocked.
+- Still unverified: `verifyUpdateCodeSignature`. It cannot be exercised until
+  a client running v0.2.31+ takes an update, and a `publisherName` mismatch
+  fails silently — updates simply stop arriving. Check it on the first update
+  cycle that actually crosses that boundary.
 - Signing is manual. A cloud-HSM certificate (GlobalSign Signing Service,
   SSL.com eSigner) would restore full CI automation at extra cost.
 
