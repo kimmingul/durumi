@@ -22,6 +22,7 @@ import { inlineMarksAt, type InlineMarkActiveSet } from '../editor/markdownExt/i
 import { useAppStore } from '../store/appStore';
 import { t, useLanguage } from '../i18n/t';
 import { TableSizePopover } from './TableSizePopover';
+import { ToolbarMenu, type ToolbarMenuItem } from './ToolbarMenu';
 import {
   IconBold,
   IconBulletList,
@@ -307,7 +308,9 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
   const [linkInitialUrl, setLinkInitialUrl] = useState('');
   const [linkInitialTitle, setLinkInitialTitle] = useState('');
   const [tablePopover, setTablePopover] = useState<DOMRect | null>(null);
-  const tableButtonRef = useRef<HTMLButtonElement | null>(null);
+  // v0.2.31 — 저빈도 그룹("삽입" 10개 / "검토" 5개)을 드롭다운으로 접었다.
+  // 동시에 하나만 열리도록 열림 상태는 툴바가 소유한다.
+  const [openMenu, setOpenMenu] = useState<'insert' | 'review' | null>(null);
 
   const lastViewRef = useRef<EditorView | null>(null);
   useEffect(() => {
@@ -498,10 +501,11 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     view.focus();
   }
 
-  function openTablePopover() {
-    const el = tableButtonRef.current;
-    if (!el) return;
-    setTablePopover(el.getBoundingClientRect());
+  // v0.2.31 — 표 버튼이 "삽입" 메뉴 안으로 들어가면서, 팝오버는 클릭된
+  // 메뉴 항목의 rect 를 앵커로 쓴다(메뉴는 선택 즉시 닫히므로 rect 를
+  // 먼저 읽어둔다).
+  function openTablePopover(e: React.MouseEvent<HTMLButtonElement>) {
+    setTablePopover(e.currentTarget.getBoundingClientRect());
   }
 
   function pickTableSize(rows: number, cols: number) {
@@ -519,6 +523,106 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
     buttonCounter += 1;
     return { tabIndex: idx === focusIdx ? 0 : -1, refSetter: registerButton(idx) };
   };
+
+  // v0.2.31 — 접힌 두 그룹. 항목 순서와 `id`(= 접기 전 data-testid)는
+  // 그대로 유지하고, 실행 경로도 접기 전 onClick 과 동일하다.
+  const insertItems: ToolbarMenuItem[] = [
+    {
+      id: 'toolbar-link',
+      label: t('toolbar.link'),
+      icon: <IconLink />,
+      onSelect: () => openLinkDialog(),
+    },
+    {
+      id: 'toolbar-image',
+      label: t('toolbar.image'),
+      icon: <IconImage />,
+      disabled: !onPickImage,
+      onSelect: () => { if (onPickImage) onPickImage(); },
+    },
+    {
+      id: 'toolbar-table',
+      label: t('toolbar.table'),
+      icon: <IconTable />,
+      onSelect: (e) => openTablePopover(e),
+    },
+    {
+      id: 'toolbar-math-inline',
+      label: t('toolbar.mathInline'),
+      icon: <IconMathInline />,
+      onSelect: () => run((v) => insertInlineMath(v)),
+    },
+    {
+      id: 'toolbar-math',
+      label: t('toolbar.math'),
+      icon: <IconMath />,
+      onSelect: () => run((v) => insertMathBlock(v)),
+    },
+    {
+      id: 'toolbar-footnote',
+      label: t('toolbar.footnote'),
+      icon: <IconFootnote />,
+      onSelect: () => run((v) => insertFootnote(v)),
+    },
+    {
+      id: 'toolbar-citation',
+      label: t('toolbar.citation'),
+      icon: <IconCitation />,
+      disabled: !onOpenCitePalette,
+      onSelect: () => { if (onOpenCitePalette) onOpenCitePalette(); },
+    },
+    {
+      id: 'toolbar-hr',
+      label: t('toolbar.hr'),
+      icon: <IconHorizontalRule />,
+      onSelect: () => run((v) => insertHorizontalRule(v)),
+    },
+    {
+      id: 'toolbar-mermaid',
+      label: t('toolbar.mermaid'),
+      icon: <IconMermaid />,
+      onSelect: () => run((v) => insertMermaidBlock(v)),
+    },
+    {
+      id: 'toolbar-toc',
+      label: t('toolbar.toc'),
+      icon: <IconToc />,
+      onSelect: () => run((v) => insertToc(v)),
+    },
+  ];
+
+  const reviewItems: ToolbarMenuItem[] = [
+    {
+      id: 'toolbar-cm-insert',
+      label: t('toolbar.cm.insert'),
+      icon: <IconCmInsert />,
+      onSelect: () => run((v) => wrapCmInsert(v)),
+    },
+    {
+      id: 'toolbar-cm-delete',
+      label: t('toolbar.cm.delete'),
+      icon: <IconCmDelete />,
+      onSelect: () => run((v) => wrapCmDelete(v)),
+    },
+    {
+      id: 'toolbar-cm-substitute',
+      label: t('toolbar.cm.substitute'),
+      icon: <IconCmSubstitute />,
+      onSelect: () => run((v) => wrapCmSubstitute(v)),
+    },
+    {
+      id: 'toolbar-cm-highlight',
+      label: t('toolbar.highlight'),
+      icon: <IconHighlight />,
+      onSelect: () => run((v) => wrapCmHighlight(v)),
+    },
+    {
+      id: 'toolbar-cm-comment',
+      label: t('toolbar.cm.comment'),
+      icon: <IconCmComment />,
+      onSelect: () => run((v) => wrapCmComment(v)),
+    },
+  ];
 
   return (
     <div
@@ -742,155 +846,16 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
         {(() => {
           const p = nextIdx();
           return (
-            <ToolButton
-              label={t('toolbar.link')}
-              shortcut="K"
+            <ToolbarMenu
+              label={t('toolbar.menu.insert')}
+              testId="toolbar-insert-menu"
+              items={insertItems}
               disabled={disabled}
-              onClick={openLinkDialog}
-              testId="toolbar-link"
+              open={openMenu === 'insert'}
+              onOpenChange={(o) => setOpenMenu(o ? 'insert' : null)}
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
-            >
-              <IconLink />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.image')}
-              disabled={disabled || !onPickImage}
-              onClick={() => { if (onPickImage) onPickImage(); }}
-              testId="toolbar-image"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconImage />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.table')}
-              disabled={disabled}
-              onClick={openTablePopover}
-              testId="toolbar-table"
-              tabIndex={p.tabIndex}
-              buttonRef={(el) => {
-                p.refSetter(el);
-                tableButtonRef.current = el;
-              }}
-            >
-              <IconTable />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.mathInline')}
-              disabled={disabled}
-              onClick={() => run((v) => insertInlineMath(v))}
-              testId="toolbar-math-inline"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconMathInline />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.math')}
-              disabled={disabled}
-              onClick={() => run((v) => insertMathBlock(v))}
-              testId="toolbar-math"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconMath />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.footnote')}
-              disabled={disabled}
-              onClick={() => run((v) => insertFootnote(v))}
-              testId="toolbar-footnote"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconFootnote />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.citation')}
-              disabled={disabled || !onOpenCitePalette}
-              onClick={() => { if (onOpenCitePalette) onOpenCitePalette(); }}
-              testId="toolbar-citation"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconCitation />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.hr')}
-              disabled={disabled}
-              onClick={() => run((v) => insertHorizontalRule(v))}
-              testId="toolbar-hr"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconHorizontalRule />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.mermaid')}
-              disabled={disabled}
-              onClick={() => run((v) => insertMermaidBlock(v))}
-              testId="toolbar-mermaid"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconMermaid />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.toc')}
-              disabled={disabled}
-              onClick={() => run((v) => insertToc(v))}
-              testId="toolbar-toc"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconToc />
-            </ToolButton>
+            />
           );
         })()}
       </div>
@@ -901,76 +866,16 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
         {(() => {
           const p = nextIdx();
           return (
-            <ToolButton
-              label={t('toolbar.cm.insert')}
+            <ToolbarMenu
+              label={t('toolbar.menu.review')}
+              testId="toolbar-review-menu"
+              items={reviewItems}
               disabled={disabled}
-              onClick={() => run((v) => wrapCmInsert(v))}
-              testId="toolbar-cm-insert"
+              open={openMenu === 'review'}
+              onOpenChange={(o) => setOpenMenu(o ? 'review' : null)}
               tabIndex={p.tabIndex}
               buttonRef={p.refSetter}
-            >
-              <IconCmInsert />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.cm.delete')}
-              disabled={disabled}
-              onClick={() => run((v) => wrapCmDelete(v))}
-              testId="toolbar-cm-delete"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconCmDelete />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.cm.substitute')}
-              disabled={disabled}
-              onClick={() => run((v) => wrapCmSubstitute(v))}
-              testId="toolbar-cm-substitute"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconCmSubstitute />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.highlight')}
-              disabled={disabled}
-              onClick={() => run((v) => wrapCmHighlight(v))}
-              testId="toolbar-cm-highlight"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconHighlight />
-            </ToolButton>
-          );
-        })()}
-        {(() => {
-          const p = nextIdx();
-          return (
-            <ToolButton
-              label={t('toolbar.cm.comment')}
-              disabled={disabled}
-              onClick={() => run((v) => wrapCmComment(v))}
-              testId="toolbar-cm-comment"
-              tabIndex={p.tabIndex}
-              buttonRef={p.refSetter}
-            >
-              <IconCmComment />
-            </ToolButton>
+            />
           );
         })()}
       </div>

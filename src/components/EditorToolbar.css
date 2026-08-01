@@ -84,6 +84,81 @@
   display: block;
 }
 
+/* v0.2.31 — 드롭다운(메뉴 버튼) 트리거: 아이콘 대신 라벨 + 캐럿. */
+.editor-toolbar-menu-trigger {
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.editor-toolbar-menu-caret {
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+/* 트리거 아래에 뜨는 메뉴. 위치는 컴포넌트가 fixed 로 계산한다. */
+.editor-toolbar-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.editor-toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.editor-toolbar-menu-item:hover:not(:disabled) {
+  background: var(--hover, rgba(127, 127, 127, 0.12));
+}
+
+.editor-toolbar-menu-item:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.editor-toolbar-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.editor-toolbar-menu-item-active {
+  background: var(--active, rgba(64, 128, 255, 0.18));
+}
+
+.editor-toolbar-menu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.editor-toolbar-menu-item-icon svg {
+  display: block;
+}
+
 .editor-toolbar-mono {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.9em;

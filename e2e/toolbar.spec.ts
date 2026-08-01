@@ -3,8 +3,15 @@ import { getEditorDoc, launchClean, setMarkdownMode, shutdownClean } from './_he
 
 /**
  * End-to-end coverage for the Document-mode (WYSIWYG) editor toolbar that
- * landed in commit 2acf163: 28 buttons + 1 style dropdown + the link dialog
+ * landed in commit 2acf163: 27 buttons + 1 style dropdown + the link dialog
  * + the table-size hover-grid popover.
+ *
+ * v0.2.31 — the toolbar no longer fit on one screen, so the two largest
+ * low-frequency groups were collapsed into dropdowns: Insert (10 actions)
+ * and Review (5 actions). 27 always-visible buttons → 14. No action was
+ * dropped and every menu item keeps its original `data-testid`, so the
+ * assertions below are unchanged apart from an added "open the menu" step
+ * (see `clickMenuItem`).
  *
  * Strategy notes (per the implementing-agent gotchas):
  *  - The toolbar mounts only when `editMode === 'wysiwyg'`, which is the
@@ -35,6 +42,20 @@ async function shutdown(app: ElectronApplication) {
   await shutdownClean(app);
 }
 
+/**
+ * v0.2.31 — Insert / Review actions live inside a dropdown now. Open the
+ * owning menu, then click the item by its (unchanged) testid.
+ */
+async function clickMenuItem(
+  page: import('@playwright/test').Page,
+  menu: 'insert' | 'review',
+  id: string,
+) {
+  await page.click(`[data-testid=toolbar-${menu}-menu]`);
+  await page.waitForSelector(`[data-testid=toolbar-${menu}-menu-list]`, { timeout: 2000 });
+  await page.click(`[data-testid=${id}]`);
+}
+
 /** Select-all helper that uses the platform mod key. */
 async function selectAll(page: import('@playwright/test').Page) {
   if (process.platform === 'darwin') await page.keyboard.press('Meta+A');
@@ -45,30 +66,63 @@ async function selectAll(page: import('@playwright/test').Page) {
 // A. Smoke
 // =================================================================
 
-test('A1: toolbar mounts in Document mode with style select + all 27 buttons', async () => {
+test('A1: toolbar mounts in Document mode with style select + 14 always-visible buttons', async () => {
   const { app, page } = await launch();
   // Root + style select.
   await expect(page.locator('[data-testid=editor-toolbar]')).toBeVisible();
   await expect(page.locator('[data-testid=editor-toolbar-style]')).toBeVisible();
-  // The 27 button testids the toolbar exposes: 6 inline marks + 5 list/indent
-  // + 10 insert + 5 CriticMarkup + 1 inline memo.
-  const ids = [
+  // v0.2.31 — 14 always-visible buttons: 6 inline marks + 5 list/indent
+  // + 2 dropdown triggers + 1 inline memo.
+  const alwaysVisible = [
     'toolbar-bold', 'toolbar-italic', 'toolbar-strike', 'toolbar-code',
     'toolbar-sup', 'toolbar-sub',
     'toolbar-bullet', 'toolbar-numbered', 'toolbar-task',
     'toolbar-outdent', 'toolbar-indent',
-    'toolbar-link', 'toolbar-image', 'toolbar-table',
-    'toolbar-math-inline', 'toolbar-math', 'toolbar-footnote',
-    'toolbar-citation', 'toolbar-hr', 'toolbar-mermaid', 'toolbar-toc',
-    'toolbar-cm-insert', 'toolbar-cm-delete', 'toolbar-cm-substitute',
-    'toolbar-cm-highlight', 'toolbar-cm-comment',
+    'toolbar-insert-menu', 'toolbar-review-menu',
     'toolbar-memo',
   ];
   const count = await page.locator('[data-testid=editor-toolbar] button.editor-toolbar-btn').count();
-  expect(count).toBe(ids.length);
-  for (const id of ids) {
+  expect(count).toBe(alwaysVisible.length);
+  for (const id of alwaysVisible) {
     await expect(page.locator(`[data-testid=${id}]`)).toBeVisible();
   }
+  await shutdown(app);
+});
+
+test('A1b: every collapsed action is still reachable from its dropdown', async () => {
+  const { app, page } = await launch();
+  // The 10 Insert actions that moved into the "Insert ▾" menu.
+  const insertIds = [
+    'toolbar-link', 'toolbar-image', 'toolbar-table',
+    'toolbar-math-inline', 'toolbar-math', 'toolbar-footnote',
+    'toolbar-citation', 'toolbar-hr', 'toolbar-mermaid', 'toolbar-toc',
+  ];
+  await page.click('[data-testid=toolbar-insert-menu]');
+  await page.waitForSelector('[data-testid=toolbar-insert-menu-list]');
+  expect(
+    await page.locator('[data-testid=toolbar-insert-menu-list] [role=menuitem]').count(),
+  ).toBe(insertIds.length);
+  for (const id of insertIds) {
+    await expect(page.locator(`[data-testid=${id}]`)).toBeVisible();
+  }
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-testid=toolbar-insert-menu-list]')).toHaveCount(0);
+
+  // The 5 CriticMarkup actions that moved into the "Review ▾" menu.
+  const reviewIds = [
+    'toolbar-cm-insert', 'toolbar-cm-delete', 'toolbar-cm-substitute',
+    'toolbar-cm-highlight', 'toolbar-cm-comment',
+  ];
+  await page.click('[data-testid=toolbar-review-menu]');
+  await page.waitForSelector('[data-testid=toolbar-review-menu-list]');
+  expect(
+    await page.locator('[data-testid=toolbar-review-menu-list] [role=menuitem]').count(),
+  ).toBe(reviewIds.length);
+  for (const id of reviewIds) {
+    await expect(page.locator(`[data-testid=${id}]`)).toBeVisible();
+  }
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-testid=toolbar-review-menu-list]')).toHaveCount(0);
   await shutdown(app);
 });
 
@@ -227,7 +281,7 @@ test('D1: Link button opens dialog with selection pre-filled in text field', asy
   const { app, page } = await launch();
   await page.keyboard.type('Durumi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-link]');
+  await clickMenuItem(page, 'insert', 'toolbar-link');
   // Lazy-loaded — wait for the dialog to mount.
   await page.waitForSelector('[data-testid=insert-link-dialog]', { timeout: 5000 });
   const textValue = await page.inputValue('[data-testid=insert-link-text]');
@@ -240,7 +294,7 @@ test('D2: Link confirm with URL inserts [text](url)', async () => {
   const { app, page } = await launch();
   await page.keyboard.type('Durumi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-link]');
+  await clickMenuItem(page, 'insert', 'toolbar-link');
   await page.waitForSelector('[data-testid=insert-link-dialog]', { timeout: 5000 });
   await page.fill('[data-testid=insert-link-url]', 'https://example.com');
   await page.click('[data-testid=insert-link-confirm]');
@@ -255,7 +309,7 @@ test('D3: Link confirm with URL + title inserts [text](url "title")', async () =
   const { app, page } = await launch();
   await page.keyboard.type('Durumi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-link]');
+  await clickMenuItem(page, 'insert', 'toolbar-link');
   await page.waitForSelector('[data-testid=insert-link-dialog]', { timeout: 5000 });
   await page.fill('[data-testid=insert-link-url]', 'https://example.com');
   await page.fill('[data-testid=insert-link-title-input]', 'Home');
@@ -270,7 +324,7 @@ test('D4: Link cancel does not modify the document', async () => {
   await page.keyboard.type('Durumi');
   const before = await getEditorDoc(page);
   await selectAll(page);
-  await page.click('[data-testid=toolbar-link]');
+  await clickMenuItem(page, 'insert', 'toolbar-link');
   await page.waitForSelector('[data-testid=insert-link-dialog]', { timeout: 5000 });
   await page.fill('[data-testid=insert-link-url]', 'https://nope.example');
   await page.click('[data-testid=insert-link-cancel]');
@@ -281,7 +335,7 @@ test('D4: Link cancel does not modify the document', async () => {
 
 test('D5: Table popover opens on click and closes on Escape', async () => {
   const { app, page } = await launch();
-  await page.click('[data-testid=toolbar-table]');
+  await clickMenuItem(page, 'insert', 'toolbar-table');
   await expect(page.locator('[data-testid=table-size-popover]')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-testid=table-size-popover]')).toHaveCount(0);
@@ -290,7 +344,7 @@ test('D5: Table popover opens on click and closes on Escape', async () => {
 
 test('D6: Table cell 3x4 inserts a header + 2 data rows × 4 columns', async () => {
   const { app, page } = await launch();
-  await page.click('[data-testid=toolbar-table]');
+  await clickMenuItem(page, 'insert', 'toolbar-table');
   await page.waitForSelector('[data-testid=table-size-popover]');
   await page.click('[data-testid=table-size-cell-3-4]');
   // Wait for popover to dismiss.
@@ -312,14 +366,14 @@ test('D7: Math inline wraps selection in $…$', async () => {
   const { app, page } = await launch();
   await page.keyboard.type('x');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-math-inline]');
+  await clickMenuItem(page, 'insert', 'toolbar-math-inline');
   expect(await getEditorDoc(page)).toBe('$x$');
   await shutdown(app);
 });
 
 test('D8: Math block inserts a $$ … $$ skeleton', async () => {
   const { app, page } = await launch();
-  await page.click('[data-testid=toolbar-math]');
+  await clickMenuItem(page, 'insert', 'toolbar-math');
   const doc = await getEditorDoc(page);
   // `$$\n\n$$` with the caret on the middle (empty) line.
   expect(doc).toBe('$$\n\n$$');
@@ -328,7 +382,7 @@ test('D8: Math block inserts a $$ … $$ skeleton', async () => {
 
 test('D9: Footnote inserts a [^N] anchor and a [^N]: definition', async () => {
   const { app, page } = await launch();
-  await page.click('[data-testid=toolbar-footnote]');
+  await clickMenuItem(page, 'insert', 'toolbar-footnote');
   const doc = await getEditorDoc(page);
   expect(doc).toMatch(/\[\^1\]/); // anchor at caret
   expect(doc).toMatch(/\[\^1\]:/); // definition (with colon)
@@ -337,7 +391,7 @@ test('D9: Footnote inserts a [^N] anchor and a [^N]: definition', async () => {
 
 test('D10: Horizontal rule inserts a `---` block', async () => {
   const { app, page } = await launch();
-  await page.click('[data-testid=toolbar-hr]');
+  await clickMenuItem(page, 'insert', 'toolbar-hr');
   const doc = await getEditorDoc(page);
   expect(doc).toContain('---');
   // The HR insertion is its own paragraph.
@@ -347,7 +401,7 @@ test('D10: Horizontal rule inserts a `---` block', async () => {
 
 test('D11: Mermaid inserts a ```mermaid fenced block', async () => {
   const { app, page } = await launch();
-  await page.click('[data-testid=toolbar-mermaid]');
+  await clickMenuItem(page, 'insert', 'toolbar-mermaid');
   const doc = await getEditorDoc(page);
   expect(doc).toContain('```mermaid');
   expect(doc).toContain('```');
@@ -356,7 +410,7 @@ test('D11: Mermaid inserts a ```mermaid fenced block', async () => {
 
 test('D12: TOC button inserts [toc]', async () => {
   const { app, page } = await launch();
-  await page.click('[data-testid=toolbar-toc]');
+  await clickMenuItem(page, 'insert', 'toolbar-toc');
   const doc = await getEditorDoc(page);
   expect(doc).toContain('[toc]');
   await shutdown(app);
@@ -370,7 +424,7 @@ test('E1: CM insert wraps selection in {++ … ++}', async () => {
   const { app, page } = await launch();
   await page.keyboard.type('hi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-cm-insert]');
+  await clickMenuItem(page, 'review', 'toolbar-cm-insert');
   // wrapCriticMarkup adds a single space inside the braces — `{++ hi ++}`.
   expect(await getEditorDoc(page)).toBe('{++ hi ++}');
   await shutdown(app);
@@ -380,7 +434,7 @@ test('E2: CM delete wraps selection in {-- … --}', async () => {
   const { app, page } = await launch();
   await page.keyboard.type('hi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-cm-delete]');
+  await clickMenuItem(page, 'review', 'toolbar-cm-delete');
   expect(await getEditorDoc(page)).toBe('{-- hi --}');
   await shutdown(app);
 });
@@ -389,7 +443,7 @@ test('E3: CM substitute wraps selection as old half of {~~ … ~> … ~~}', asyn
   const { app, page } = await launch();
   await page.keyboard.type('hi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-cm-substitute]');
+  await clickMenuItem(page, 'review', 'toolbar-cm-substitute');
   // Selection becomes the "old" half; new half is empty.
   expect(await getEditorDoc(page)).toBe('{~~ hi ~>  ~~}');
   await shutdown(app);
@@ -399,7 +453,7 @@ test('E4: CM highlight wraps selection in {== … ==}', async () => {
   const { app, page } = await launch();
   await page.keyboard.type('hi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-cm-highlight]');
+  await clickMenuItem(page, 'review', 'toolbar-cm-highlight');
   expect(await getEditorDoc(page)).toBe('{== hi ==}');
   await shutdown(app);
 });
@@ -408,7 +462,7 @@ test('E5: CM comment wraps selection in {>> … <<}', async () => {
   const { app, page } = await launch();
   await page.keyboard.type('hi');
   await selectAll(page);
-  await page.click('[data-testid=toolbar-cm-comment]');
+  await clickMenuItem(page, 'review', 'toolbar-cm-comment');
   expect(await getEditorDoc(page)).toBe('{>> hi <<}');
   await shutdown(app);
 });
@@ -473,7 +527,7 @@ test('H1: Citation button does NOT crash (smoke — palette depends on bib state
   // We just assert the doc didn't change and the toolbar is still healthy.
   const { app, page } = await launch();
   const before = await getEditorDoc(page);
-  await page.click('[data-testid=toolbar-citation]');
+  await clickMenuItem(page, 'insert', 'toolbar-citation');
   await page.waitForTimeout(150);
   // Toolbar is still mounted.
   await expect(page.locator('[data-testid=editor-toolbar]')).toBeVisible();
