@@ -202,83 +202,70 @@ download the DMG from the draft release, install it on a Mac that has
 
 ## Path to real Windows signing
 
-Step-by-step runbook for replacing the unsigned NSIS installer with a
-code-signed one. Total wall-clock setup: roughly a day, dominated by
-the CA's vetting process (faster for OV, longer for EV).
+> **Updated 2026-08-01.** The previous version of this runbook told you to
+> download a `.pfx` from the CA, base64 it, and drop it into a GitHub
+> Secret. **That path no longer exists for newly issued certificates.**
+> Since April–May 2023 the CA/Browser Forum baseline requires code-signing
+> private keys to live on FIPS 140-2 Level 2 / Common Criteria EAL4+
+> hardware, and CAs stopped offering `.pfx` download. Any guide that still
+> says "download your .pfx" predates that change.
 
-### 1. Pick OV vs EV (~5 min decision)
+### How urgent is this?
 
-| Aspect | OV (Organisation Validated) | EV (Extended Validation) |
+Less urgent than macOS was. The two platforms fail differently:
+
+| | macOS (before v0.2.30) | Windows (today) |
 |---|---|---|
-| Price | ~$200/yr | ~$400/yr |
-| SmartScreen | Reputation builds over **weeks**, with downloads from real users | Reputation **immediately** on first signed install |
-| Hardware | Optional USB token (SSL.com offers cloud signing) | **Mandatory** hardware token (YubiKey / eToken) shipped to you |
-| CI compatibility | Easy — `.pfx` file + password fits in a GitHub Secret | Harder — token requires an attended Windows machine or a cloud-signing service |
+| Unsigned behaviour | **Blocked** — "malware", moved to Trash | **Warned** — SmartScreen "More info → Run anyway" |
+| User can proceed? | No | Yes |
 
-For Durumi at v0.2 scale, **OV is the right starting point**: the user
-base is small enough that the early SmartScreen warnings are
-tolerable, and the cloud-signed-OV path keeps CI fully automated. Move
-to EV later if/when first-install friction becomes a complaint.
+So Windows signing is a friction fix, not an availability fix. Note that
+even with an OV certificate SmartScreen reputation builds over weeks of
+real downloads; the warning does not disappear on day one.
 
-### 2. Buy a cert from a CA (~1 day of vetting)
+### Viable options (private key never leaves an HSM)
 
-CAs that resell to small projects:
+A physical USB token (the classic EV setup) cannot be automated from
+GitHub Actions — it needs an attended Windows machine. The options below
+all keep CI automated.
 
-- **DigiCert** — premium price, fast turnaround.
-- **Sectigo / Comodo** — mid-tier, the cheapest reliable option.
-- **SSL.com** — has a cloud signing API that avoids the hardware token
-  for OV certs; good for GitHub Actions.
+| Option | Cost | Availability | Notes |
+|---|---|---|---|
+| **SignPath Foundation** | Free for qualifying OSS | International | OV-level cert, key on SignPath's HSM, GitHub-native connector. Requires an application + review. Durumi is Apache-2.0 public OSS, so it plausibly qualifies. |
+| **Certum Open Source (SimplySign)** | Low-cost paid | International | Aimed at open-source developers, cloud signing, self-serve. |
+| **SSL.com eSigner** | ~$200–600/yr | International | Cloud signing API with a documented GitHub Actions integration. |
+| **Azure Trusted Signing** | ~$10/month | **US / Canada only** | Cheapest and most CI-native, but the residency requirement rules it out elsewhere. |
 
-Expect the CA to ask for:
-- Business registration (sole-proprietor / DBA is usually OK for OV;
-  EV requires a registered company).
-- A phone call to a number listed in a public directory.
-- Photo ID / passport scan.
+For a solo OSS project outside the US/Canada, **SignPath Foundation first,
+Certum as the paid fallback.**
 
-When approved, you'll receive a `.pfx` file (cert + private key
-bundle) and a password — or a hardware token in the mail (EV).
+### Steps
 
-### 3. Base64-encode the `.pfx` (~1 min)
+1. **Apply / purchase.** Follow the chosen provider's onboarding. Expect
+   identity verification (photo ID) either way. This is the long pole.
+2. **Wire the provider's signing step.** Each provider signs differently —
+   there is no single `CSC_LINK` recipe any more:
+   - SignPath: their GitHub connector uploads the artifact and returns a
+     signed one; electron-builder produces the unsigned NSIS first.
+   - Certum / SSL.com: a cloud-signing CLI invoked via
+     `win.signtoolOptions.sign` (a custom hook module).
+   Record the exact mechanism here once chosen, replacing this bullet.
+3. **Flip `verifyUpdateCodeSignature`.** In `electron-builder.yml` under
+   `win:`, change `false` to `true` so `electron-updater` verifies the
+   signature chain on future updates. Do this only once signing actually
+   works — turning it on while shipping unsigned builds breaks updates.
+4. **Verify on a real Windows machine.** `signtool verify /pa /v
+   Durumi-Setup-<version>.exe` should report a valid chain, and a fresh
+   download should show the publisher name in the UAC prompt rather than
+   "Unknown publisher".
 
-```bash
-base64 -i cert.pfx -o cert.pfx.b64
-pbcopy < cert.pfx.b64
-```
+### What is already prepared
 
-### 4. Add two GitHub Secrets (~2 min)
-
-https://github.com/kimmingul/durumi/settings/secrets/actions:
-
-| Secret name | Value |
-|---|---|
-| `WIN_CSC_LINK` | the base64 `.pfx` from step 3 |
-| `WIN_CSC_KEY_PASSWORD` | the `.pfx` password from the CA |
-
-### 5. Activate the signing config (~1 min)
-
-In [`electron-builder.yml`](../electron-builder.yml), under `win:`:
-
-1. Flip `verifyUpdateCodeSignature: false` to `true` so future
-   auto-updates verify the signature chain.
-2. (Optional, EV only) Uncomment `signtoolOptions: sign:
-   '@electron/windows-sign'` if you need a custom hook for a hardware
-   token — most OV setups don't need this.
-
-In [`.github/workflows/release.yml`](../.github/workflows/release.yml),
-under the Windows job's "Build & publish (electron-builder, Windows)"
-step → `env:` block: uncomment the two `CSC_LINK` / `CSC_KEY_PASSWORD`
-lines.
-
-### 6. Test the signed build
-
-> When ready, uncomment the marked lines in `electron-builder.yml` and
-> `.github/workflows/release.yml`, then push a `vX.Y.Z` tag to test the
-> signed build.
-
-The signed NSIS will install on Windows 10/11 without the
-"Unidentified developer" red bar. With an OV cert, SmartScreen will
-still warn for the first ~50 installs until the reputation builds;
-with EV, no warning from the first install.
+`electron-builder.yml` (`win:`) and `.github/workflows/release.yml`
+(Windows job) both carry commented signing templates. They assume the old
+`CSC_LINK` / `CSC_KEY_PASSWORD` env-var shape, which still works for a
+provider that hands you a PKCS#12 — but not for the HSM-backed options
+above. Treat them as a starting point, not a drop-in.
 
 ## Ongoing cost
 
