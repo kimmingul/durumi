@@ -7,7 +7,7 @@ import { WIDTH_BOUNDS } from '@shared/prefsValidation';
 // the active-tab unions don't overlap, and widths are persisted to
 // distinct prefs keys.
 
-export type RightSidebarTab = 'references' | 'ai';
+export type RightSidebarTab = 'references' | 'ai' | 'memo' | 'changes';
 
 interface RightSidebarState {
   visible: boolean;

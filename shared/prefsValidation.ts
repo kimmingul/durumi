@@ -45,8 +45,8 @@ const TOP_LEVEL_ENUMS: Readonly<Record<string, readonly string[]>> = {
 
 /** `<top>.<field>` 형태의 중첩 enum 필드. */
 const NESTED_ENUMS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
-  sidebar: { activeTab: ['files', 'outline', 'search', 'comments', 'changes'] },
-  rightSidebar: { activeTab: ['references', 'ai'] },
+  sidebar: { activeTab: ['files', 'outline', 'search'] },
+  rightSidebar: { activeTab: ['references', 'ai', 'memo', 'changes'] },
   memoPanel: { groupBy: ['line', 'tag', 'author', 'status'] },
   ai: { provider: ['anthropic', 'openai-compatible'] },
   editor: {

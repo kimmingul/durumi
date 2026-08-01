@@ -156,16 +156,26 @@ function migrateLegacy(
   // surface it on the right side and reset the left to its default so the
   // first launch after upgrade feels continuous (their last-used tab is
   // still open, just on the new side).
+  // v0.2.31: memo + changes followed references/ai to the right sidebar, so
+  // the left pane is navigation-only. Same shape as the v0.1.8.4 move — the
+  // user's last-used tab stays open, just on the other side. `comments` is
+  // the old left-tab id; the right-side tab is called `memo`.
+  const MOVED_RIGHT: Record<string, string> = {
+    references: 'references',
+    ai: 'ai',
+    comments: 'memo',
+    changes: 'changes',
+  };
   const sidebar = next.sidebar as undefined | { activeTab?: unknown };
   const oldActive = sidebar?.activeTab;
-  if (oldActive === 'references' || oldActive === 'ai') {
+  if (typeof oldActive === 'string' && oldActive in MOVED_RIGHT) {
     next = {
       ...next,
       sidebar: { ...(sidebar as object), activeTab: 'files' },
       rightSidebar: {
         ...((next.rightSidebar as object) ?? {}),
         visible: true,
-        activeTab: oldActive,
+        activeTab: MOVED_RIGHT[oldActive],
       } as Preferences['rightSidebar'],
     };
   }

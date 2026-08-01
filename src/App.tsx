@@ -4,7 +4,6 @@ import { EditorToolbar } from './components/EditorToolbar';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
-import { MemoPanel } from './components/MemoPanel';
 import { QuickOpen } from './components/QuickOpen';
 import { ToastHost } from './components/Toast';
 // Dialogs are lazy: they only mount when the user opens them, and the dialog
@@ -42,9 +41,7 @@ const CitationSuggestPanel = lazy(() =>
 );
 import { currentParagraph } from './editor/paragraphContext';
 import { useAppStore } from './store/appStore';
-import { useMemoPanelStore } from './store/memoPanelStore';
 import { useMemoCaretFocus } from './hooks/useMemoCaretFocus';
-import { parseComments } from '@shared/comments';
 import type { Macro } from '@shared/ipc-contract';
 import { EditorView } from '@codemirror/view';
 import { useCustomCss } from './hooks/useCustomCss';
@@ -76,8 +73,6 @@ export function App() {
   const content = useAppStore((s) => s.content);
   const setContent = useAppStore((s) => s.setContent);
   const editMode = useAppStore((s) => s.editMode);
-  const memoPanelManuallyHidden = useMemoPanelStore((s) => s.manuallyHidden);
-  const setMemoPanelManuallyHidden = useMemoPanelStore((s) => s.setManuallyHidden);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -160,12 +155,6 @@ export function App() {
             />
           </div>
         </div>
-        <MemoPanel
-          view={editorView}
-          content={content}
-          visible={parseComments(content).length > 0 && !memoPanelManuallyHidden}
-          onClose={() => setMemoPanelManuallyHidden(true)}
-        />
         <RightSidebar
           content={content}
           view={editorView}

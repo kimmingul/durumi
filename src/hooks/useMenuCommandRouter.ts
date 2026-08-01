@@ -5,7 +5,6 @@ import type { MenuCommand } from '@shared/ipc-contract';
 import { useAppStore } from '../store/appStore';
 import { useSidebarStore } from '../store/sidebarStore';
 import { useRightSidebarStore } from '../store/rightSidebarStore';
-import { useMemoPanelStore } from '../store/memoPanelStore';
 import { useLanguage, resolveRendererLang } from '../i18n/t';
 import { currentParagraph } from '../editor/paragraphContext';
 import { focusModeField, setFocusMode, setTypewriterMode, typewriterModeField } from '../editor/viewModes';
@@ -79,8 +78,20 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
   const showWith = useSidebarStore((s) => s.showWith);
   const toggleRightSidebarVisible = useRightSidebarStore((s) => s.toggleVisible);
   const rightSidebarShowWith = useRightSidebarStore((s) => s.showWith);
-  const toggleMemoPanel = useMemoPanelStore((s) => s.toggle);
+  const setRightSidebarVisible = useRightSidebarStore((s) => s.setVisible);
   const { setLang } = useLanguage();
+
+  // v0.2.30 — 메모는 독립 패널이 아니라 오른쪽 사이드바의 탭이다.
+  // "메모 패널 토글"은 이제 메모 탭이 보이는 상태를 토글한다: 이미 메모 탭이
+  // 열려 있으면 사이드바를 닫고, 아니면 메모 탭으로 열어준다.
+  function toggleMemoTab() {
+    const s = useRightSidebarStore.getState();
+    if (s.visible && s.activeTab === 'memo') {
+      setRightSidebarVisible(false);
+      return;
+    }
+    s.showWith('memo');
+  }
 
   useEffect(() => {
     return window.api.onMenuCommand(async (cmd: MenuCommand) => {
@@ -115,12 +126,14 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
       if (cmd === 'openFolder') { await workspace.openWorkspaceFolder(); return; }
       if (cmd === 'toggleSidebar') { toggleSidebarVisible(); return; }
       if (cmd === 'toggleRightSidebar') { toggleRightSidebarVisible(); return; }
-      if (cmd === 'toggleMemoPanel') { toggleMemoPanel(); return; }
+      if (cmd === 'toggleMemoPanel') { toggleMemoTab(); return; }
       if (cmd === 'showFiles') { showWith('files'); return; }
       if (cmd === 'showOutline') { showWith('outline'); return; }
       if (cmd === 'showSearch') { showWith('search'); return; }
-      if (cmd === 'showMemos') { showWith('comments'); return; }
-      if (cmd === 'showChanges') { showWith('changes'); return; }
+      // v0.2.30 — 메모/변경 탭은 오른쪽 사이드바로 이동했다. 메뉴 항목이 계속
+      // 동작하도록 왼쪽이 아니라 오른쪽 사이드바를 연다.
+      if (cmd === 'showMemos') { rightSidebarShowWith('memo'); return; }
+      if (cmd === 'showChanges') { rightSidebarShowWith('changes'); return; }
       if (cmd === 'showReferences') { rightSidebarShowWith('references'); return; }
       if (cmd === 'showAi') { rightSidebarShowWith('ai'); return; }
       if (cmd === 'openKeyboardShortcuts') { setShortcutsOpen(true); return; }

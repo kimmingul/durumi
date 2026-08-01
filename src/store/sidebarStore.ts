@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { WIDTH_BOUNDS } from '@shared/prefsValidation';
 
-export type SidebarTab = 'files' | 'outline' | 'search' | 'comments' | 'changes';
+export type SidebarTab = 'files' | 'outline' | 'search';
 
 interface SidebarState {
   visible: boolean;

@@ -1,8 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { useSidebarStore } from '../store/sidebarStore';
-import { CommentsTab } from './sidebar/CommentsTab';
-import { ChangesTab } from './sidebar/ChangesTab';
-import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { FileTree } from './sidebar/FileTree';
 import { Outline } from './sidebar/Outline';
 import { SearchTab } from './sidebar/SearchTab';
@@ -10,6 +7,10 @@ import { jumpToLine } from '../editor/jumpToLine';
 import { useActiveHeading } from '../hooks/useActiveHeading';
 import { useLanguage, t } from '../i18n/t';
 import type { EditorView } from '@codemirror/view';
+
+// v0.2.30 — 사이드바 재편: 왼쪽은 내비게이션 전용(파일/목차/검색)이다.
+// 문서에 "하는 일"에 해당하던 메모·변경 탭은 오른쪽 사이드바로 옮겼고,
+// CriticMarkup 개수 배지도 변경 탭을 따라 오른쪽으로 함께 이동했다.
 
 interface SidebarProps {
   content: string;
@@ -33,7 +34,6 @@ export function Sidebar({
   const setWidth = useSidebarStore((s) => s.setWidth);
   // Subscribe to language so tab labels re-render on switch.
   useLanguage();
-  const { counts: cmCounts } = useDocCriticMarkup(content);
 
   useActiveHeading(view, content);
 
@@ -100,24 +100,6 @@ export function Sidebar({
           >
             {t('sidebar.search')}
           </button>
-          <button
-            className={'cm-sidebar-tab' + (activeTab === 'comments' ? ' cm-sidebar-tab-active' : '')}
-            onClick={() => setActiveTab('comments')}
-          >
-            {t('sidebar.comments')}
-          </button>
-          <button
-            className={'cm-sidebar-tab' + (activeTab === 'changes' ? ' cm-sidebar-tab-active' : '')}
-            onClick={() => setActiveTab('changes')}
-            data-testid="sidebar-tab-changes"
-          >
-            {t('sidebar.changes')}
-            {cmCounts.total > 0 && (
-              <span className="cm-sidebar-tab-badge" data-testid="sidebar-tab-changes-badge">
-                {cmCounts.total}
-              </span>
-            )}
-          </button>
         </div>
         <div className="cm-sidebar-body">
           {activeTab === 'files' && <FileTree onOpenFile={onOpenFile} />}
@@ -126,12 +108,6 @@ export function Sidebar({
           )}
           {activeTab === 'search' && (
             <SearchTab onOpenHit={onOpenHit ?? (() => undefined)} />
-          )}
-          {activeTab === 'comments' && (
-            <CommentsTab content={content} onJump={onJump} />
-          )}
-          {activeTab === 'changes' && (
-            <ChangesTab content={content} onJump={onJump} />
           )}
         </div>
       </aside>

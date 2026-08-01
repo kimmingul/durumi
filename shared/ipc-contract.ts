@@ -36,8 +36,12 @@ export interface Preferences {
   recentFiles: string[];
   sidebar: {
     visible: boolean;
-    /** Left-sidebar tabs only. References + AI moved to `rightSidebar` in v0.1.8.4. */
-    activeTab: 'files' | 'outline' | 'search' | 'comments' | 'changes';
+    /**
+     * Left sidebar = navigation only (find a document, move within it).
+     * References + AI moved right in v0.1.8.4; memo + changes followed in
+     * v0.2.31 so the right pane owns everything you *do* to a document.
+     */
+    activeTab: 'files' | 'outline' | 'search';
     width: number;
   };
   /**
@@ -48,7 +52,7 @@ export interface Preferences {
    */
   rightSidebar: {
     visible: boolean;
-    activeTab: 'references' | 'ai';
+    activeTab: 'references' | 'ai' | 'memo' | 'changes';
     width: number;
   };
   /**

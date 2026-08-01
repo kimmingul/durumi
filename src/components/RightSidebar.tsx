@@ -2,6 +2,11 @@ import { useEffect, useRef } from 'react';
 import { useRightSidebarStore } from '../store/rightSidebarStore';
 import { ReferencesTab } from './sidebar/ReferencesTab';
 import { AiTab } from './sidebar/AiTab';
+import { ChangesTab } from './sidebar/ChangesTab';
+import { MemoTab } from './sidebar/MemoTab';
+import { useDocComments } from '../hooks/useDocComments';
+import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
+import { jumpToLine } from '../editor/jumpToLine';
 import { useLanguage, t } from '../i18n/t';
 import type { EditorView } from '@codemirror/view';
 
@@ -11,6 +16,10 @@ import type { EditorView } from '@codemirror/view';
 // (drag left grows, drag right shrinks). State is owned by
 // `useRightSidebarStore`; persistence flows through the `rightSidebar` prefs
 // key with the same 500ms debounce as the left sidebar.
+//
+// v0.2.30 — 사이드바 재편: 왼쪽은 내비게이션(파일/목차/검색), 오른쪽은 작업.
+// 왼쪽에 있던 메모·변경 탭이 여기로 이동했고, 독립 패널이던 MemoPanel도
+// 메모 탭으로 흡수됐다. 자동 노출 규칙 대신 탭 개수 배지로 알린다.
 
 interface RightSidebarProps {
   content: string;
@@ -40,6 +49,9 @@ export function RightSidebar({
   const setWidth = useRightSidebarStore((s) => s.setWidth);
   // Subscribe to language so tab labels re-render on switch.
   useLanguage();
+  // 탭 배지용 카운트. 메모/변경 탭이 접혀 있어도 새 항목이 생겼음을 알린다.
+  const memos = useDocComments(content);
+  const { counts: cmCounts } = useDocCriticMarkup(content);
 
   // Persist right-sidebar settings (debounced inline, same shape as Sidebar.tsx).
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,6 +92,10 @@ export function RightSidebar({
 
   if (!visible) return null;
 
+  function onJump(line: number) {
+    if (view) jumpToLine(view, line);
+  }
+
   return (
     <>
       <div className="cm-right-sidebar-resizer" onMouseDown={onResizeMouseDown} role="separator" />
@@ -105,6 +121,42 @@ export function RightSidebar({
           >
             {t('sidebar.ai')}
           </button>
+          <button
+            className={
+              'cm-right-sidebar-tab' +
+              (activeTab === 'memo' ? ' cm-right-sidebar-tab-active' : '')
+            }
+            onClick={() => setActiveTab('memo')}
+            data-testid="right-sidebar-tab-memo"
+          >
+            {t('sidebar.comments')}
+            {memos.length > 0 && (
+              <span
+                className="cm-right-sidebar-tab-badge"
+                data-testid="right-sidebar-tab-memo-badge"
+              >
+                {memos.length}
+              </span>
+            )}
+          </button>
+          <button
+            className={
+              'cm-right-sidebar-tab' +
+              (activeTab === 'changes' ? ' cm-right-sidebar-tab-active' : '')
+            }
+            onClick={() => setActiveTab('changes')}
+            data-testid="right-sidebar-tab-changes"
+          >
+            {t('sidebar.changes')}
+            {cmCounts.total > 0 && (
+              <span
+                className="cm-right-sidebar-tab-badge"
+                data-testid="right-sidebar-tab-changes-badge"
+              >
+                {cmCounts.total}
+              </span>
+            )}
+          </button>
         </div>
         <div className="cm-right-sidebar-body">
           {activeTab === 'references' && (
@@ -126,6 +178,10 @@ export function RightSidebar({
               onInsertCitationFromDoi={onInsertCitationFromDoi}
               onOpenSettings={onOpenSettings}
             />
+          )}
+          {activeTab === 'memo' && <MemoTab view={view} content={content} />}
+          {activeTab === 'changes' && (
+            <ChangesTab content={content} onJump={onJump} />
           )}
         </div>
       </aside>

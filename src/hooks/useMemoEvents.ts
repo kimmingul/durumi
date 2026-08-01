@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useBibliographyStore } from '../store/bibliographyStore';
 import { useMemoPanelStore } from '../store/memoPanelStore';
+import { useRightSidebarStore } from '../store/rightSidebarStore';
 import { useMemoSidecarStore } from '../store/memoSidecarStore';
 import { memoIdFor, pruneOrphans } from '@shared/memoSidecar';
 import { parseComments } from '@shared/comments';
@@ -13,8 +14,8 @@ import { parseComments } from '@shared/comments';
  *    autosave handled inside the store itself).
  * 2. Rebinds the bibliography store to whatever .bib file walks up from the
  *    active doc — enables Cmd+Shift+B citation flows.
- * 3. Resets the per-session "memo panel manually hidden" flag when the user
- *    switches documents so a closed-on-doc-A panel reopens on doc-B.
+ * 3. (v0.2.30에서 삭제) 메모가 오른쪽 사이드바 탭이 되면서 "메모 패널을
+ *    수동으로 닫았다" 세션 플래그와 자동 노출 규칙이 함께 사라졌다.
  * 4. Prunes orphaned sidecar entries against the live set of memo IDs in the
  *    source on every content change (7-day grace window for undo recovery).
  * 5. Forwards `durumi:memo-focus`, `durumi:memo-panel-toggle`, and
@@ -24,16 +25,9 @@ import { parseComments } from '@shared/comments';
  * All listeners clean up on unmount.
  */
 export function useMemoEvents(filePath: string | null, content: string): void {
-  const setMemoPanelManuallyHidden = useMemoPanelStore((s) => s.setManuallyHidden);
   const setMemoPanelFocusedFrom = useMemoPanelStore((s) => s.setFocusedFrom);
-  const toggleMemoPanel = useMemoPanelStore((s) => s.toggle);
-
-  // Reset the per-session "manually hidden" flag whenever the user opens or
-  // creates a different file. Otherwise closing the panel on doc A would
-  // leave it hidden when they switch to doc B that has many memos.
-  useEffect(() => {
-    setMemoPanelManuallyHidden(false);
-  }, [filePath, setMemoPanelManuallyHidden]);
+  const rightSidebarShowWith = useRightSidebarStore((s) => s.showWith);
+  const setRightSidebarVisible = useRightSidebarStore((s) => s.setVisible);
 
   // Load the per-document memo sidecar metadata whenever the file path
   // changes. The store handles autosaving in-memory edits with a 1s debounce.
@@ -66,13 +60,19 @@ export function useMemoEvents(filePath: string | null, content: string): void {
   useEffect(() => {
     function onMemoFocus(e: Event) {
       const ev = e as CustomEvent<{ from: number }>;
-      // If the user closed the panel earlier this session, clicking an icon
-      // should reopen it.
-      setMemoPanelManuallyHidden(false);
+      // 아이콘 클릭은 곧 "이 메모를 보여달라"는 요청이다. 사이드바가 닫혀
+      // 있거나 다른 탭이 떠 있으면 메모 탭으로 열어준다.
+      rightSidebarShowWith('memo');
       setMemoPanelFocusedFrom(ev.detail?.from ?? null);
     }
     function onMemoPanelToggle() {
-      toggleMemoPanel();
+      // 메모 탭이 이미 보이면 사이드바를 닫고, 아니면 메모 탭으로 연다.
+      const s = useRightSidebarStore.getState();
+      if (s.visible && s.activeTab === 'memo') {
+        setRightSidebarVisible(false);
+        return;
+      }
+      s.showWith('memo');
     }
     // v0.1.7 — citation hover tooltip / sidebar fire `durumi:reference-open`
     // to request opening a local file from `<doc-folder>/reference/`.
@@ -90,5 +90,5 @@ export function useMemoEvents(filePath: string | null, content: string): void {
       window.removeEventListener('durumi:memo-panel-toggle', onMemoPanelToggle as EventListener);
       window.removeEventListener('durumi:reference-open', onReferenceOpen as EventListener);
     };
-  }, [setMemoPanelFocusedFrom, setMemoPanelManuallyHidden, toggleMemoPanel]);
+  }, [setMemoPanelFocusedFrom, rightSidebarShowWith, setRightSidebarVisible]);
 }
