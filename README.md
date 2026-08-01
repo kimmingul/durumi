@@ -4,7 +4,9 @@
 
 A cross-platform markdown editor (macOS + Windows 11) that grows from a Typora-style live-preview editor into an end-to-end manuscript studio for medical researchers. The crane (학, 鶴) is also a homophone for *learning* (學) — the brand carries the dual meaning of scholarship and the origami crane folded for someone's healing.
 
-**Current version: v0.2.30.** Highlights since v0.1.8.3:
+**Current version: v0.2.31.** Highlights since v0.1.8.3:
+
+- **v0.2.31 — Sidebar roles + toolbar diet**: the left sidebar is now navigation only (Files / Outline / Search) and everything you *do* to a document lives on the right (References / AI / Memos / Changes). The standalone memo panel was absorbed into the right sidebar as a tab with a count badge, removing a duplicate memo surface. In Document mode the Insert (10) and Review (5) toolbar groups collapse into `Insert ▾` / `Review ▾` menus — always-visible buttons drop from 27 to 14 with no command removed. Live mode also gained a status-bar hint when a line starts with `#` but is missing the space that would make it a heading.
 
 - **v0.2.24 → v0.2.28 — Atomic inline-mark rollout**: the v0.2.23 widget-atomicity contract (`EditorView.atomicRanges` + `Prec.high` Backspace/Delete keymap) extended from Image/Link to five inline marks — **bold** `**`/`__`, *italic* `*`/`_`, ~~strike~~ `~~`, ==highlight== `==`, and ~subscript~ `~`. Spec-driven `src/editor/atomicInlineMarks.ts` adds a Markdown-mode gate that `atomicMedia.ts` lacked, plus expanded code-island guards (`FencedCode` / `CodeBlock` / `InlineCode` / `FrontMatter` / `MathBlock` / `InlineMath`) and `head === tail` enforcement. Caret in the label stays editable; Backspace/Delete at every boundary deletes the whole span in one keystroke; ArrowKeys skip the hidden markers atomically. v0.2.26-28 were implemented by Claude + Codex CLI + Gemini CLI in a parallel tri-model team round. See [docs/PROGRESS.md](docs/PROGRESS.md) for the per-mark breakdown.
 - **v0.2.23 — Untitled-doc image flow + dialog UX polish**: image inserts/pastes/drops in an unsaved buffer render immediately via a per-session pending-assets dir; the first save migrates the bytes into `<docDir>/assets/` and rewrites the markdown link. Save/Open/Export/pickFile dialogs default to the doc's folder or the open workspace instead of being yanked to `~/Downloads`. Image/Link widgets behave atomically — Backspace next to a rendered widget deletes the whole `![](url)` / `[label](url)` in one keystroke. ⌘+Click (macOS) / Ctrl+Click (Win/Linux) opens a link; plain click positions the caret for label editing. See [docs/PROGRESS.md](docs/PROGRESS.md) for the per-feature breakdown.
@@ -409,8 +411,8 @@ See [docs/RELEASE.md](docs/RELEASE.md) for the release runbook (CI workflow, sig
 ```bash
 pnpm typecheck          # 0 errors expected
 pnpm lint               # 0 errors / 0 warnings expected
-pnpm test               # 1785 Vitest unit tests (v0.2.30)
-pnpm test:e2e           # 203 Playwright Electron tests (run pnpm build first)
+pnpm test               # 1829 Vitest unit tests (v0.2.31)
+pnpm test:e2e           # 204 Playwright Electron tests (run pnpm build first)
 ```
 
 CI runs `typecheck → lint → test` on every push/PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml); Playwright on macOS via [`e2e.yml`](.github/workflows/e2e.yml); tagged `v*.*.*` releases via [`release.yml`](.github/workflows/release.yml).
@@ -608,8 +610,8 @@ build/
 ├── icon.svg                 Master logo (origami crane on 한지 paper)
 └── icon.png                 1024×1024 app icon (rendered from icon.svg)
 
-tests/                       Vitest unit tests (1785 in v0.2.30)
-e2e/                         Playwright Electron tests (203 across 31 specs)
+tests/                       Vitest unit tests (1829 in v0.2.31)
+e2e/                         Playwright Electron tests (204 across 31 specs)
 docs/
 ├── durumi-markdown-reference.md   Korean markdown reference (~1311 lines)
 ├── editor-modes.md          3-mode editor guide (Document/Live/Source)
