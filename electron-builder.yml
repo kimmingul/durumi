@@ -53,21 +53,26 @@ win:
     - target: nsis
       arch: [x64]
   icon: build/icon.png
-  verifyUpdateCodeSignature: false  # we ship unsigned NSIS; re-enable when signed
   # ────────────────────────────────────────────────────────────────────
-  # Real-signing template (P3-3). Uncomment when GitHub Secrets
-  # WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are configured. See
-  # docs/RELEASE.md → "Path to real Windows signing".
+  # Windows signing is EXTERNAL to electron-builder (since 2026-08-01).
   #
-  # Step 1: flip `verifyUpdateCodeSignature: false` above to `true`.
-  # Step 2: electron-builder picks up CSC_LINK / CSC_KEY_PASSWORD from
-  #         env automatically (set in .github/workflows/release.yml).
-  # Step 3: (optional) uncomment signtoolOptions if you need a custom
-  #         signing hook (e.g. EV cert on a hardware token via
-  #         @electron/windows-sign).
+  # The certificate is a GlobalSign EV code-signing cert whose private key
+  # lives on a SafeNet USB token. An EV key cannot leave the token, so
+  # GitHub Actions cannot sign — the CI job produces an UNSIGNED NSIS and a
+  # human signs it locally, then replaces the release asset.
+  # Full procedure: docs/RELEASE.md → "Windows signing (EV token, external)".
   #
-  # signtoolOptions:
-  #   sign: '@electron/windows-sign'
+  # Because electron-builder never sees the certificate, it cannot derive
+  # the publisher name for `app-update.yml` on its own — `publisherName`
+  # below MUST be set manually and MUST match the certificate CN exactly,
+  # or electron-updater rejects every future update as unsigned.
+  #   $ openssl x509 -in leaf.pem -noout -subject -nameopt multiline
+  #     commonName = Nanum Space Co,. Ltd
+  publisherName: "Nanum Space Co,. Ltd"
+  # Safe to enable now: v0.2.30 shipped with this `false`, so the flag only
+  # takes effect for clients running v0.2.31+. Verify on a real Windows box
+  # during the first update cycle that actually exercises it.
+  verifyUpdateCodeSignature: true
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

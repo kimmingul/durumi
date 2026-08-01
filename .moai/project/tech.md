@@ -76,7 +76,7 @@ main/preload가 CJS로 강제되는 이유는 `electron.vite.config.ts:11-14`의
 | 플랫폼 | 타깃 | 서명 상태 |
 |---|---|---|
 | macOS | DMG, `[x64, arm64]` | **Developer ID 실서명 + 공증** (`hardenedRuntime: true`, `notarize: true`, `identity` 미지정 → 키체인 자동선택). 2026-07-31에 ad-hoc에서 전환 — 사유는 §13.3 |
-| Windows | NSIS x64, non-oneClick | 미서명 (`verifyUpdateCodeSignature: false`) — SmartScreen 경고 발생. macOS 와 달리 **차단이 아니라 경고**이므로 사용자가 통과 가능. 서명 경로는 `docs/RELEASE.md` 참조 (2023년 규정 변경으로 `.pfx` 방식 불가, HSM 기반 클라우드 서명 필요) |
+| Windows | NSIS x64, non-oneClick | **GlobalSign EV 실서명** (Nanum Space Co,. Ltd, SafeNet USB 토큰). EV 키는 토큰 밖으로 나올 수 없어 **CI 자동화 불가** — CI 가 미서명 NSIS 를 만들고 로컬에서 서명해 자산을 교체한다. `verifyUpdateCodeSignature: true` + 명시적 `publisherName`. 절차는 `docs/RELEASE.md` |
 
 배포 provider는 GitHub(`kimmingul/durumi`, channel `latest`)이며 `electron-updater`가 이를 소비한다. **실제 서명을 활성화하는 경로는 이미 문서화되어 있다** — `electron-builder.yml`에 macOS(Apple Developer ID + 공증)와 Windows(EV 인증서) 실서명용 설정 블록이 활성화 절차 주석과 함께 주석 처리되어 있고, `.github/workflows/release.yml`에도 대응하는 시크릿 참조 블록이 미러링되어 있다. 즉 "언젠가 서명을 켠다"가 코드 없는 계획이 아니라, 주석 해제만 하면 되는 준비된 경로다.
 

@@ -60,34 +60,39 @@ https://github.com/kimmingul/durumi/releases, fill in the notes, leave
   vitest there. The renderer is platform-agnostic so this is unlikely to
   bite, but it is a gap worth closing.
 
-## Signing posture (zero-cost — current)
+## Signing posture (current)
 
-### macOS
+Both platforms are signed as of v0.2.30. This was not cosmetic on macOS —
+the previous ad-hoc builds were **blocked outright**, not merely warned
+about (see `.moai/project/tech.md` §13.3).
 
-- Builds are **ad-hoc signed only** (`mac.identity: null` in
-  `electron-builder.yml`).
-- End users will hit Gatekeeper on first launch:
-  - **Workaround:** right-click the app in Finder → **Open** → confirm.
-  - Or, after the failed first launch: System Settings → Privacy &
-    Security → **Open Anyway**.
-- Auto-update still works once the app is past Gatekeeper because the
-  bundle is shipped over HTTPS by `electron-updater` and the signature
-  check uses the ad-hoc identity baked into the prior install.
+### macOS — automated in CI
 
-### Windows
+- Developer ID signature + Apple notarization, produced by `release.yml`
+  from repo secrets. `hardenedRuntime: true`, entitlements applied.
+- Users see no Gatekeeper prompt; the notarization ticket is stapled, so
+  verification works offline.
+- Verify a build with:
+  `spctl -a -vv Durumi.app` → `accepted / source=Notarized Developer ID`
 
-- Builds are **unsigned**.
-- End users will see SmartScreen "Windows protected your PC":
-  - **Workaround:** click **More info** → **Run anyway**.
-- `electron-builder.yml` sets `win.verifyUpdateCodeSignature: false` so
-  the unsigned NSIS update can still install.
+### Windows — signed manually, outside CI
 
-### TODOs (paid signing)
+- GlobalSign **EV** code-signing certificate (*Nanum Space Co,. Ltd*) on a
+  SafeNet USB token. EV keys cannot leave the token, so CI cannot sign;
+  the maintainer signs locally after each release build.
+- EV grants SmartScreen reputation immediately, without the weeks-long
+  warm-up an OV certificate needs.
+- `win.verifyUpdateCodeSignature: true` with an explicit
+  `win.publisherName`. Full procedure and rationale:
+  **Windows signing (EV token, external)** below.
 
-- [ ] **Apple Developer ID** ($99/yr) → real codesign + notarization →
-  no Gatekeeper warning. See **Path to real macOS signing** below.
-- [ ] **Windows OV/EV cert** (~$200/yr OV, ~$400/yr EV) → SmartScreen
-  reputation. See **Path to real Windows signing** below.
+### Remaining gaps
+
+- Windows signing is a manual step in every release. Moving to a cloud-HSM
+  certificate would restore full automation at extra annual cost.
+- No signed Windows build has been installed on a real Windows machine
+  yet — SmartScreen behaviour is expected-good but unverified.
+
 
 ## Path to real macOS signing
 
@@ -200,72 +205,157 @@ The CI run takes 8–12 min (notarization is the bottleneck). On success,
 download the DMG from the draft release, install it on a Mac that has
 *never* run Durumi before — Gatekeeper should show no warning.
 
-## Path to real Windows signing
+## Windows signing (EV token, external)
 
-> **Updated 2026-08-01.** The previous version of this runbook told you to
-> download a `.pfx` from the CA, base64 it, and drop it into a GitHub
-> Secret. **That path no longer exists for newly issued certificates.**
-> Since April–May 2023 the CA/Browser Forum baseline requires code-signing
-> private keys to live on FIPS 140-2 Level 2 / Common Criteria EAL4+
-> hardware, and CAs stopped offering `.pfx` download. Any guide that still
-> says "download your .pfx" predates that change.
+**Status: active since 2026-08-01.** v0.2.30's `Durumi-Setup-*.exe` is signed
+with a GlobalSign EV code-signing certificate issued to *Nanum Space Co,. Ltd*.
 
-### How urgent is this?
+### Why this is not in CI
 
-Less urgent than macOS was. The two platforms fail differently:
+The private key lives on a SafeNet USB token and, by EV rules, cannot be
+exported. GitHub Actions runners have no USB port, so the Windows release
+is a **two-stage** process:
 
-| | macOS (before v0.2.30) | Windows (today) |
-|---|---|---|
-| Unsigned behaviour | **Blocked** — "malware", moved to Trash | **Warned** — SmartScreen "More info → Run anyway" |
-| User can proceed? | No | Yes |
+```
+tag push → CI builds an UNSIGNED NSIS  (release.yml, windows-latest)
+         → a human signs it locally with the token
+         → the signed EXE + regenerated latest.yml/blockmap replace the assets
+```
 
-So Windows signing is a friction fix, not an availability fix. Note that
-even with an OV certificate SmartScreen reputation builds over weeks of
-real downloads; the warning does not disappear on day one.
+macOS is unaffected — it stays fully automated in CI (Developer ID +
+notarization via repo secrets).
 
-### Viable options (private key never leaves an HSM)
+### One-time setup on macOS
 
-A physical USB token (the classic EV setup) cannot be automated from
-GitHub Actions — it needs an attended Windows machine. The options below
-all keep CI automated.
+Signing a Windows PE from macOS works; no SafeNet client is needed, because
+OpenSC talks to the token directly.
 
-| Option | Cost | Availability | Notes |
-|---|---|---|---|
-| **SignPath Foundation** | Free for qualifying OSS | International | OV-level cert, key on SignPath's HSM, GitHub-native connector. Requires an application + review. Durumi is Apache-2.0 public OSS, so it plausibly qualifies. |
-| **Certum Open Source (SimplySign)** | Low-cost paid | International | Aimed at open-source developers, cloud signing, self-serve. |
-| **SSL.com eSigner** | ~$200–600/yr | International | Cloud signing API with a documented GitHub Actions integration. |
-| **Azure Trusted Signing** | ~$10/month | **US / Canada only** | Cheapest and most CI-native, but the residency requirement rules it out elsewhere. |
+```bash
+brew install osslsigncode opensc libp11
+```
 
-For a solo OSS project outside the US/Canada, **SignPath Foundation first,
-Certum as the paid fallback.**
+- `opensc` provides the PKCS#11 module (`/opt/homebrew/lib/opensc-pkcs11.so`)
+- `libp11` provides the OpenSSL engine (`/opt/homebrew/lib/engines-3/pkcs11.dylib`)
+  — **`osslsigncode` fails without it**; `-pkcs11module` alone is not enough
+- macOS's built-in PIV driver does *not* open this token (`security
+  list-smartcards` reports nothing). That is expected; OpenSC handles it.
 
-### Steps
+Confirm the token is visible before touching the PIN:
 
-1. **Apply / purchase.** Follow the chosen provider's onboarding. Expect
-   identity verification (photo ID) either way. This is the long pole.
-2. **Wire the provider's signing step.** Each provider signs differently —
-   there is no single `CSC_LINK` recipe any more:
-   - SignPath: their GitHub connector uploads the artifact and returns a
-     signed one; electron-builder produces the unsigned NSIS first.
-   - Certum / SSL.com: a cloud-signing CLI invoked via
-     `win.signtoolOptions.sign` (a custom hook module).
-   Record the exact mechanism here once chosen, replacing this bullet.
-3. **Flip `verifyUpdateCodeSignature`.** In `electron-builder.yml` under
-   `win:`, change `false` to `true` so `electron-updater` verifies the
-   signature chain on future updates. Do this only once signing actually
-   works — turning it on while shipping unsigned builds breaks updates.
-4. **Verify on a real Windows machine.** `signtool verify /pa /v
-   Durumi-Setup-<version>.exe` should report a valid chain, and a fresh
-   download should show the publisher name in the UAC prompt rather than
-   "Unknown publisher".
+```bash
+pkcs11-tool --module /opt/homebrew/lib/opensc-pkcs11.so -L
+# Slot 0 … token label: Nanum Space Co,.Ltd
+```
 
-### What is already prepared
+**Never brute-force the PIN.** SafeNet tokens lock after repeated failures.
+`pkcs11-tool -L` shows `token flags`; anything mentioning `final try` or
+`locked` means stop.
 
-`electron-builder.yml` (`win:`) and `.github/workflows/release.yml`
-(Windows job) both carry commented signing templates. They assume the old
-`CSC_LINK` / `CSC_KEY_PASSWORD` env-var shape, which still works for a
-provider that hands you a PKCS#12 — but not for the HSM-backed options
-above. Treat them as a starting point, not a drop-in.
+### Signing a release
+
+The intermediate CA is not on the token, so it must be supplied explicitly —
+otherwise only the leaf is embedded and chain building depends on the client
+fetching AIA at runtime.
+
+```bash
+# 1. Pull the unsigned artifact + updater manifest from the draft release
+gh release download vX.Y.Z --pattern 'Durumi-Setup-*.exe' --pattern 'latest.yml'
+
+# 2. Export the leaf from the token and fetch the intermediate it names in AIA
+pkcs11-tool --module /opt/homebrew/lib/opensc-pkcs11.so --slot 0 \
+  -r --type cert --id 0001 -o cert.der
+openssl x509 -in cert.der -inform DER -out leaf.pem
+curl -fsSL -o inter.crt http://secure.globalsign.com/cacert/gsgccr45evcodesignca2020.crt
+openssl x509 -in inter.crt -inform DER -out inter.pem
+cat leaf.pem inter.pem > chain.pem
+
+# 3. Sign (prompts for the PIN; input is not echoed)
+osslsigncode sign \
+  -certs chain.pem \
+  -key 'pkcs11:token=Nanum%20Space%20Co%2c.Ltd;id=%00%01;type=private' \
+  -pkcs11module /opt/homebrew/lib/opensc-pkcs11.so \
+  -engine /opt/homebrew/lib/engines-3/pkcs11.dylib \
+  -askpass -h sha256 \
+  -n "Durumi" -i "https://github.com/kimmingul/durumi" \
+  -ts http://timestamp.globalsign.com/tsa/r6advanced1 \
+  -in Durumi-Setup-X.Y.Z.exe -out signed.exe
+```
+
+The timestamp is not optional — without it every signature stops validating
+when the certificate expires (2027-06-05 for the current one).
+
+### Regenerating the updater metadata — do not skip
+
+Signing changes the file, so `latest.yml`'s `sha512` and `size` no longer
+match. Replacing only the EXE leaves `electron-updater` failing its integrity
+check on every Windows update, silently.
+
+```bash
+# new hash (base64, as electron-updater expects) and size
+shasum -a 512 signed.exe | cut -d' ' -f1 | xxd -r -p | base64
+stat -f%z signed.exe
+# → edit both `sha512:` occurrences and `size:` in latest.yml
+
+# blockmap for differential downloads
+node_modules/.pnpm/app-builder-bin@*/node_modules/app-builder-bin/mac/app-builder_arm64 \
+  blockmap --input signed.exe --output Durumi-Setup-X.Y.Z.exe.blockmap
+```
+
+Then upload all three, overwriting:
+
+```bash
+mv signed.exe Durumi-Setup-X.Y.Z.exe
+gh release upload vX.Y.Z Durumi-Setup-X.Y.Z.exe \
+  Durumi-Setup-X.Y.Z.exe.blockmap latest.yml --clobber
+```
+
+### Verifying
+
+```bash
+curl -fsSL -o root.crt http://secure.globalsign.com/cacert/codesigningrootr45.crt
+openssl x509 -in root.crt -inform DER -out root.pem
+cat root.pem /etc/ssl/cert.pem > ca-with-gs.pem
+osslsigncode verify -CAfile ca-with-gs.pem Durumi-Setup-X.Y.Z.exe
+```
+
+Expect `Signature verification: ok` and `Succeeded`. macOS's default CA
+bundle does not carry the GlobalSign code-signing root, which is why it has
+to be added — a failure without it is a local trust-store gap, not a bad
+signature.
+
+Confirm the chain really has two certificates (leaf + intermediate). Count
+them from the extracted signature block, not from `verify` output — the
+`verify` summary prints only the signer, which makes a correct 2-cert chain
+look like 1:
+
+```bash
+osslsigncode extract-signature -in Durumi-Setup-X.Y.Z.exe -out sig.der
+openssl pkcs7 -inform DER -in sig.der -print_certs -noout | grep -c '^subject='
+# → 2
+```
+
+Finally, check that `latest.yml`'s hash matches the uploaded EXE, or Windows
+auto-update will refuse it.
+
+### `verifyUpdateCodeSignature`
+
+`electron-builder.yml` sets it to `true` together with an explicit
+`publisherName: "Nanum Space Co,. Ltd"`. The manual `publisherName` is
+required precisely because signing happens outside electron-builder — it
+never sees the certificate and cannot infer the name. The string must match
+the certificate CN exactly.
+
+v0.2.30 shipped with the flag `false`, so it only affects clients running
+v0.2.31 or later. **Verify it on a real Windows machine during the first
+update cycle that exercises it** — a mismatch rejects every update silently.
+
+### Not done yet
+
+- No Windows machine has installed a signed build; SmartScreen behaviour is
+  expected-good (EV grants reputation immediately) but unverified.
+- Signing is manual. A cloud-HSM certificate (GlobalSign Signing Service,
+  SSL.com eSigner) would restore full CI automation at extra cost.
+
 
 ## Ongoing cost
 
