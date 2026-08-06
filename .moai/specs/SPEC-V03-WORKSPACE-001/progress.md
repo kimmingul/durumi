@@ -222,7 +222,7 @@ M3 범위 밖: AC-WS-012~018·056~059·066(감시 = M4), AC-WS-058b(IPC 진입�
 ```yaml
 run_status: in-progress            # M1 + M1a + M2 + M3 완료, M4~M8 미착수
 milestones_complete: [M1, M1a, M2, M3]
-run_commit_sha: pending-backfill
+run_commit_sha: 124455d
 ac_pass_count: 50                  # M1 25 + M1a 6 + M2 8 + M3 11(신규) — 008/009/043은 M3에서 완결
 ac_fail_count: 0
 ac_partial_remaining: 1            # AC-WS-023 (조합 관찰자 = M5)
