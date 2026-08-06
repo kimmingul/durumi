@@ -190,7 +190,7 @@ M2 범위 밖: AC-WS-026·027·028(캐럿·실행취소 = M6), AC-WS-019~022·02
 ```yaml
 run_status: in-progress            # M1 + M1a + M2 완료, M3~M8 미착수
 milestones_complete: [M1, M1a, M2]
-run_commit_sha: pending-backfill
+run_commit_sha: bc383df
 ac_pass_count: 39                  # M1 25 + M1a 6(신규) + M2 8
 ac_fail_count: 0
 requirements_pass:
