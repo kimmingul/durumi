@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "수용 기준 — v0.3 워크스페이스 골격"
-version: "0.2.1"
+version: "0.2.2"
 status: in-progress
 created: 2026-08-06
 updated: 2026-08-07
@@ -22,7 +22,7 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 
 - 각 AC 제목 끝의 `↔ REQ-WS-0NN` 은 그 AC가 검증하는 요구사항이다. **제약(C-N)만 추적하는 AC**는 `↔ C-N` 으로 표기한다 — 이는 의도적이며, 품질 게이트·릴리스 게이트·문서 범위 공백처럼 요구사항이 아니라 제약에서 나오는 항목이 여기 해당한다. 해당 AC는 정확히 여섯 개다: **AC-WS-024, 037, 048, 049, 050, 051**.
 - `[P]` 프로젝트 있음 / `[N]` 프로젝트 없음 / `[P+N]` 양쪽 모두. C-1이 정의한 범위를 따른다. **위 여섯 개의 제약 추적 AC는 상태 태그를 의도적으로 생략한다** — 품질 게이트와 릴리스 게이트는 프로젝트 유무와 무관하게 저장소 전체에 적용되므로 `[P]`/`[N]` 구분이 의미를 갖지 않는다.
-- 총 **72개 항목**. 식별자는 AC-WS-001 ~ 067이며, 016 / 038 / 057 / 058 / 067 다섯 개가 각각 a·b 또는 본항·b항으로 분할되어(016a·016b, 038·038b, 057·057b, 058·058b, 067·067b) 항목 수가 최대 번호보다 5 많다.
+- 총 **77개 항목**. 식별자는 AC-WS-001 ~ 069이며, 016 / 038 / 039 / 057 / 058 / 067 여섯 개가 분할되어(016a·016b, 038·038b·038c, 039·039b, 057·057b, 058·058b, 067·067b·067c) 항목 수가 최대 번호보다 8 많다.
 
 ---
 
@@ -312,24 +312,41 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 ## §F 메타데이터 모델 (front matter 정본)
 
 ### AC-WS-054 `[P]` 메타데이터 3계층 우선순위 ↔ REQ-WS-034
-- **Given** front matter가 `author`를 선언하고 매니페스트도 `authors`를 갖고 있으며, front matter는 `acknowledgements`를 선언하지 않고 매니페스트만 갖고 있을 때
+- **Given** front matter가 `author`에 미기입이 아닌 값을 담고 매니페스트도 `authors`를 갖고 있으며, front matter의 `acknowledgements`는 미기입이고 매니페스트에는 값이 있을 때
 - **When** 유효 메타데이터를 계산한다
 - **Then** `author`의 유효값은 front matter에서, `acknowledgements`의 유효값은 매니페스트에서 온다
 
-### AC-WS-038 `[P+N]` 저자 정본은 front matter다 ↔ REQ-WS-035
-- **Given** front matter `author`에 저자 2명이 시퀀스로 선언되어 있을 때
+### AC-WS-038 `[P+N]` 비어 있지 않은 front matter 저자가 정본이다 ↔ REQ-WS-035
+- **Given** front matter `author`에 저자 2명이 시퀀스로 선언되어 있고(미기입 아님), 매니페스트 `authors`에는 다른 3명이 있을 때
 - **When** 유효 메타데이터를 계산한다
-- **Then** 저자 2명이 순서대로 반환된다
+- **Then** front matter의 2명이 순서대로 반환된다 (매니페스트 값은 억제된다)
 
-### AC-WS-038b `[P]` 매니페스트 저자는 미선언 시에만 쓰인다 ↔ REQ-WS-035, REQ-WS-042
-- **Given** front matter에 `author` 키가 없고 매니페스트 `authors`에 3명이 있을 때
+### AC-WS-038b `[P]` 키 부재 시 매니페스트 기본값이 채택된다 ↔ REQ-WS-035, REQ-WS-042
+- **Given** front matter에 `author` 키가 **없고** 매니페스트 `authors`에 3명이 있을 때
 - **When** 유효 메타데이터를 계산한다
 - **Then** 매니페스트의 3명이 반환된다
 
-### AC-WS-039 `[P]` 감사의 글이 계층에 따라 해석된다 ↔ REQ-WS-036
-- **Given** front matter에 `acknowledgements`가 있고 매니페스트에도 다른 값이 있을 때
+### AC-WS-038c `[P]` 키가 있어도 값이 미기입이면 매니페스트 기본값이 채택된다 ↔ REQ-WS-042, REQ-WS-054
+- **Given** 매니페스트 `authors`에 3명이 있고, 원고 front matter가 `author` 키를 **가지고 있으나 그 값이 미기입**일 때. 다음 다섯 형태 각각에 대해 반복한다:
+  1. `author: ` (출하 템플릿 형태 — `null`로 파싱)
+  2. `author:` (공백 없는 bare 키 — `null`)
+  3. `author: ""` (빈 문자열)
+  4. `author: "   "` (공백만)
+  5. `author: []` (빈 시퀀스)
+- **When** 각 경우에 유효 메타데이터를 계산한다
+- **Then** **다섯 경우 모두** 매니페스트의 3명이 반환된다
+- **이 AC는 문자 그대로의 이전 규칙 아래에서 실패한다**: 억제를 "키가 선언되어 있으면"으로 구현하면 다섯 경우 모두 키가 존재하므로 매니페스트 기본값이 억제되어 저자 0명이 반환된다. 특히 (1)은 출하 템플릿에서 만든 **모든** 원고의 형태이므로, 이 AC가 없으면 기본값 계층이 정상 생성 경로에서 죽은 채로 통과한다
+- **null 커버리지 주의**: (1)(2)는 빈 문자열이 아니라 `null`로 파싱된다(`js-yaml` `JSON_SCHEMA` 실측). 미기입 판정을 빈 문자열로만 구현하면 (3)(4)만 통과하고 (1)(2)가 실패한다
+
+### AC-WS-039 `[P]` 감사의 글이 계층에 따라 해석된다 ↔ REQ-WS-036, REQ-WS-042
+- **Given** front matter `acknowledgements`에 미기입이 아닌 값이 있고 매니페스트에도 다른 값이 있을 때
 - **When** 유효 메타데이터를 계산한다
 - **Then** front matter 값이 반환된다
+
+### AC-WS-039b `[P]` 미기입 감사의 글은 매니페스트 기본값을 채택한다 ↔ REQ-WS-036, REQ-WS-054
+- **Given** front matter가 `acknowledgements:` 키를 가지되 값이 미기입(`null`)이고, 매니페스트에 값이 있을 때
+- **When** 유효 메타데이터를 계산한다
+- **Then** 매니페스트 값이 반환된다 — 억제 규칙이 `author`뿐 아니라 세 메타데이터 키 전부에 균일하게 적용됨을 고정한다
 
 ### AC-WS-040 `[P+N]` 유효한 NCT 등록번호가 통과한다 ↔ REQ-WS-037
 - **Given** front matter `registration`이 `ClinicalTrials.gov NCT01234567`일 때
@@ -337,7 +354,7 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **Then** 유효로 판정되고 경고가 없다
 
 ### AC-WS-067 `[P]` 채택되지 않은 매니페스트 값은 검증되지 않는다 ↔ REQ-WS-038, REQ-WS-042
-- **Given** 매니페스트 `registration`이 낡은 placeholder `ClinicalTrials.gov NCT`이고, 원고 front matter `registration`이 유효한 `ClinicalTrials.gov NCT01234567`일 때
+- **Given** 매니페스트 `registration`이 낡은 placeholder `ClinicalTrials.gov NCT`이고, 원고 front matter `registration`이 미기입이 아닌 유효값 `ClinicalTrials.gov NCT01234567`일 때
 - **When** 유효 메타데이터를 계산하고 검증한다
 - **Then** 유효값은 front matter의 `NCT01234567`이고, **어떤 경고도 산출되지 않는다** (채택되지 않은 매니페스트 값은 검증 대상이 아니다)
 
@@ -345,6 +362,14 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **Given** 매니페스트 `registration`이 `ClinicalTrials.gov NCT99`(형식 위반)이고, 원고 front matter에 `registration` 키가 **없을** 때
 - **When** 유효 메타데이터를 계산하고 검증한다
 - **Then** 매니페스트 값이 기본값으로 채택되고, 형식 경고가 산출되며, 원본이 보존된다
+
+### AC-WS-067c `[P]` 출하 placeholder는 매니페스트 등록번호를 억제하지 않는다 ↔ REQ-WS-055, REQ-WS-042
+- **Given** 매니페스트 `registration`이 유효한 `ClinicalTrials.gov NCT01234567`이고, 원고가 CONSORT 템플릿 출하 그대로의 `registration: ClinicalTrials.gov NCT`(placeholder)를 가질 때
+- **When** 유효 메타데이터를 계산한다
+- **Then** 유효값은 **매니페스트의 `NCT01234567`** 이다 (placeholder는 미기입이므로 억제를 발동시키지 않는다)
+- **And** 형식 경고가 산출되지 않는다
+- **And** PRISMA 템플릿의 `registration: PROSPERO CRD` placeholder에 대해서도 같은 결과가 나온다
+- **회귀 근거**: placeholder를 "값 있음"으로 취급하면 CONSORT / PRISMA 템플릿에서 만든 원고에는 프로젝트 수준 등록번호가 결코 적용되지 않는다 — AC-WS-038c가 `author`에서 막는 것과 동일한 결함이 `registration`에서 재발한다
 
 ### AC-WS-041 `[P]` 형식 위반 등록번호가 보존된 채 경고된다 ↔ REQ-WS-038
 - **Given** front matter `registration`이 `ClinicalTrials.gov NCT123`일 때
@@ -364,11 +389,26 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **And** 그 화이트리스트에 `authors` 또는 `registry` 가 **포함되지 않는다**
 - **단언 형태 주의**: 소스 트리 전역 grep으로 `authors` / `registry` 문자열의 부재를 단언해서는 **안 된다** — REQ-WS-002가 `authors`를 매니페스트 최상위 키로 요구하고 REQ-WS-035가 그것을 읽으라고 요구하므로, 전역 grep은 매니페스트 키와 front matter 키를 구별하지 못해 M1의 첫 커밋에서 실패한다. 단언 범위는 front matter 파싱 모듈이 노출하는 화이트리스트로 한정한다
 
-### AC-WS-062 `[P+N]` `author`가 단수·복수·빈값을 모두 처리한다 ↔ REQ-WS-051
-- **Given** 세 가지 front matter: (a) `author: Kim`, (b) `author: [Kim, Lee]`, (c) 템플릿 출하 그대로의 `author: ` (빈 값)
+### AC-WS-062 `[N]` `author`가 단수·복수·미기입을 모두 처리한다 ↔ REQ-WS-051
+- **Given** 프로젝트 없음 상태(기본값 계층이 비어 있음)에서 세 가지 front matter: (a) `author: Kim`, (b) `author: [Kim, Lee]`, (c) 템플릿 출하 그대로의 `author: `
 - **When** 각각 유효 메타데이터를 계산한다
 - **Then** (a) 저자 1명, (b) 저자 2명 순서 보존, (c) 미기입(저자 0명, 오류 아님)
 - **And** (a)의 경우 어떤 오류나 경고도 산출되지 않는다
+- **상태 태그 주의**: 이 AC는 `[N]`으로 한정된다. 프로젝트가 있으면 (c)는 매니페스트 기본값을 끌어오므로(AC-WS-038c) 저자 0명이 아니다 — 두 AC는 서로 다른 계층을 검증한다
+
+### AC-WS-068 `[P+N]` 미기입 판정이 다섯 형태를 모두 포함한다 ↔ REQ-WS-054
+- **Given** 미기입 판정 함수와 다음 입력: `undefined`(키 부재), `null`, `""`, `"   "`, `[]`, `["", "  "]`
+- **When** 각각을 판정한다
+- **Then** 여섯 경우 모두 미기입으로 판정된다
+- **And** `"Kim"`, `["Kim"]`, `["", "Kim"]` 는 미기입이 **아닌** 것으로 판정된다 (원소 하나라도 비어 있지 않으면 값이 있다)
+- **파싱 근거**: `js-yaml`(`JSON_SCHEMA`)에서 `author: ` / `author:` / `author:   ` 는 모두 **`null`** 로, `author: ""` 는 `""` 로 파싱된다(실측). null과 빈 문자열은 서로 다른 값이므로 판정에 둘 다 열거해야 한다
+
+### AC-WS-069 `[P]` 출하 템플릿에서 만든 원고가 프로젝트 저자를 상속한다 ↔ REQ-WS-042, REQ-WS-051, REQ-WS-054
+- **Given** 매니페스트 `authors`에 저자 3명이 선언된 프로젝트
+- **When** `shared/manuscriptTemplates.ts`의 **각 템플릿**(IMRaD / CONSORT / PRISMA / CARE / STROBE 계열 전부)이 생성하는 front matter 원문을 그대로 원고로 두고 유효 메타데이터를 계산한다
+- **Then** **모든 템플릿에서** 저자 3명이 반환된다
+- **회귀 근거 (이 AC의 존재 이유)**: 억제가 키 존재 기반이면 모든 템플릿이 `author: `를 발행하므로 이 AC는 전 템플릿에서 실패한다. 이것이 M1 구현에서 드러난 결함의 정확한 재현이며, 이 AC가 그 결함의 무성 재발을 막는 게이트다
+- **템플릿 목록 고정 주의**: 특정 템플릿 하나가 아니라 `MANUSCRIPT_TEMPLATES` 배열을 순회해 단언한다 — 향후 템플릿이 추가되어도 자동으로 커버되도록
 
 ### AC-WS-063 `[P+N]` PROSPERO 등록값에 NCT 검증이 적용되지 않는다 ↔ REQ-WS-052
 - **Given** front matter `registration`이 `PROSPERO CRD42024123456`일 때
@@ -402,8 +442,8 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **When** 유효 메타데이터를 계산한다
 - **Then** 세 값이 모두 반환된다
 
-### AC-WS-045 `[P]` front matter 선언이 매니페스트를 무음으로 대체한다 ↔ REQ-WS-042
-- **Given** 매니페스트와 front matter가 서로 다른 저자 목록을 가질 때
+### AC-WS-045 `[P]` 비어 있지 않은 front matter 값이 매니페스트를 무음으로 대체한다 ↔ REQ-WS-042
+- **Given** 매니페스트와 front matter가 서로 다른, **둘 다 미기입이 아닌** 저자 목록을 가질 때
 - **When** 유효 메타데이터를 계산한다
 - **Then** front matter 값이 반환된다
 - **And** 충돌 경고가 산출되지 **않는다** (문서 수준 선언은 정상 동작이다)

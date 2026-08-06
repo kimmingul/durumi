@@ -10,6 +10,7 @@ import {
   validateRegistration,
   resolveManuscriptMetadata,
   updateFrontMatterKey,
+  isEmptyMetadataValue,
 } from '@shared/manuscriptMetadata';
 
 function fm(yamlBody: string, body = '# 본문\n\n한 문단.\n'): string {
@@ -58,7 +59,33 @@ describe('front matter 키 스키마 — REQ-WS-050 / AC-WS-061', () => {
   });
 });
 
-describe('author 값 형태 — REQ-WS-051 / AC-WS-062', () => {
+describe('미기입 판정 — REQ-WS-054 / AC-WS-068', () => {
+  it('여섯 가지 미기입 형태를 모두 판정한다', () => {
+    for (const v of [undefined, null, '', '   ', [], ['', '  ']]) {
+      expect(isEmptyMetadataValue(v)).toBe(true);
+    }
+  });
+
+  it('원소 하나라도 비어 있지 않으면 미기입이 아니다', () => {
+    for (const v of ['Kim', ['Kim'], ['', 'Kim']]) {
+      expect(isEmptyMetadataValue(v)).toBe(false);
+    }
+  });
+
+  it('출하 템플릿의 `author: `는 빈 문자열이 아니라 null로 파싱되며 미기입이다', () => {
+    // REQ-WS-054의 파싱 근거를 실측으로 고정한다. 이 단언이 깨지면 미기입
+    // 판정을 `=== ''`로 구현해도 통과해 버리는 상태로 되돌아간다.
+    for (const src of ['author: ', 'author:', 'author:   ']) {
+      const data = parseFrontMatter(fm(src)).data!;
+      expect(data.author).toBeNull();
+      expect(isEmptyMetadataValue(data.author)).toBe(true);
+    }
+    expect(parseFrontMatter(fm('author: ""')).data!.author).toBe('');
+    expect(parseFrontMatter(fm('author: []')).data!.author).toEqual([]);
+  });
+});
+
+describe('author 값 형태 — REQ-WS-051 / AC-WS-062 `[N]`', () => {
   it('문자열이면 저자 1명', () => {
     expect(normalizeAuthors('Kim')).toEqual(['Kim']);
   });
@@ -78,18 +105,82 @@ describe('author 값 형태 — REQ-WS-051 / AC-WS-062', () => {
     expect(m.warnings).toEqual([]);
   });
 
-  it('세 가지 형태를 모두 처리한다', () => {
-    expect(resolve(fm('author: Kim')).authors.value).toEqual(['Kim']);
-    expect(resolve(fm('author: [Kim, Lee]')).authors.value).toEqual(['Kim', 'Lee']);
-    // 템플릿 출하 그대로의 빈 값.
-    expect(resolve(fm('author: ')).authors.value).toEqual([]);
+  it('프로젝트 없음 상태에서 세 가지 형태를 모두 처리한다', () => {
+    // AC-WS-062는 `[N]` 한정이다 — 프로젝트가 있으면 (c)는 매니페스트 기본값을
+    // 끌어오므로 저자 0명이 아니다(AC-WS-038c). 두 AC는 서로 다른 계층이다.
+    expect(resolve(fm('author: Kim'), null).authors.value).toEqual(['Kim']);
+    expect(resolve(fm('author: [Kim, Lee]'), null).authors.value).toEqual(['Kim', 'Lee']);
+    expect(resolve(fm('author: '), null).authors.value).toEqual([]);
   });
 
-  it('템플릿 출하 원문에서 저자 0명으로 읽히고 경고가 없다', () => {
+  it('프로젝트 없음 상태에서 템플릿 출하 원문은 저자 0명이고 경고가 없다', () => {
     const imrad = MANUSCRIPT_TEMPLATES.find((t) => t.id === 'imrad')!;
-    const m = resolve(imrad.content);
+    const m = resolve(imrad.content, null);
     expect(m.authors.value).toEqual([]);
     expect(m.warnings).toEqual([]);
+  });
+});
+
+describe('억제는 값 기반이다 — REQ-WS-042 / REQ-WS-054', () => {
+  const MANIFEST_3 = () => manifestOf('authors:\n  - A\n  - B\n  - C');
+
+  it('키가 있어도 값이 미기입이면 매니페스트 기본값이 채택된다 (AC-WS-038c)', () => {
+    const forms = ['author: ', 'author:', 'author: ""', 'author: "   "', 'author: []'];
+    for (const form of forms) {
+      const m = resolve(fm(form), MANIFEST_3());
+      expect(m.authors.value, `form=${JSON.stringify(form)}`).toEqual(['A', 'B', 'C']);
+      expect(m.authors.source, `form=${JSON.stringify(form)}`).toBe('manifest');
+    }
+  });
+
+  it('출하 템플릿에서 만든 원고가 프로젝트 저자를 상속한다 (AC-WS-069)', () => {
+    // 특정 템플릿 하나가 아니라 배열 전체를 순회한다 — 향후 템플릿 추가도 자동 커버.
+    expect(MANUSCRIPT_TEMPLATES.length).toBeGreaterThan(0);
+    for (const t of MANUSCRIPT_TEMPLATES) {
+      const m = resolve(t.content, MANIFEST_3());
+      expect(m.authors.value, `template=${t.id}`).toEqual(['A', 'B', 'C']);
+      expect(m.authors.source, `template=${t.id}`).toBe('manifest');
+    }
+  });
+
+  it('미기입이 아닌 값은 매니페스트를 억제한다 (AC-WS-038)', () => {
+    const m = resolve(fm('author:\n  - Kim\n  - Lee'), MANIFEST_3());
+    expect(m.authors.value).toEqual(['Kim', 'Lee']);
+    expect(m.authors.source).toBe('front-matter');
+  });
+
+  it('미기입 감사의 글은 매니페스트 기본값을 채택한다 (AC-WS-039b)', () => {
+    const manifest = manifestOf('acknowledgements: From manifest');
+    const m = resolve(fm('acknowledgements:'), manifest);
+    expect(m.acknowledgements.value).toBe('From manifest');
+    expect(m.acknowledgements.source).toBe('manifest');
+  });
+
+  it('출하 placeholder는 매니페스트 등록번호를 억제하지 않는다 (AC-WS-067c)', () => {
+    const manifest = manifestOf('registration: ClinicalTrials.gov NCT01234567');
+    for (const placeholder of ['ClinicalTrials.gov NCT', 'PROSPERO CRD']) {
+      const m = resolve(fm(`registration: ${placeholder}`), manifest);
+      expect(m.registration.value, placeholder).toBe('ClinicalTrials.gov NCT01234567');
+      expect(m.registration.source, placeholder).toBe('manifest');
+      expect(m.warnings, placeholder).toEqual([]);
+    }
+  });
+
+  it('CONSORT / PRISMA 템플릿 원고가 프로젝트 등록번호를 상속한다 (AC-WS-067c)', () => {
+    const manifest = manifestOf('registration: ClinicalTrials.gov NCT01234567');
+    for (const id of ['consort', 'prisma']) {
+      const t = MANUSCRIPT_TEMPLATES.find((x) => x.id === id)!;
+      const m = resolve(t.content, manifest);
+      expect(m.registration.value, id).toBe('ClinicalTrials.gov NCT01234567');
+      expect(m.warnings, id).toEqual([]);
+    }
+  });
+
+  it('미기입이 아닌 등록번호는 매니페스트를 억제한다', () => {
+    const manifest = manifestOf('registration: ClinicalTrials.gov NCT01234567');
+    const m = resolve(fm('registration: PROSPERO CRD42024123456'), manifest);
+    expect(m.registration.value).toBe('PROSPERO CRD42024123456');
+    expect(m.registration.source).toBe('front-matter');
   });
 });
 
@@ -153,7 +244,8 @@ describe('registration 레지스트리 다형성 — REQ-WS-052 / REQ-WS-053', (
 describe('메타데이터 3계층 — REQ-WS-034 ~ 037, 042', () => {
   it('키별로 정본·기본값이 갈린다 (AC-WS-054)', () => {
     const manifest = manifestOf('authors:\n  - Manifest Author\nacknowledgements: From manifest');
-    const m = resolve(fm('author: FM Author'), manifest);
+    // front matter의 acknowledgements는 키가 있으되 미기입이다.
+    const m = resolve(fm('author: FM Author\nacknowledgements:'), manifest);
     expect(m.authors.value).toEqual(['FM Author']);
     expect(m.authors.source).toBe('front-matter');
     expect(m.acknowledgements.value).toBe('From manifest');

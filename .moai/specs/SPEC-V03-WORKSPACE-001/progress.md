@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "진행 기록 — v0.3 워크스페이스 골격"
-version: "0.2.1"
+version: "0.2.2"
 status: in-progress
 created: 2026-08-06
 updated: 2026-08-07
@@ -17,6 +17,18 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 # 진행 기록 — SPEC-V03-WORKSPACE-001
 
 ## §E.1 Plan-phase Audit-Ready Signal
+
+### 판 0.2.2 (2026-08-07) — M1 구현이 드러낸 결함의 인라인 정정 (run-phase)
+
+- **결함**: REQ-WS-042(키 존재 기반 억제) + REQ-WS-051(빈 값 = 미기입) + `manuscriptTemplates.ts:22`(모든 템플릿이 `author: ` 발행)의 조합이, 템플릿에서 만든 **모든** 원고에서 매니페스트 기본값 계층을 사용 불가로 만들었다. 판 0.2.1의 AC는 키 존재/부재만 다뤄 이 경우를 잡지 못했다
+- **정정**: 억제를 **값 기반**으로 전환. 미기입 값은 억제를 발동시키지 않고 매니페스트 기본값이 채택된다
+- **파생 실측**: `author: `는 빈 문자열이 아니라 **`null`로 파싱**된다(`js-yaml` `JSON_SCHEMA`). 미기입 판정에 null을 포함하지 않으면 정정이 무효가 된다
+- **파생 정정**: `registration`에도 동일 결함 존재 — CONSORT/PRISMA placeholder(`ClinicalTrials.gov NCT` / `PROSPERO CRD`)가 억제를 발동시키면 그 템플릿 원고는 프로젝트 등록번호를 상속받지 못한다. REQ-WS-055로 해소
+- **요구사항 55개** (52 → 55): REQ-WS-054(미기입 판정), REQ-WS-055(등록번호 placeholder) 신설 + 047a 유지. 048은 여전히 결번
+- **수용 기준 77개 항목** (72 → 77): AC-WS-038c(미기입 다섯 형태 → 기본값 채택), 039b(감사의 글 균일성), 067c(placeholder 비억제), 068(미기입 판정 매트릭스), 069(출하 템플릿 전수 상속) 신설
+- **회귀 게이트**: AC-WS-038c와 AC-WS-069는 **문자 그대로의 이전 규칙 아래에서 실패한다** — 결함의 무성 재발을 막는 실행 가능한 검사다
+- **수용된 대가**: "의도적으로 저자 없음"을 표현할 수단 없음 (REQ-WS-042에 명시)
+- 상태: `in-progress` (6개 파일 전부)
 
 ### 판 0.2.1 (2026-08-07) — 재감사(PASS WITH FIXES 0.84) SHOULD-FIX 8 + NIT 6 반영
 
@@ -41,6 +53,20 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 
 - 요구사항 44개, 수용 기준 52개 항목
 - 미해결 결정 6건(A-1~A-6)이 `plan.md` §A에 기록됨 → 판 0.2.0에서 전부 해소
+
+## §E.1a 아티팩트 수명주기 — Tier L 6파일 (하네스 스키마 공백 기록)
+
+manager-develop이 `draft → in-progress` 전환 시 4개 아티팩트(spec/plan/acceptance/progress)만 전환하고 `design.md` / `research.md`를 `draft`로 남겼다. **이는 하네스 스키마의 공백이며, 두 파일이 다른 수명주기를 갖는다는 뜻이 아니다.**
+
+**올바른 수명주기 판정 — 두 파일은 형제와 동일하다.** 근거:
+
+1. `.claude/rules/moai/development/spec-frontmatter-schema.md` § Optional Fields의 `tier` 항목이 **Tier L = 5 files (spec.md + plan.md + acceptance.md + design.md + research.md)** 로 정의한다 — `design.md`와 `research.md`는 Tier L의 정규 아티팩트다.
+2. 같은 파일의 Status Transition Ownership Matrix `(none) → draft` 행이 커밋 제목에 `{N}`을 Tier 아티팩트 수로 쓰라며 **"Tier L = 5"** 를 명시하고 `do NOT hardcode a fixed count`라고 못박는다 — 즉 스키마는 Tier L에서 두 파일을 plan-phase 아티팩트로 **이미 계산하고 있다**.
+3. 두 파일은 manager-spec이 plan-phase에 저작했고(`(none) → draft` 소유), 내용이 SPEC 본문과 함께 움직인다(판 0.2.2에서 design.md §7.1a와 research.md §4.2a가 이번 정정과 함께 갱신됨).
+
+**공백의 정확한 위치**: `draft → in-progress` 행(manager-develop 소유)은 `(none) → draft` 행과 달리 아티팩트 수를 언급하지 않는다. 아티팩트 열거가 없으므로 구현체가 관례적 4파일만 전환했다. `(none) → draft`는 Tier 수를 명시하는데 `draft → in-progress`는 그렇지 않은 **비대칭**이 공백이다.
+
+**조치**: 이 SPEC에서는 두 파일을 형제와 함께 `in-progress`로 전환했다(6개 파일 전부 `version: 0.2.2` / `status: in-progress`). **하네스 규칙 파일은 수정하지 않았다** — 스키마 비대칭의 항구적 해소는 이 SPEC의 범위가 아니며(`spec.md` §D의 "이 SPEC은 harness 규칙 파일을 수정하지 않는다" 원칙과 동일 계열), 별도 항목으로 다뤄져야 한다. 여기서는 관측된 공백과 올바른 판정만 기록한다.
 
 ## §E.2 Run-phase Evidence
 

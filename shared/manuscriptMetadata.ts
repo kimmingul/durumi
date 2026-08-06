@@ -60,10 +60,28 @@ export interface EffectiveMetadata {
 }
 
 /**
+ * 값이 **미기입(empty)** 인가(REQ-WS-054). 키의 존재 여부가 아니라 값으로
+ * 판정한다 — 이것이 REQ-WS-042의 억제 여부를 결정하는 하중 지지 규칙이다.
+ *
+ * 미기입으로 판정하는 형태:
+ * `undefined`(키 부재) · `null` · `''` · 공백만인 문자열 · `[]` ·
+ * 모든 원소가 위에 해당하는 시퀀스.
+ *
+ * **null이 반드시 포함되어야 하는 이유**: 출하 템플릿(`manuscriptTemplates.ts:22`)의
+ * `'author: '`는 빈 문자열이 **아니라 `null`로 파싱된다**(js-yaml `JSON_SCHEMA`).
+ * 미기입을 `=== ''`로만 정의하면 출하 템플릿의 실제 형태가 걸러지지 않아,
+ * 템플릿에서 만든 모든 원고가 매니페스트 기본값을 상속하지 못한다.
+ */
+export function isEmptyMetadataValue(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'string') return value.trim() === '';
+  if (Array.isArray(value)) return value.every((v) => isEmptyMetadataValue(v));
+  return false;
+}
+
+/**
  * `author` 값을 저자 목록으로 정규화한다(REQ-WS-051).
- * 문자열이면 1명, 시퀀스면 순서를 보존한 복수, 빈 문자열이면 미기입(0명)이다 —
- * 템플릿(`manuscriptTemplates.ts:22`)이 `author: `를 빈 값으로 출하하므로
- * 빈 값은 오류가 아니다.
+ * 미기입이 아닌 문자열이면 1명, 시퀀스면 순서를 보존한 복수, 미기입이면 0명이다.
  */
 export function normalizeAuthors(value: unknown): string[] {
   if (typeof value === 'string') {
@@ -128,14 +146,54 @@ export function validateRegistration(raw: string): RegistrationValidation {
   return { ...base, status: NCT_FORMAT.test(identifier) ? 'valid' : 'invalid' };
 }
 
-function declares(data: Record<string, unknown> | null | undefined, key: string): boolean {
-  return !!data && Object.prototype.hasOwnProperty.call(data, key);
+/**
+ * `registration`의 미기입 판정(REQ-WS-055). REQ-WS-054의 일반 규칙에 더해,
+ * 식별자 부분이 비어 있는 출하 placeholder(`ClinicalTrials.gov NCT`,
+ * `PROSPERO CRD`)도 미기입이다 — 그러지 않으면 CONSORT / PRISMA 템플릿에서
+ * 만든 원고가 프로젝트 등록번호를 결코 상속받지 못한다. `author`에서 고친 것과
+ * 동일한 결함 계열이며, REQ-WS-053(placeholder 무경고)과 같은 결론의 두 측면이다.
+ */
+function isEmptyRegistrationValue(value: unknown): boolean {
+  if (isEmptyMetadataValue(value)) return true;
+  if (typeof value !== 'string') return false;
+  return validateRegistration(value).status === 'unfilled';
 }
 
 function asText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const t = value.trim();
   return t === '' ? null : value;
+}
+
+interface LayeredValue {
+  value: unknown;
+  source: MetadataSource;
+}
+
+/**
+ * 두 계층에서 유효값을 고른다(REQ-WS-042 — **값 기반** 억제).
+ *
+ * front matter 값이 미기입이 아니면 그것이 정본이고 매니페스트는 억제된다.
+ * 미기입이면(키 부재든 미기입 값이든) 매니페스트 기본값이 채택된다 — 키의
+ * 존재만으로는 억제되지 않는다.
+ *
+ * 양쪽 다 미기입이면 원본을 보고용으로 실어 나른다(미기입 상태 자체를
+ * 표시해야 하는 `registration` placeholder 때문 — AC-WS-064).
+ */
+function pickLayer(
+  frontMatterValue: unknown,
+  manifestValue: unknown,
+  isEmpty: (v: unknown) => boolean,
+): LayeredValue {
+  if (frontMatterValue !== undefined && !isEmpty(frontMatterValue)) {
+    return { value: frontMatterValue, source: 'front-matter' };
+  }
+  if (manifestValue !== undefined && !isEmpty(manifestValue)) {
+    return { value: manifestValue, source: 'manifest' };
+  }
+  if (frontMatterValue !== undefined) return { value: frontMatterValue, source: 'front-matter' };
+  if (manifestValue !== undefined) return { value: manifestValue, source: 'manifest' };
+  return { value: undefined, source: 'none' };
 }
 
 export interface ResolveMetadataInput {
@@ -162,35 +220,27 @@ export function resolveManuscriptMetadata(input: ResolveMetadataInput): Effectiv
   const warnings: MetadataWarning[] = [];
 
   // --- author (front matter 단수 키) / authors (매니페스트 기본값) ---
-  let authors: EffectiveMetadata['authors'];
-  if (declares(fmData, 'author')) {
-    authors = { value: normalizeAuthors(fmData!.author), source: 'front-matter' };
-  } else if (manifest && manifest.authors !== undefined) {
-    authors = { value: normalizeAuthors(manifest.authors), source: 'manifest' };
-  } else {
-    authors = { value: [], source: 'none' };
-  }
+  const authorLayer = pickLayer(fmData?.author, manifest?.authors, isEmptyMetadataValue);
+  const authors: EffectiveMetadata['authors'] = {
+    value: normalizeAuthors(authorLayer.value),
+    source: authorLayer.source,
+  };
 
   // --- acknowledgements ---
-  let acknowledgements: EffectiveMetadata['acknowledgements'];
-  if (declares(fmData, 'acknowledgements')) {
-    acknowledgements = { value: asText(fmData!.acknowledgements), source: 'front-matter' };
-  } else if (manifest && manifest.acknowledgements !== undefined) {
-    acknowledgements = { value: asText(manifest.acknowledgements), source: 'manifest' };
-  } else {
-    acknowledgements = { value: null, source: 'none' };
-  }
+  const ackLayer = pickLayer(
+    fmData?.acknowledgements,
+    manifest?.acknowledgements,
+    isEmptyMetadataValue,
+  );
+  const acknowledgements: EffectiveMetadata['acknowledgements'] = {
+    value: asText(ackLayer.value),
+    source: ackLayer.source,
+  };
 
-  // --- registration ---
-  let registrationRaw: string | null = null;
-  let registrationSource: MetadataSource = 'none';
-  if (declares(fmData, 'registration')) {
-    registrationRaw = asText(fmData!.registration);
-    registrationSource = 'front-matter';
-  } else if (manifest && manifest.registration !== undefined) {
-    registrationRaw = asText(manifest.registration);
-    registrationSource = 'manifest';
-  }
+  // --- registration (placeholder도 미기입으로 본다 — REQ-WS-055) ---
+  const regLayer = pickLayer(fmData?.registration, manifest?.registration, isEmptyRegistrationValue);
+  const registrationRaw = asText(regLayer.value);
+  const registrationSource = regLayer.source;
 
   const validation = registrationRaw === null ? null : validateRegistration(registrationRaw);
   if (validation?.status === 'invalid') {

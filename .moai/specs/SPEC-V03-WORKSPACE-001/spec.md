@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "v0.3 워크스페이스 골격 — 프로젝트 매니페스트·외부 변경 조정·메타데이터 모델"
-version: "0.2.1"
+version: "0.2.2"
 status: in-progress
 created: 2026-08-06
 updated: 2026-08-07
@@ -21,6 +21,7 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 | 일자 | 버전 | 변경 |
 |---|---|---|
 | 2026-08-06 | 0.1.0 | 최초 작성 — EPIC-V03-WORKSPACE의 1번 SPEC |
+| 2026-08-07 | 0.2.2 | **M1 구현이 드러낸 결함 수정 (run-phase 인라인 정정)**. REQ-WS-042의 억제를 **키 존재 기반에서 값 기반으로** 전환 — 출하 템플릿이 모든 원고에 `author: `를 발행하므로 키 기반 억제 아래에서는 매니페스트 기본값 계층이 정상 생성 경로에서 사용 불가였다. REQ-WS-054(미기입 판정, **null 포함**) 및 REQ-WS-055(등록번호 placeholder는 미기입) 신설, REQ-WS-035/036/037/051/038 연동 수정. "의도적으로 저자 없음"을 표현할 수 없다는 대가를 명시적으로 수용 |
 | 2026-08-07 | 0.2.1 | 재감사(PASS WITH FIXES, 0.84) SHOULD-FIX 8건 + NIT 6건 반영. `tier: L` 선언 및 `design.md` / `research.md` 추가. REQ-WS-038에 "채택된 유효값만 검증" 조항 추가(SF-2), REQ-WS-046을 역할 기반 단일 경로 제외로 재작성(SF-8), REQ-WS-047a 신설(수동 새로고침 진입점 소유 경계, NIT-5), REQ-WS-052에 비-ClinicalTrials.gov 무검증 명시(NIT-4), 요구사항 패턴 라벨 정리(NIT-2) |
 | 2026-08-07 | 0.2.0 | plan-auditor FAIL 대응. 미해결 결정 6건 반영: 매니페스트 YAML 확정(A-1), 비침습 배너 충돌 정책(A-2), 감시 범위 확정(A-3), **메타데이터 정본을 front matter로 반전(A-4)**, 비마크다운 열기는 SPEC-2(A-5), pathGuard Tier-2 유지(A-6). front matter 키 스키마 명시(REQ-WS-050~053), 감시 범위 요구 추가(045~047), 모달 금지(049), 경로별 debounce로 REQ-WS-016 강화. C-1 범위 축소 |
 
@@ -61,6 +62,7 @@ v0.3의 워크스페이스는 이 공백을 견딜 수 없다. `EPIC-V03-WORKSPA
 | 미저장 편집(unsaved edits) | 버퍼가 마지막 저장/로드 이후 변경된 상태 (`appStore.isDirty`) |
 | 규약 폴더(convention folder) | 매니페스트가 정의하는 프로젝트 표준 하위 폴더. 감시 대상에서 `data/`는 제외(REQ-WS-046) |
 | 키 단위 스플라이스(key-range splice) | 매니페스트에서 대상 키의 바이트 범위만 교체하는 갱신 방식 (REQ-WS-003) |
+| 미기입(empty value) | 메타데이터 키의 값이 없음·null·빈 문자열·공백 문자열·빈 시퀀스 중 하나인 상태. **키의 존재 여부가 아니라 값으로 판정한다** (REQ-WS-054) |
 
 ---
 
@@ -211,17 +213,40 @@ v0.3의 워크스페이스는 이 공백을 견딜 수 없다. `EPIC-V03-WORKSPA
 **REQ-WS-034** (Ubiquitous)
 메타데이터는 3계층으로 배치**되어야 한다(shall)**:
 1. **원고 front matter — 정본.** 저자·감사의 글·등록번호의 유효값이 여기서 결정된다.
-2. **매니페스트 — 프로젝트 기본값.** 원고가 해당 키를 선언하지 않았을 때만 사용된다.
+2. **매니페스트 — 프로젝트 기본값.** 원고의 해당 키가 **미기입(REQ-WS-054)** 일 때 사용된다.
 3. **`.bib` 파일 — 서지 정본.** 위 두 계층은 서지 항목을 담지 않는다.
 
+**REQ-WS-054** (Ubiquitous) — 미기입(empty) 판정
+메타데이터 키의 값이 다음 중 하나이면 앱은 그것을 **미기입**으로 판정**해야 한다(shall)**:
+
+| 형태 | YAML 원문 예 | `js-yaml`(`JSON_SCHEMA`) 파싱 결과 |
+|---|---|---|
+| 키 자체가 없음 | (키 부재) | `undefined` |
+| null | `author:` · `author: ` · `author:   ` | `null` |
+| 빈 문자열 | `author: ""` | `""` |
+| 공백만인 문자열 | `author: "   "` | `"   "` |
+| 빈 시퀀스 | `author: []` | `[]` |
+| 모든 원소가 위 조건에 해당하는 시퀀스 | `author: ["", "  "]` | `["", "  "]` |
+
+**null을 반드시 포함해야 하는 이유**: 출하 템플릿(`shared/manuscriptTemplates.ts:22`)은 `'author: '`를 발행하며 이는 빈 문자열이 **아니라 `null`로 파싱된다**. 미기입 판정을 빈 문자열로만 정의하면 모든 출하 템플릿의 `author`가 미기입으로 분류되지 않는다.
+
+미기입 판정은 **키의 존재 여부가 아니라 값**으로 한다 — 키가 존재하더라도 값이 위 표에 해당하면 미기입**이다(shall)**.
+
 **REQ-WS-035** (Ubiquitous)
-저자의 정본은 원고 front matter의 `author` 키**여야 한다(shall)**. 매니페스트의 `authors`는 원고가 `author`를 선언하지 않은 경우에만 적용되는 기본값**이다(shall)**.
+저자의 정본은 원고 front matter의 `author` 키**여야 한다(shall)** — 단 그 값이 미기입이 아닐 때다(REQ-WS-042). 매니페스트의 `authors`는 원고의 `author`가 **미기입일 때**(키 부재 또는 REQ-WS-054의 미기입 값) 적용되는 기본값**이다(shall)**.
 
 **REQ-WS-036** (Ubiquitous)
-감사의 글의 정본은 원고 front matter의 `acknowledgements` 키**여야 한다(shall)**. 매니페스트의 `acknowledgements`는 기본값**이다(shall)**.
+감사의 글의 정본은 원고 front matter의 `acknowledgements` 키**여야 한다(shall)** — 단 그 값이 미기입이 아닐 때다. 매니페스트의 `acknowledgements`는 원고의 값이 미기입일 때 적용되는 기본값**이다(shall)**.
 
 **REQ-WS-037** (Ubiquitous)
-등록번호의 정본은 원고 front matter의 `registration` 키**여야 한다(shall)**. 매니페스트의 `registration`은 기본값**이다(shall)**. 유효값이 ClinicalTrials.gov 등록을 담은 경우, 앱은 `NCT` 뒤 8자리 숫자 형식을 검증**해야 한다(shall)**.
+등록번호의 정본은 원고 front matter의 `registration` 키**여야 한다(shall)** — 단 그 값이 미기입이 아닐 때다. 매니페스트의 `registration`은 원고의 값이 미기입일 때 적용되는 기본값**이다(shall)**. 유효값이 ClinicalTrials.gov 등록을 담은 경우, 앱은 `NCT` 뒤 8자리 숫자 형식을 검증**해야 한다(shall)**.
+
+**REQ-WS-055** (Ubiquitous) — 출하 placeholder는 `registration`의 미기입 형태다
+`registration` 키에 한해, 식별자 부분이 비어 있는 출하 placeholder — `ClinicalTrials.gov NCT`(`manuscriptTemplates.ts:70`)와 `PROSPERO CRD`(`:168`) — 를 앱은 **미기입으로 판정해야 한다(shall)**. 따라서 이 값들은 REQ-WS-042의 억제를 발동시키지 **않으며(shall not)** 매니페스트의 `registration` 기본값이 채택**된다(shall)**.
+
+이 조항이 없으면 `author`에서 방금 고친 것과 **동일한 결함**이 `registration`에서 재발한다: CONSORT / PRISMA 템플릿이 모든 원고에 placeholder를 발행하므로, placeholder를 "값 있음"으로 보면 그 두 템플릿에서 만든 원고에는 프로젝트 수준 등록번호가 결코 적용되지 않는다.
+
+이 판정은 REQ-WS-053(placeholder에 형식 경고를 내지 않음)과 **같은 결론의 두 측면**이다 — placeholder는 "사용자가 아직 채우지 않은 자리"이며, 그래서 경고 대상도 아니고 억제 근거도 아니다.
 
 **REQ-WS-050** (Ubiquitous)
 front matter 메타데이터 키는 **이미 출하 중인 템플릿 키를 그대로 사용**해야 하며(shall), 병렬 명칭을 새로 도입하지 **않는다(shall not)**. 인식 키는 다음 세 가지**다(shall)**:
@@ -233,7 +258,9 @@ front matter 메타데이터 키는 **이미 출하 중인 템플릿 키를 그�
 | `acknowledgements` | 선례 없음 — 신규 | 문자열 |
 
 **REQ-WS-051** (Ubiquitous)
-`author` 키는 단수 명칭을 유지한 채 복수 저자를 표현**해야 한다(shall)**: 값이 문자열이면 저자 1명, YAML 시퀀스이면 순서를 보존한 복수 저자로 해석한다. 값이 빈 문자열이면 저자 미기입으로 취급**한다(shall)** — 템플릿(`manuscriptTemplates.ts:22`)이 `author: `를 빈 값으로 출하하기 때문이다. 앱은 단수 문자열 값을 가진 기존 원고를 거부하지 **않는다(shall not)**.
+`author` 키는 단수 명칭을 유지한 채 복수 저자를 표현**해야 한다(shall)**: 값이 미기입이 아닌 문자열이면 저자 1명, 미기입이 아닌 원소를 가진 YAML 시퀀스이면 순서를 보존한 복수 저자로 해석한다. 앱은 단수 문자열 값을 가진 기존 원고를 거부하지 **않는다(shall not)**.
+
+값이 REQ-WS-054의 미기입에 해당하면 저자 미기입으로 취급**한다(shall)**. **이 판정은 단순한 읽기 규칙이 아니라 REQ-WS-042의 억제 여부를 결정하는 하중 지지 규칙이다** — 미기입이면 매니페스트의 `authors` 기본값이 채택되고, 미기입이 아니면 억제된다. 특히 출하 템플릿의 `author: `는 빈 문자열이 아니라 **`null`로 파싱되므로**, 미기입 판정이 null을 포함하지 않으면 이 규칙 전체가 무력해진다(REQ-WS-054 표 참조).
 
 **REQ-WS-052** (Ubiquitous)
 `registration` 값은 **레지스트리 다형성**을 가져**야 한다(shall)**. 출하 템플릿이 이미 두 종류를 발행한다 — `ClinicalTrials.gov NCT…`(CONSORT, `:70`)와 `PROSPERO CRD…`(PRISMA, `:168`). 앱은 값의 레지스트리 접두를 식별**해야 하며(shall)**, ClinicalTrials.gov 값에만 NCT 형식 검증을 적용**한다(shall)**.
@@ -246,7 +273,7 @@ front matter 메타데이터 키는 **이미 출하 중인 템플릿 키를 그�
 **REQ-WS-038** (Event-driven — 실패 모드 감지)
 **When** 등록번호가 형식 검증에 실패하면(placeholder가 아닌 실제 값이 형식을 어긴 경우), 앱은 값을 버리지 **않고(shall not)** 원본을 보존한 채 형식 경고를 표시**해야 한다(shall)**.
 
-**형식 검증은 REQ-WS-034의 계층 해석으로 실제 채택된 유효값에만 적용된다(shall)** — 채택되지 않은 값은 검증 대상이 아니며 경고를 유발하지 **않는다(shall not)**. 따라서 원고 front matter가 `registration`을 선언하면(REQ-WS-042에 따라 매니페스트 값이 억제됨) 매니페스트의 `registration` 값은 검증되지 **않는다(shall not)** — 유효한 NCT를 선언한 원고가 쓰이지도 않는 매니페스트의 낡은 placeholder 때문에 경고를 받는 것은 REQ-WS-053이 막으려는 것과 같은 결함 계열이다. 매니페스트 값은 원고가 해당 키를 선언하지 않아 **기본값으로 채택된 경우에만** 검증된다.
+**형식 검증은 REQ-WS-034의 계층 해석으로 실제 채택된 유효값에만 적용된다(shall)** — 채택되지 않은 값은 검증 대상이 아니며 경고를 유발하지 **않는다(shall not)**. 따라서 원고 front matter가 `registration`에 **미기입이 아닌 값**을 담으면(REQ-WS-042에 따라 매니페스트 값이 억제됨) 매니페스트의 `registration` 값은 검증되지 **않는다(shall not)** — 유효한 NCT를 선언한 원고가 쓰이지도 않는 매니페스트의 낡은 placeholder 때문에 경고를 받는 것은 REQ-WS-053이 막으려는 것과 같은 결함 계열이다. 매니페스트 값은 원고의 값이 **미기입이어서 기본값으로 채택된 경우에만** 검증된다.
 
 **REQ-WS-039** (Ubiquitous)
 서지에 대해 매니페스트는 `.bib` 파일 경로를 **가리키기만 해야 하며(shall)**, 서지 항목 자체(제목·저자·DOI 등 필드를 가진 인라인 엔트리)를 담지 **않는다(shall not)**. `references.bib`는 계속 유일한 서지 정본이다.
@@ -257,8 +284,14 @@ front matter 메타데이터 키는 **이미 출하 중인 템플릿 키를 그�
 **REQ-WS-041** (State-driven)
 **While** 프로젝트 없음 상태인 동안, 메타데이터는 완전하게 동작**해야 한다(shall)** — 정본이 원고 front matter이므로 매니페스트 부재는 기능 상실을 뜻하지 **않는다(shall not)**. 이 상태에서는 프로젝트 기본값 계층만 비어 있다.
 
-**REQ-WS-042** (Ubiquitous)
-원고 front matter가 어떤 메타데이터 키를 선언하면, 앱은 그 키에 대한 매니페스트 값을 사용하지 **않아야 한다(shall not)**. 두 값이 다른 것은 충돌이 아니라 정상적인 문서 수준 선언**이므로(shall)** 앱은 이를 경고로 보고하지 **않는다(shall not)**.
+**REQ-WS-042** (Ubiquitous) — 억제는 값 기반이다
+원고 front matter의 어떤 메타데이터 키가 **미기입이 아닌 값**(REQ-WS-054에 해당하지 않는 값)을 가지면, 앱은 그 키에 대한 매니페스트 값을 사용하지 **않아야 한다(shall not)**. 두 값이 다른 것은 충돌이 아니라 정상적인 문서 수준 선언**이므로(shall)** 앱은 이를 경고로 보고하지 **않는다(shall not)**.
+
+**When** front matter의 해당 키가 미기입이면(키 부재 **또는** 미기입 값), 앱은 매니페스트의 대응 값을 유효값으로 채택**해야 한다(shall)** — 키의 존재만으로 매니페스트 기본값을 억제하지 **않는다(shall not)**.
+
+**이 조항이 값 기반인 이유**: 출하 템플릿이 모든 원고에 `author: `를 발행하므로(`manuscriptTemplates.ts:22`), 억제를 키 존재 기준으로 하면 **템플릿에서 생성한 어떤 원고에도 매니페스트 기본값이 적용될 수 없다** — 기본값 계층이 정상 생성 경로에서 죽는다. 값 기준으로 하면 저자를 프로젝트 수준에 한 번 쓰고 모든 원고가 상속하며, 다른 저자 목록이 필요한 원고만 스스로 선언해 그것이 이긴다. D-4(원고별 저자 목록)의 동기가 그대로 유지된다.
+
+**수용된 대가 (누락이 아니라 의도된 선택)**: 이 규칙 아래에서는 "의도적으로 저자 없음"을 표현할 수단이 없다 — 빈 값은 언제나 "아직 안 썼다"로 해석되어 매니페스트 기본값을 끌어온다. 프로젝트 기본값을 원고 단위로 비우려면 매니페스트에서 해당 키를 제거하거나 원고에 placeholder가 아닌 명시적 값을 쓰는 수밖에 없다. 이 한계는 인지된 상태로 수용한다.
 
 **REQ-WS-043** (Unwanted)
 메타데이터 읽기·쓰기는 원고의 front matter 영역 밖 바이트를 변경하지 **않아야 한다(shall not)**. front matter 갱신 시 본문은 바이트 단위로 동일하게 유지된다.

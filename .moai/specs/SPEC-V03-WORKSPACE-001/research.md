@@ -1,8 +1,8 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "코드베이스 조사 — v0.3 워크스페이스 골격 (SPEC-2~5 공용)"
-version: "0.1.0"
-status: draft
+version: "0.2.2"
+status: in-progress
 created: 2026-08-07
 updated: 2026-08-07
 author: manager-spec
@@ -156,9 +156,26 @@ $ grep -rn "compositionstart|compositionend|isComposing|composing" src electron 
 | `:70` (CONSORT) | `'registration: ClinicalTrials.gov NCT'` |
 | `:168` (PRISMA) | `'registration: PROSPERO CRD'` |
 
+### 4.2a `author: ` 는 빈 문자열이 아니라 `null`로 파싱된다 (M1 후속 실측)
+
+```
+$ node -e "const y=require('js-yaml'); ..."   # schema: JSON_SCHEMA
+"author: "          -> null           object
+"author:"           -> null           object
+"author:   "        -> null           object
+"author: \"\""      -> ""             string
+"author: []"        -> []             object
+"author: Kim"       -> "Kim"          string
+"author: [Kim, Lee]"-> ["Kim","Lee"]  object
+```
+
+모든 경우에 `hasOwnProperty('author')`는 `true`다. 따라서 **키 존재 여부로는 "값이 있는가"를 판정할 수 없다** — 출하 템플릿의 원고도 키는 항상 가지고 있다.
+
+이 사실이 SPEC-1의 메타데이터 계층 규칙 전체를 규정한다(REQ-WS-042 / 054). 미기입 판정을 빈 문자열로만 구현하면 출하 템플릿의 실제 형태(`null`)가 걸러지지 않는다. SPEC-2~5도 front matter 값을 읽을 때 이 구분을 전제해야 한다.
+
 세 가지 함의:
 
-1. **`author`는 단수형**이고 빈 값으로 출하된다. 키를 `authors`로 바꾸면 출하 템플릿과 어긋난다.
+1. **`author`는 단수형**이고 빈 값(`null`)으로 출하된다. 키를 `authors`로 바꾸면 출하 템플릿과 어긋난다.
 2. **`registration:`은 NCT 전용이 아니다.** PRISMA는 PROSPERO CRD를 쓴다. 무조건 NCT 검증을 걸면 체계적 문헌고찰 원고가 전부 경고를 받는다.
 3. **출하 값은 식별자가 빈 placeholder다.** `ClinicalTrials.gov NCT` / `PROSPERO CRD`를 형식 위반으로 처리하면 템플릿에서 새 원고를 만들 때마다 경고가 뜬다.
 

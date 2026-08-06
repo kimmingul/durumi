@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "구현 계획 — v0.3 워크스페이스 골격"
-version: "0.2.1"
+version: "0.2.2"
 status: in-progress
 created: 2026-08-06
 updated: 2026-08-07
@@ -57,6 +57,29 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 근거: 한 연구가 본문·보충자료·리뷰어 응답서 등 여러 원고를 갖고 저자 목록이 서로 다른 것이 흔하다. 또한 `shared/manuscriptTemplates.ts`가 **이미** `author:`(`:22`)와 `registration:`(`:70`, `:168`) front matter 키를 출하하고 있다 — 정본을 매니페스트에 두면 출하 중인 키가 이류 시민이 된다.
 
 이 반전으로 §B.3이 재작성되었고(REQ-WS-034~038, 041~042), front matter 키 스키마가 명시되었다(REQ-WS-050~053).
+
+#### D-4a 억제는 값 기반이다 — M1 구현이 드러낸 결함의 정정 (사용자 결정, 판 0.2.2)
+
+**결함**: 판 0.2.1의 REQ-WS-042는 front matter가 키를 **선언하면** 매니페스트 값을 억제했다. 그런데 `shared/manuscriptTemplates.ts:22`는 **모든** 템플릿에 `author: `를 발행한다. 두 규칙을 문자 그대로 합치면 **템플릿에서 만든 어떤 원고에도 매니페스트 기본값이 적용될 수 없다** — 기본값 계층이 정상 생성 경로에서 죽는다. 판 0.2.1의 AC는 키 존재(AC-WS-038)와 키 부재(AC-WS-038b)만 다뤄 이 경우를 잡지 못했다.
+
+**정정**: 억제는 **값 기반**이다. 미기입 값(REQ-WS-054)은 억제를 발동시키지 않고 매니페스트 기본값이 채택된다. 저자를 프로젝트 수준에 한 번 쓰면 모든 원고가 상속하고, 다른 저자 목록이 필요한 원고만 스스로 선언해 그것이 이긴다 — D-4의 원고별 저자 동기가 그대로 유지되면서 기본값 계층이 살아난다.
+
+**수용된 대가**: "의도적으로 저자 없음"을 표현할 수단이 사라진다. 빈 값은 언제나 "아직 안 씀"으로 해석된다. 인지된 상태로 수용한다(REQ-WS-042 본문에 기록).
+
+**구현자가 반드시 알아야 할 파싱 사실 (실측)**: 템플릿의 `'author: '`는 빈 문자열이 **아니라 `null`로 파싱된다**.
+
+```
+$ node -e "const y=require('js-yaml'); ..."
+"author: "        -> null   object
+"author:"         -> null   object
+"author:   "      -> null   object
+"author: \"\""    -> ""     string
+"author: []"      -> []     object
+```
+
+미기입 판정을 빈 문자열로만 구현하면 **출하 템플릿의 실제 형태가 걸러지지 않아** 결함이 그대로 재발한다. REQ-WS-054가 다섯 형태를 열거하고 AC-WS-068이 이를 고정한다.
+
+**파생 정정 — `registration`에도 같은 결함이 있었다**: CONSORT / PRISMA 템플릿은 `registration: ClinicalTrials.gov NCT` / `PROSPERO CRD`를 발행한다. 이 placeholder는 빈 값이 아니므로 REQ-WS-054만으로는 미기입이 아니고, 따라서 매니페스트 기본값을 억제한다 — `author`에서 방금 고친 것과 동일한 결함이다. REQ-WS-055가 이 placeholder를 `registration`의 미기입 형태로 규정해 해소한다. 이는 REQ-WS-053(placeholder에 경고를 내지 않음)과 같은 결론의 두 측면이다.
 
 ### D-5 비마크다운 파일 열기: SPEC-2 (오케스트레이터 결정)
 
