@@ -121,31 +121,108 @@ AC 판정 (M1 범위):
 
 M1 범위 밖(미착수): AC-WS-001~006, 010~037, 048~051, 056~060, 066 — M2~M8 소관.
 
+### M1a — REQ-WS-042 개정 반영 (판 0.2.2 인라인 정정)
+
+억제를 키 존재 기반에서 **값 기반**으로 전환했다. RED에서 9건 실패를 먼저 관측한 뒤 GREEN.
+
+| 관측된 RED | 증상 |
+|---|---|
+| AC-WS-038c | 출하 형태 `author: `를 포함한 다섯 미기입 형태 전부에서 `[]` 반환 (매니페스트 3명이 억제됨) |
+| AC-WS-069 | `MANUSCRIPT_TEMPLATES` 전 템플릿(imrad 포함)에서 프로젝트 저자 상속 실패 |
+| AC-WS-067c | CONSORT/PRISMA placeholder가 매니페스트 등록번호를 억제 |
+| AC-WS-039b · AC-WS-054 | 미기입 `acknowledgements:`가 매니페스트 기본값을 억제 |
+| AC-WS-068 | `isEmptyMetadataValue` 미존재 |
+
+| AC | ↔ REQ | 상태 | 근거 테스트 |
+|---|---|---|---|
+| AC-WS-068 | 054 | PASS | 여섯 미기입 형태 + 부정 3종 + 타입 어긋난 값 |
+| AC-WS-038c | 042, 054 | PASS | 다섯 미기입 형태 모두 매니페스트 3명 채택 |
+| AC-WS-069 | 042, 051, 054 | PASS | `MANUSCRIPT_TEMPLATES` 배열 순회 (템플릿 추가 시 자동 커버) |
+| AC-WS-039b | 036, 054 | PASS | 미기입 `acknowledgements:` → 매니페스트 |
+| AC-WS-067c | 055, 042 | PASS | placeholder 2종 + CONSORT/PRISMA 원문 |
+| AC-WS-062 `[N]` | 051 | PASS | 재태깅 반영 — 프로젝트 없음 상태로 한정 |
+| AC-WS-038 · 054 · 045 | 035, 034, 042 | PASS | "미기입이 아닌 값만 억제"로 갱신 |
+
+파싱 근거를 테스트로 고정했다: `author: ` / `author:` / `author:   ` 는 `null`, `author: ""` 는 `""`.
+이 단언이 미기입 판정을 `=== ''`로 되돌리는 회귀를 막는다.
+
+### M2 — 조정 흐름과 배너 UX
+
+산출물 (신규 5 / 수정 3):
+
+| 파일 | 상태 | 내용 |
+|---|---|---|
+| `shared/reconciliation.ts` | 신규 | 상태 기계(순수) — 상태·이벤트·effect·정책·알림 표면 |
+| `src/store/reconciliationStore.ts` | 신규 | zustand 배선 — 상태 보관, 정책 주입, effect 전달 |
+| `src/components/ReconciliationSurface.tsx` | 신규 | 알림의 유일한 렌더러 |
+| `src/components/ReconciliationSurface.css` | 신규 | 인라인 스트립 스타일 (오버레이 아님) |
+| `tests/shared/reconciliation.test.ts` | 신규 | 30 테스트 |
+| `tests/components/reconciliationBanner.test.tsx` | 신규 | 14 테스트 |
+| `src/App.tsx` | 수정 | StatusBar 위에 표면 마운트 |
+| `src/i18n/dict.ts` | 수정 | `reconcile.*` 8키 (en/ko 동수) |
+
+상태 기계:
+
+| 상태 | 의미 | 표면 |
+|---|---|---|
+| `idle` | 보류 없음 | 없음 |
+| `held-composition` | IME 조합 중이라 보류 | status (동작 없음) |
+| `held-notify` | 정책이 알림 선택 — 버퍼 불변 | banner (차이 보기 / 불러오기 / 닫기) |
+| `held-approval` | 주입 정책이 승인 대기 | banner |
+| `missing` | 디스크에서 사라짐 — 버퍼 보존 | status (해제 불가) |
+| `decode-error` | 디코드 실패로 조정 중단 | banner (닫기) |
+
+| AC | ↔ REQ | 상태 | 근거 테스트 |
+|---|---|---|---|
+| AC-WS-025 | 024 | PASS | `reconciliation.test.ts` — 깨끗하면 `apply-to-buffer` 1건, 알림 없음 |
+| AC-WS-029 | 027 | PASS | `reconciliation` + `reconciliationBanner` — 버퍼 불변 + 3동작 배너 |
+| AC-WS-030 | 028 | PASS | 해제·무시·rogue 정책 3경로 모두 apply effect 0 |
+| AC-WS-031 | 030 | PASS | 삭제 시 effect 0 + `missing` 표시, 해제 불가 |
+| AC-WS-032 | 031 | PASS | decode-error 시 조정 중단 + 원인 표시, 보류분 폐기 |
+| AC-WS-033 | 029 | PASS | 승인 대기 정책 주입 → `held-approval`, 버퍼 불변 |
+| AC-WS-023 | 023 | PASS (부분) | 보류 표면이 status·무버튼·포커스 불변. **조합 진입 트리거는 M5** |
+| AC-WS-060 | 049 | PASS | 5개 상태 전수 DOM 검사 + `NOTICE_PRESENTATIONS`에 modal 부재 + 소스 스캔 |
+
+M2 범위 밖: AC-WS-026·027·028(캐럿·실행취소 = M6), AC-WS-019~022·024(조합 유지형 e2e = M5).
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
-run_status: in-progress          # M1 완료, M2~M8 미착수
-milestone_complete: M1
-run_commit_sha: 5b55216
-ac_pass_count: 25                # M1 범위 AC (AC-WS-043은 부분 PASS)
+run_status: in-progress            # M1 + M1a + M2 완료, M3~M8 미착수
+milestones_complete: [M1, M1a, M2]
+run_commit_sha: pending-backfill
+ac_pass_count: 39                  # M1 25 + M1a 6(신규) + M2 8
 ac_fail_count: 0
-requirements_in_scope: 20        # REQ-WS-001,002,003,009,010,034~044,050~053
-requirements_pass: 20
+requirements_pass:
+  m1: 20                           # REQ-WS-001,002,003,009,010,034~044,050~053
+  m1a: 3                           # REQ-WS-042(개정), 054, 055
+  m2: 8                            # REQ-WS-023,024,027,028,029,030,031,049
 new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
-test: "vitest run → 183 files / 1914 tests passed"
-coverage_new_modules:            # v8, tests/shared 범위
-  yamlKeyRange.ts: "96.96% stmts / 91.83% branch"
-  projectFolders.ts: "100% stmts / 100% branch"
-  workspaceManifest.ts: "100% stmts / 97.29% branch"
-  manuscriptMetadata.ts: "100% stmts / 96.49% branch"
-  frontMatterFenced.ts: "100% stmts / 100% branch"
-coverage_tooling_note: >
-  저장소에 커버리지 프로바이더가 설치되어 있지 않다(@vitest/coverage-v8 부재).
-  위 수치는 임시 설치 후 측정하고 package.json / pnpm-lock.yaml을 원복해 얻었다.
-  C-5의 85% 목표를 CI에서 상시 검증하려면 의존성 추가 결정이 필요하다.
-total_run_phase_files: 7         # 신규 4 + 수정 3 (테스트 4 별도)
+test: "vitest run → 185 files / 1969 tests passed"
+coverage_command: "pnpm test:coverage"   # @vitest/coverage-v8 2.1.9 도입 (판 0.2.2)
+coverage_new_modules:
+  shared/reconciliation.ts: "100% stmts / 97.5% branch"
+  shared/manuscriptMetadata.ts: "100% stmts / 94.52% branch"
+  shared/workspaceManifest.ts: "100% stmts / 97.29% branch"
+  shared/projectFolders.ts: "100% stmts / 100% branch"
+  shared/yamlKeyRange.ts: "96.96% stmts / 91.83% branch"
+  shared/frontMatterFenced.ts: "100% stmts / 100% branch"
+  src/store/reconciliationStore.ts: "100% stmts / 100% branch"
+  src/components/ReconciliationSurface.tsx: "100% stmts / 100% branch"
+coverage_repo_wide: "68.14% stmts / 80.83% branch"
+coverage_gate_note: >
+  저장소 전체는 C-5의 85% 목표와 80% 커밋 최소선 아래다(statements 68.14%).
+  이는 이 SPEC 이전부터의 격차이며 M1/M2가 만든 것이 아니다 — shared/는 96.44%.
+  vitest.config.ts에 임계값을 걸지 않은 이유: 전역 게이트를 켜면 무관한 기존
+  코드 때문에 즉시 실패한다. 게이트 도입은 별도 결정 사항으로 남긴다.
+stubbed_producers:
+  - "ConfirmedChange 생산자(감시·확정 계층)는 M4 소관 — shared/reconciliation.ts는 계약만 선언"
+  - "composition-start/end 관찰자는 M5 소관 — 이벤트 타입만 정의"
+  - "apply-to-buffer effect의 최소 diff 실행자는 M6 소관 — effect만 방출"
+  - "open-diff effect의 표면은 SPEC-4 소관"
+total_run_phase_files: 18          # 신규 11 + 수정 7
 ```
 
 ## §E.4 Sync-phase Audit-Ready Signal

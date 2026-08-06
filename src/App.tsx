@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { QuickOpen } from './components/QuickOpen';
 import { ToastHost } from './components/Toast';
+import { ReconciliationSurface } from './components/ReconciliationSurface';
 // Dialogs are lazy: they only mount when the user opens them, and the dialog
 // bundle (Settings panel alone is ~50 KB, plus the AI usage dashboard, the
 // citation/reference dialogs, the keyboard-shortcuts cheat sheet, and the
@@ -181,6 +182,7 @@ export function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
       </div>
+      <ReconciliationSurface />
       <StatusBar />
       <ToastHost />
       <QuickOpen
