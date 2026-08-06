@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { dirname, join, relative, basename, extname } from 'node:path';
+import { REFERENCE_DIR_NAME } from '../shared/projectFolders';
 
 /**
  * Filesystem layer for the v0.1.7 reference library. Lives next to
@@ -15,7 +16,10 @@ import { dirname, join, relative, basename, extname } from 'node:path';
  *      regardless of bib registration. The "orphan files" view (Track C)
  *      uses this to find user-dropped files.
  */
-export const REFERENCE_DIR_NAME = 'reference';
+// SPEC-V03-WORKSPACE-001 REQ-WS-009: 값의 출처는 `shared/projectFolders.ts`다.
+// `shared/`는 composite 경계(tsconfig.web.json) 때문에 `electron/`을 import할 수
+// 없으므로(TS6307) 방향을 뒤집었다. 기존 import 경로는 이 재export로 유지된다.
+export { REFERENCE_DIR_NAME };
 
 export type ReferenceFileType = 'pdf' | 'md' | null;
 
