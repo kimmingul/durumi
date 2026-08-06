@@ -94,7 +94,7 @@ AC 판정 (M1 범위):
 | AC | ↔ REQ | 상태 | 근거 테스트 |
 |---|---|---|---|
 | AC-WS-007 | 003 | PASS | `workspaceManifest.test.ts` — setManifestKey 4건 (주석·미정의 키·순서·범위 밖 diff 0) |
-| AC-WS-008 | 010 | PASS | `projectFolders.test.ts` — 재정의된 경로를 사용한다 |
+| AC-WS-008 | 010 | PASS | `projectFolders.test.ts` — 상대 경로 해석. **절대 경로 결합은 M3에서 완결**(아래 M3 표) |
 | AC-WS-009 | 010 | PASS | `projectFolders.test.ts` — 루트 밖 재정의는 무시 |
 | AC-WS-052 | 002 | PASS | `workspaceManifest.test.ts` — 7개 키 파싱 + `future_key` 무경고 |
 | AC-WS-053 | 009 | PASS | `projectFolders.test.ts` — 기본 5종 + `REFERENCE_DIR_NAME` 문자열 동일(상수 직접 참조) |
@@ -112,7 +112,7 @@ AC 판정 (M1 범위):
 | AC-WS-063 | 052 | PASS | `manuscriptMetadata.test.ts` — PROSPERO에 NCT 검증 미적용 |
 | AC-WS-064 | 053 | PASS | `manuscriptMetadata.test.ts` — placeholder 2종 + 템플릿 원문 무경고 |
 | AC-WS-042 | 040 | PASS | `workspaceManifest.test.ts` — 매니페스트 경로 우선 |
-| AC-WS-043 | 040 | PASS (부분) | `workspaceManifest.test.ts` — 키 부재 시 null 반환(walk-up 위임). walk-up 결과 동일성은 M3 |
+| AC-WS-043 | 040 | PASS (부분) | `workspaceManifest.test.ts` — 키 부재 시 null 반환(walk-up 위임). **M3에서 walk-up 동일성까지 완결** |
 | AC-WS-055 | 039 | PASS | `workspaceManifest.test.ts` — 인라인 엔트리 매핑·시퀀스 모두 스키마 위반 |
 | AC-WS-044 | 041 | PASS | `manuscriptMetadata.test.ts` — 프로젝트 없이 3값 반환 |
 | AC-WS-045 | 042 | PASS | `manuscriptMetadata.test.ts` — 무음 대체 + 입력 불변 |
@@ -185,44 +185,84 @@ M1 범위 밖(미착수): AC-WS-001~006, 010~037, 048~051, 056~060, 066 — M2~M
 
 M2 범위 밖: AC-WS-026·027·028(캐럿·실행취소 = M6), AC-WS-019~022·024(조합 유지형 e2e = M5).
 
+### M3 — 프로젝트 discovery와 신뢰 경계
+
+산출물 (신규 2 / 수정 1):
+
+| 파일 | 상태 | 내용 |
+|---|---|---|
+| `electron/projectDiscovery.ts` | 신규 | walk-up 탐색(32단계), 최근접 선택, none/corrupt 진입, 규약 폴더 절대 경로 |
+| `electron/bibliography.ts` | 수정 | `findBibliographyForDocument` 추가 — 매니페스트 우선, 기존 walk-up으로 폴백 |
+| `tests/electron/projectDiscovery.test.ts` | 신규 | 27 테스트 |
+
+`findBibliographyFor`는 **한 글자도 바꾸지 않았다** — 새 함수가 그것에 위임한다.
+
+| AC | ↔ REQ | 상태 | 근거 테스트 |
+|---|---|---|---|
+| AC-WS-001 | 004 | PASS | `X/manuscript/a.md` → 루트 `X/`, manifestPath 확인 |
+| AC-WS-002 | 004 | PASS | 33단계 위 → `none`, 오류 없음. 31단계는 발견. `.bib` walk-up과 상한 일치 단언 |
+| AC-WS-003 | 005 | PASS | `X/`·`X/sub/` 양쪽 매니페스트 → `X/sub/`. 최근접이 손상이어도 상위로 강등 안 함 |
+| AC-WS-004 | 006 | PASS | 매니페스트 없음 → `{kind:'none'}`, throw 없음 |
+| AC-WS-005 | 007 | PASS | 유효하지 않은 YAML → `corrupt`+메시지. **읽기 전후 SHA-256 동일** |
+| AC-WS-006 | 008 | PASS | `name` 결여 → `corrupt`/`missing-name` (`none`이 아님) |
+| AC-WS-010 | 011 | PASS | 규약 폴더 부재 프로젝트 열기 전후 디렉터리 목록 동일 |
+| AC-WS-011 | 012 | PASS | 발견 후에도 루트 하위 미신뢰 경로가 `PathNotAllowedError`. 소스 스캔으로 승격 API 부재 확인 |
+| AC-WS-008 | 010 | **PASS (완결)** | `projectFolderPaths` → `join(root,'output','fig')` 절대 경로 |
+| AC-WS-009 | 010 | **PASS (완결)** | 루트 밖 재정의 → `join(root,'data')` 절대 경로 |
+| AC-WS-042 | 040 | PASS | 매니페스트 `refs/custom.bib`가 인접 `references.bib`를 이김 |
+| AC-WS-043 | 040 | **PASS (완결)** | 키 부재·프로젝트 부재 두 경우 모두 `findBibliographyFor` 결과와 `toEqual` |
+| AC-WS-055 | 039 | PASS (electron 절반) | 인라인 서지 항목 → 채택 안 하고 walk-up 폴백 |
+
+M1 미완 2건 해소: AC-WS-008(절대 경로 결합), AC-WS-043(walk-up 동일성). 둘 다 완결.
+
+M3 범위 밖: AC-WS-012~018·056~059·066(감시 = M4), AC-WS-058b(IPC 진입점 = M8).
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
-run_status: in-progress            # M1 + M1a + M2 완료, M3~M8 미착수
-milestones_complete: [M1, M1a, M2]
-run_commit_sha: bc383df
-ac_pass_count: 39                  # M1 25 + M1a 6(신규) + M2 8
+run_status: in-progress            # M1 + M1a + M2 + M3 완료, M4~M8 미착수
+milestones_complete: [M1, M1a, M2, M3]
+run_commit_sha: pending-backfill
+ac_pass_count: 50                  # M1 25 + M1a 6 + M2 8 + M3 11(신규) — 008/009/043은 M3에서 완결
 ac_fail_count: 0
+ac_partial_remaining: 1            # AC-WS-023 (조합 관찰자 = M5)
 requirements_pass:
   m1: 20                           # REQ-WS-001,002,003,009,010,034~044,050~053
   m1a: 3                           # REQ-WS-042(개정), 054, 055
   m2: 8                            # REQ-WS-023,024,027,028,029,030,031,049
+  m3: 7                            # REQ-WS-004,005,006,007,008,011,012
 new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
-test: "vitest run → 185 files / 1969 tests passed"
-coverage_command: "pnpm test:coverage"   # @vitest/coverage-v8 2.1.9 도입 (판 0.2.2)
+test: "vitest run → 186 files / 1996 tests passed"
+coverage_command: "pnpm test:coverage"
 coverage_new_modules:
+  electron/projectDiscovery.ts: "100% stmts / 100% branch"
+  electron/bibliography.ts: "96.82% stmts / 87.09% branch (미커버 32-33행은 M3 이전부터의 공백)"
   shared/reconciliation.ts: "100% stmts / 97.5% branch"
   shared/manuscriptMetadata.ts: "100% stmts / 94.52% branch"
-  shared/workspaceManifest.ts: "100% stmts / 97.29% branch"
+  shared/workspaceManifest.ts: "100% stmts / 97.36% branch"
   shared/projectFolders.ts: "100% stmts / 100% branch"
   shared/yamlKeyRange.ts: "96.96% stmts / 91.83% branch"
-  shared/frontMatterFenced.ts: "100% stmts / 100% branch"
   src/store/reconciliationStore.ts: "100% stmts / 100% branch"
   src/components/ReconciliationSurface.tsx: "100% stmts / 100% branch"
-coverage_repo_wide: "68.14% stmts / 80.83% branch"
+coverage_repo_wide: "68.22% stmts / 80.95% branch"
 coverage_gate_note: >
-  저장소 전체는 C-5의 85% 목표와 80% 커밋 최소선 아래다(statements 68.14%).
-  이는 이 SPEC 이전부터의 격차이며 M1/M2가 만든 것이 아니다 — shared/는 96.44%.
-  vitest.config.ts에 임계값을 걸지 않은 이유: 전역 게이트를 켜면 무관한 기존
-  코드 때문에 즉시 실패한다. 게이트 도입은 별도 결정 사항으로 남긴다.
+  저장소 전체는 C-5의 85% 목표와 80% 커밋 최소선 아래다. 이는 이 SPEC 이전부터의
+  격차이며 M1~M3가 만든 것이 아니다 — shared/는 96.51%. vitest.config.ts에
+  임계값을 걸지 않은 이유는 판 0.2.2 기록 참조.
+trust_boundary_note: >
+  D-6 유지 확인. projectDiscovery는 pathGuard 신뢰 승격 API를 호출하지 않으며
+  소스 스캔 회귀 테스트가 이를 고정한다. 다만 discovery는 조상 디렉터리의
+  durumi.project.yaml을 읽으므로, 렌더러가 직접 요청할 수 없는 경로를 main이
+  읽는다 — 신뢰 승격(REQ-WS-012이 다루는 축)이 아니라 읽기 범위 문제이며
+  SPEC이 다루지 않는다. 보고서 참조.
 stubbed_producers:
-  - "ConfirmedChange 생산자(감시·확정 계층)는 M4 소관 — shared/reconciliation.ts는 계약만 선언"
-  - "composition-start/end 관찰자는 M5 소관 — 이벤트 타입만 정의"
-  - "apply-to-buffer effect의 최소 diff 실행자는 M6 소관 — effect만 방출"
-  - "open-diff effect의 표면은 SPEC-4 소관"
-total_run_phase_files: 18          # 신규 11 + 수정 7
+  - "ConfirmedChange 생산자(감시·확정 계층)는 M4 소관"
+  - "composition-start/end 관찰자는 M5 소관"
+  - "apply-to-buffer effect의 최소 diff 실행자는 M6 소관"
+  - "discoverProjectFor / findBibliographyForDocument의 IPC 노출은 M8 소관 — 현재 호출부 없음"
+total_run_phase_files: 21          # 신규 13 + 수정 8
 ```
 
 ## §E.4 Sync-phase Audit-Ready Signal
