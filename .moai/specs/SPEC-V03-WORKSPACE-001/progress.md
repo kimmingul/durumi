@@ -100,7 +100,7 @@ M1 범위 밖(미착수): AC-WS-001~006, 010~037, 048~051, 056~060, 066 — M2~M
 ```yaml
 run_status: in-progress          # M1 완료, M2~M8 미착수
 milestone_complete: M1
-run_commit_sha: pending-backfill-m1
+run_commit_sha: 5b55216
 ac_pass_count: 25                # M1 범위 AC (AC-WS-043은 부분 PASS)
 ac_fail_count: 0
 requirements_in_scope: 20        # REQ-WS-001,002,003,009,010,034~044,050~053
