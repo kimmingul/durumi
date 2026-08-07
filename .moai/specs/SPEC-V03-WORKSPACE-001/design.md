@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "설계 — v0.3 워크스페이스 골격"
-version: "0.2.2"
+version: "0.2.3"
 status: in-progress
 created: 2026-08-07
 updated: 2026-08-07

@@ -51,15 +51,21 @@ const facts = (size: number, mtimeMs: number): FileFacts => ({ size, mtimeMs });
 
 let timers: FakeTimers;
 let disk: Map<string, FileFacts | null>;
+let content: Map<string, string>;
 let confirmed: ConfirmedFileEvent[];
 let rescans: string[];
 let statCalls: string[];
+let readCalls: string[];
 
 function build(opts: { maxPendingPaths?: number } = {}): ChangeConfirmer {
   return createChangeConfirmer({
     stat: async (p) => {
       statCalls.push(p);
       return disk.get(p) ?? null;
+    },
+    readContent: async (p) => {
+      readCalls.push(p);
+      return content.get(p) ?? null;
     },
     setTimer: timers.set,
     clearTimer: timers.clear,
@@ -80,9 +86,11 @@ async function flush(ms = DEFAULT_DEBOUNCE_MS): Promise<void> {
 beforeEach(() => {
   timers = new FakeTimers();
   disk = new Map();
+  content = new Map();
   confirmed = [];
   rescans = [];
   statCalls = [];
+  readCalls = [];
 });
 
 describe('열린 파일의 외부 변경 확정 — REQ-WS-013 / AC-WS-012', () => {
@@ -95,7 +103,7 @@ describe('열린 파일의 외부 변경 확정 — REQ-WS-013 / AC-WS-012', () 
     c.ingest({ type: 'change', path: A });
     await flush();
 
-    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(20, 2000) }]);
+    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(20, 2000), content: null }]);
   });
 
   it('위치·프로젝트 소속과 무관하게 동작한다', async () => {
@@ -135,6 +143,127 @@ describe('재검사가 진실이다 — REQ-WS-014 / AC-WS-013', () => {
   });
 });
 
+describe('2단계 확정 — REQ-WS-014 / AC-WS-013, AC-WS-013b', () => {
+  it('열린 파일은 내용이 같으면 확정하지 않는다 (AC-WS-013)', async () => {
+    // 내용 동일 재작성은 mtime을 바꾸므로 1단계는 통과한다. 2단계 내용 대조가
+    // 없으면 이 AC는 통과하지 않는다.
+    disk.set(A, facts(10, 1000));
+    content.set(A, 'same body\n');
+    const c = build();
+    c.trackOpen(A, facts(10, 1000), 'same body\n');
+
+    disk.set(A, facts(10, 2000)); // 크기 동일, mtime만 갱신
+    c.ingest({ type: 'change', path: A });
+    await flush();
+
+    expect(confirmed).toEqual([]);
+    expect(readCalls).toContain(A); // 2단계가 실제로 수행됐다
+  });
+
+  it('열린 파일의 내용이 다르면 확정하고 읽은 내용을 실어 보낸다', async () => {
+    disk.set(A, facts(10, 1000));
+    content.set(A, 'old body\n');
+    const c = build();
+    c.trackOpen(A, facts(10, 1000), 'old body\n');
+
+    disk.set(A, facts(12, 2000));
+    content.set(A, 'new body\n');
+    c.ingest({ type: 'change', path: A });
+    await flush();
+
+    expect(confirmed).toEqual([
+      { path: A, kind: 'changed', facts: facts(12, 2000), content: 'new body\n' },
+    ]);
+  });
+
+  it('열려 있지 않은 경로는 1단계만 적용되고 내용을 읽지 않는다 (AC-WS-013b)', async () => {
+    // 비용 경계: 2단계를 열려 있지 않은 파일까지 확장하면 REQ-WS-046이
+    // data/ 배제로 피한 대용량 읽기가 규약 폴더 경로로 되돌아온다.
+    const unopened = '/w/manuscript/other.md';
+    disk.set(unopened, facts(10, 1000));
+    content.set(unopened, 'irrelevant');
+    const c = build();
+    c.track(unopened, facts(10, 1000));
+
+    disk.set(unopened, facts(99, 9900));
+    c.ingest({ type: 'change', path: unopened });
+    await flush();
+
+    expect(confirmed).toEqual([
+      { path: unopened, kind: 'changed', facts: facts(99, 9900), content: null },
+    ]);
+    expect(readCalls).toEqual([]); // 읽기 호출 0회
+  });
+
+  it('1단계에서 걸러지면 2단계를 시도하지 않는다', async () => {
+    disk.set(A, facts(10, 1000));
+    content.set(A, 'body');
+    const c = build();
+    c.trackOpen(A, facts(10, 1000), 'body');
+
+    c.ingest({ type: 'change', path: A }); // 사실 변화 없음
+    await flush();
+
+    expect(confirmed).toEqual([]);
+    expect(readCalls).toEqual([]);
+  });
+
+  it('버퍼가 새로 로드·저장되면 대조 기준 내용이 갱신된다', async () => {
+    disk.set(A, facts(10, 1000));
+    content.set(A, 'v1');
+    const c = build();
+    c.trackOpen(A, facts(10, 1000), 'v1');
+
+    // 사용자가 저장해 버퍼와 디스크가 v2로 동기화됐다.
+    c.setOpenContent(A, 'v2');
+    disk.set(A, facts(11, 2000));
+    content.set(A, 'v2');
+    c.ingest({ type: 'change', path: A });
+    await flush();
+    expect(confirmed).toEqual([]);
+
+    // 이후 외부에서 v3로 바뀌면 확정된다.
+    disk.set(A, facts(12, 3000));
+    content.set(A, 'v3');
+    c.ingest({ type: 'change', path: A });
+    await flush();
+    expect(confirmed).toEqual([
+      { path: A, kind: 'changed', facts: facts(12, 3000), content: 'v3' },
+    ]);
+  });
+
+  it('내용을 읽을 수 없으면 억제하지 않고 확정한다', async () => {
+    // 비교가 불가능한 상태를 "같다"로 해석하면 진짜 변경을 삼킨다.
+    disk.set(A, facts(10, 1000));
+    content.set(A, 'body');
+    const c = build();
+    c.trackOpen(A, facts(10, 1000), 'body');
+
+    disk.set(A, facts(20, 2000));
+    content.delete(A); // 읽기 실패
+    c.ingest({ type: 'change', path: A });
+    await flush();
+
+    expect(confirmed).toEqual([
+      { path: A, kind: 'changed', facts: facts(20, 2000), content: null },
+    ]);
+  });
+
+  it('삭제는 2단계를 거치지 않는다', async () => {
+    disk.set(A, facts(10, 1000));
+    content.set(A, 'body');
+    const c = build();
+    c.trackOpen(A, facts(10, 1000), 'body');
+
+    disk.delete(A);
+    c.ingest({ type: 'rename', path: A });
+    await flush();
+
+    expect(confirmed).toEqual([{ path: A, kind: 'deleted', facts: null, content: null }]);
+    expect(readCalls).toEqual([]);
+  });
+});
+
 describe('자기 저장 에코 억제 — REQ-WS-015 / AC-WS-014', () => {
   it('앱 자신의 저장으로 생긴 이벤트는 외부 변경으로 확정하지 않는다', async () => {
     disk.set(A, facts(10, 1000));
@@ -164,7 +293,7 @@ describe('자기 저장 에코 억제 — REQ-WS-015 / AC-WS-014', () => {
     disk.set(A, facts(40, 4000));
     c.ingest({ type: 'change', path: A });
     await flush();
-    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(40, 4000) }]);
+    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(40, 4000), content: null }]);
   });
 
   it('저장 예상값과 다른 상태면 억제하지 않는다', async () => {
@@ -178,7 +307,7 @@ describe('자기 저장 에코 억제 — REQ-WS-015 / AC-WS-014', () => {
     c.ingest({ type: 'change', path: A });
     await flush();
 
-    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(55, 5500) }]);
+    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(55, 5500), content: null }]);
   });
 });
 
@@ -220,7 +349,7 @@ describe('경로별 합류 — REQ-WS-016 / AC-WS-059', () => {
 
     await flush();
 
-    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(13, 1300) }]);
+    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(13, 1300), content: null }]);
   });
 
   it('쓰기 진행 중 중간 상태를 확정하지 않는다 (AC-WS-015)', async () => {
@@ -238,7 +367,7 @@ describe('경로별 합류 — REQ-WS-016 / AC-WS-059', () => {
 
     await flush();
 
-    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(300, 1900) }]);
+    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(300, 1900), content: null }]);
   });
 });
 
@@ -270,7 +399,7 @@ describe('플랫폼 차이 흡수 — REQ-WS-017 / AC-WS-016a, AC-WS-016b', () =
   }
 
   it('macOS 형태가 정규화된 확정 이벤트를 산출한다', async () => {
-    expect(await macOsShape()).toEqual([{ path: A, kind: 'changed', facts: facts(42, 4200) }]);
+    expect(await macOsShape()).toEqual([{ path: A, kind: 'changed', facts: facts(42, 4200), content: null }]);
   });
 
   it('Windows 형태가 동일한 확정 이벤트를 산출한다', async () => {
@@ -296,7 +425,7 @@ describe('삭제 확정 — REQ-WS-030 연계', () => {
     c.ingest({ type: 'rename', path: A });
     await flush();
 
-    expect(confirmed).toEqual([{ path: A, kind: 'deleted', facts: null }]);
+    expect(confirmed).toEqual([{ path: A, kind: 'deleted', facts: null, content: null }]);
   });
 
   it('이미 없던 파일의 이벤트는 확정하지 않는다', async () => {
@@ -316,7 +445,7 @@ describe('감시 폴더의 새 파일 — REQ-WS-045 / AC-WS-056', () => {
     c.ingest({ type: 'rename', path: created });
     await flush();
 
-    expect(confirmed).toEqual([{ path: created, kind: 'changed', facts: facts(5, 500) }]);
+    expect(confirmed).toEqual([{ path: created, kind: 'changed', facts: facts(5, 500), content: null }]);
   });
 });
 
@@ -331,7 +460,7 @@ describe('유실 복구 재검사 — REQ-WS-018 / AC-WS-017', () => {
     expect(confirmed).toEqual([]);
 
     await c.rescan();
-    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(77, 7700) }]);
+    expect(confirmed).toEqual([{ path: A, kind: 'changed', facts: facts(77, 7700), content: null }]);
   });
 
   it('재검사는 변하지 않은 파일을 확정하지 않는다', async () => {

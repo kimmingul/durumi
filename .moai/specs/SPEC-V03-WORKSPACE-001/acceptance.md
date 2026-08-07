@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "수용 기준 — v0.3 워크스페이스 골격"
-version: "0.2.2"
+version: "0.2.3"
 status: in-progress
 created: 2026-08-06
 updated: 2026-08-07
@@ -22,7 +22,7 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 
 - 각 AC 제목 끝의 `↔ REQ-WS-0NN` 은 그 AC가 검증하는 요구사항이다. **제약(C-N)만 추적하는 AC**는 `↔ C-N` 으로 표기한다 — 이는 의도적이며, 품질 게이트·릴리스 게이트·문서 범위 공백처럼 요구사항이 아니라 제약에서 나오는 항목이 여기 해당한다. 해당 AC는 정확히 여섯 개다: **AC-WS-024, 037, 048, 049, 050, 051**.
 - `[P]` 프로젝트 있음 / `[N]` 프로젝트 없음 / `[P+N]` 양쪽 모두. C-1이 정의한 범위를 따른다. **위 여섯 개의 제약 추적 AC는 상태 태그를 의도적으로 생략한다** — 품질 게이트와 릴리스 게이트는 프로젝트 유무와 무관하게 저장소 전체에 적용되므로 `[P]`/`[N]` 구분이 의미를 갖지 않는다.
-- 총 **77개 항목**. 식별자는 AC-WS-001 ~ 069이며, 016 / 038 / 039 / 057 / 058 / 067 여섯 개가 분할되어(016a·016b, 038·038b·038c, 039·039b, 057·057b, 058·058b, 067·067b·067c) 항목 수가 최대 번호보다 8 많다.
+- 총 **81개 항목**. 식별자는 AC-WS-001 ~ 070이며, 013 / 016 / 023 / 031 / 038 / 039 / 057 / 058 / 067 아홉 개가 분할되어(013·013b, 016a·016b, **023a·023b**, 031·031b, 038·038b·038c, 039·039b, 057·057b, 058·058b, 067·067b·067c) 항목 수가 최대 번호보다 11 많다. **AC-WS-023은 단독 식별자로 존재하지 않는다** — 023a/023b로 완전 대체되었다(마일스톤 밀폐성 확보).
 
 ---
 
@@ -105,10 +105,17 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **When** 외부 프로세스가 그 파일의 내용을 바꿔 쓴다
 - **Then** 앱이 변경 확정 이벤트를 산출한다
 
-### AC-WS-013 `[P+N]` 내용이 같으면 확정하지 않는다 ↔ REQ-WS-014
-- **Given** 파일이 열려 있을 때
-- **When** 외부 프로세스가 동일한 내용으로 파일을 덮어써 감시 이벤트만 발생시킨다
-- **Then** 변경 확정 이벤트가 산출되지 않고 버퍼가 변경되지 않는다
+### AC-WS-013 `[P+N]` 열린 파일은 내용이 같으면 확정하지 않는다 ↔ REQ-WS-014 (2단계)
+- **Given** 파일이 **열려 있을** 때
+- **When** 외부 프로세스가 동일한 내용으로 파일을 덮어쓴다 (수정 시각이 갱신되어 1단계는 통과한다)
+- **Then** 2단계 내용 대조에서 동일 판정이 나 변경 확정 이벤트가 산출되지 않고 버퍼가 변경되지 않는다
+- **1단계만으로는 이 AC가 통과하지 않는다**: 내용 동일 재작성도 mtime을 바꾸므로 크기+수정시각 대조만으로는 확정된다. 이 AC는 2단계 내용 대조의 존재를 강제하는 검사다
+
+### AC-WS-013b `[P]` 열려 있지 않은 경로는 1단계만 적용된다 ↔ REQ-WS-014
+- **Given** 규약 폴더 안에 있지만 **열려 있지 않은** 파일
+- **When** 외부 프로세스가 그 파일을 변경한다
+- **Then** 1단계(크기+수정시각)만으로 폴더 수준 변경 신호가 산출되고, 그 파일의 내용을 읽는 호출이 발생하지 **않는다** (읽기 함수 스텁에 대한 호출 횟수 단언)
+- **비용 경계 근거**: 2단계를 열려 있지 않은 파일까지 확장하면 REQ-WS-046이 `data/` 감시를 배제해 피한 대용량 읽기 비용이 규약 폴더 경로로 되돌아온다. 이 AC가 그 경계를 고정한다
 
 ### AC-WS-014 `[P+N]` 자기 저장이 외부 변경으로 오인되지 않는다 ↔ REQ-WS-015
 - **Given** 파일이 열려 있고 편집되어 있을 때
@@ -214,10 +221,17 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **Then** (a) `endComposition` 호출 **직전**에 `observeCompositionEnd(h)`가 **0**을 반환하고 (즉 `startComposition`과 명시적 `endComposition` 사이에 `compositionend`가 발생하지 않았다), (b) 커밋된 텍스트가 마지막 `updateComposition`에 전달한 문자열과 **바이트 단위로 일치**한다
 - **단언 범위 제한 (의도적)**: CDP `imeSetComposition`의 교체 semantics는 실제 macOS 한글 IME의 `compositionupdate` 시퀀스와 1:1이 아니다(`e2e/_helpers.ts:246-256` 주석). 따라서 이 AC는 프리미티브로 **재현 가능한 두 가지**(조합 경계 유지, 커밋 텍스트 일치)만 단언한다. OS 수준의 "음절 소실·중복 없음"은 AC-WS-024가 담당한다
 
-### AC-WS-023 `[P+N]` 보류 상태가 비침습적으로 표시된다 ↔ REQ-WS-023
-- **Given** 조합 중 외부 변경이 보류된 상태
+### AC-WS-023a `[P+N]` 보류 상태의 표면이 비침습적이다 ↔ REQ-WS-023 — **M2에서 종료 가능**
+- **Given** 보류 상태를 **직접 설정**한 조정 계층 (조합 관찰자를 경유하지 않고 상태를 주입)
 - **When** UI를 관측한다
-- **Then** 상태 표시가 존재하고, 에디터 포커스가 이동하지 않았다
+- **Then** 상태 표시가 존재하고, 모달이 아니며, `document.activeElement`가 표시 전후로 동일하다
+- **밀폐성**: 이 AC는 상태와 그 표면만 검증하므로 M2 안에서 완결된다. 조합 관찰자(M5)에 의존하지 않는다
+
+### AC-WS-023b `[P+N]` 실제 조합이 보류 상태로 진입시킨다 ↔ REQ-WS-023, REQ-WS-020 — **M5에서 종료**
+- **Given** `startComposition`으로 조합이 열린 채 유지되는 상태
+- **When** 외부 변경이 확정된다
+- **Then** 조정 계층이 보류 상태로 진입하고, AC-WS-023a가 검증한 표면이 나타난다
+- **분리 이유**: 판 0.2.2까지 이 두 단언이 한 AC에 묶여 있어 M2에서 상태·표면을 완성하고도 진입 경로가 M5 산출물이라는 이유로 AC 전체가 종료되지 못했다(부분 PASS). 밀폐 가능한 부분과 M5 의존 부분을 분리해 각 마일스톤이 자기 AC를 닫을 수 있게 한다
 
 ### AC-WS-060 `[P+N]` 조정 알림이 모달을 사용하지 않는다 ↔ REQ-WS-049
 - **Given** 조정 알림(보류 표시, 외부 변경 배너, 사라진 파일 표시)이 표시된 상태
@@ -269,6 +283,13 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **Given** 파일이 열려 있을 때
 - **When** 외부에서 그 파일이 삭제된다
 - **Then** 버퍼 내용이 유지되고 "디스크에서 사라짐" 상태가 표시되며 문서가 자동으로 닫히지 않는다
+
+### AC-WS-031b `[P+N]` 사라짐 표시는 해제할 수 없다 ↔ REQ-WS-030
+- **Given** "디스크에서 사라짐" 상태가 표시된 문서
+- **When** 해제(dismiss) 동작을 호출한다
+- **Then** 표시가 그대로 남는다 (해제는 무동작이다)
+- **And** 같은 해제 동작을 REQ-WS-027의 외부 변경 배너에 호출하면 그 배너는 **사라진다** — 두 표면이 의도적으로 다르게 동작함을 한 검사에서 대조한다
+- **근거**: 사라짐은 알림이 아니라 디스크의 현재 사실이다. 해제 가능하면 존재하지 않는 파일이 존재하는 것처럼 보인다
 
 ### AC-WS-032 `[P+N]` 디코드 불가 내용은 버퍼를 덮어쓰지 않는다 ↔ REQ-WS-031
 - **Given** 파일이 열려 있을 때
@@ -409,6 +430,16 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **Then** **모든 템플릿에서** 저자 3명이 반환된다
 - **회귀 근거 (이 AC의 존재 이유)**: 억제가 키 존재 기반이면 모든 템플릿이 `author: `를 발행하므로 이 AC는 전 템플릿에서 실패한다. 이것이 M1 구현에서 드러난 결함의 정확한 재현이며, 이 AC가 그 결함의 무성 재발을 막는 게이트다
 - **템플릿 목록 고정 주의**: 특정 템플릿 하나가 아니라 `MANUSCRIPT_TEMPLATES` 배열을 순회해 단언한다 — 향후 템플릿이 추가되어도 자동으로 커버되도록
+- **가이드라인 계열 ↔ `id` 대응 (grep 오판 방지)**: 계열 이름이 `id`에 그대로 나타나지 않으므로 `id`를 문자열로 찾으면 CARE·STROBE가 없는 것처럼 보인다. 실제 배열은 6개다:
+
+  | 계열 | `id` | `label` |
+  |---|---|---|
+  | IMRaD | `imrad` | `IMRaD article` |
+  | CONSORT | `consort` | `CONSORT (RCT)` |
+  | PRISMA | `prisma` | `PRISMA (systematic review)` |
+  | **CARE** | `case-report` | `Case report (CARE)` |
+  | **STROBE** | `cohort` | `Cohort / observational (STROBE)` |
+  | **STROBE** | `cross-sectional` | `Cross-sectional / survey (STROBE)` |
 
 ### AC-WS-063 `[P+N]` PROSPERO 등록값에 NCT 검증이 적용되지 않는다 ↔ REQ-WS-052
 - **Given** front matter `registration`이 `PROSPERO CRD42024123456`일 때
@@ -430,6 +461,14 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **Given** 매니페스트에 `bibliography` 키가 없거나 프로젝트가 없을 때
 - **When** 서지 경로를 해석한다
 - **Then** 기존 순서(`references.bib` → `references.bibtex` → `bibliography.bib`)의 walk-up 결과와 동일하다
+
+### AC-WS-070 `[P]` 읽을 수 없는 bibliography 경로는 표시를 동반해 폴백한다 ↔ REQ-WS-056
+- **Given** 매니페스트가 `bibliography: refs/typo.bib`를 선언하나 그 경로에 파일이 없고, 문서 옆에는 `references.bib`가 있을 때
+- **When** 서지 경로를 해석한다
+- **Then** walk-up 결과인 `references.bib`가 채택된다
+- **And** 폴백이 일어났다는 사실과 읽을 수 없었던 선언 경로(`refs/typo.bib`)가 함께 보고된다
+- **And** 권한 거부와 디렉터리를 가리키는 경우에도 같은 결과가 나온다
+- **조용한 폴백은 실패다**: 보고 없이 폴백하면 매니페스트 오타가 다른 서지 파일로 조용히 해결되어 사용자가 잘못된 참고문헌을 쓰고도 알 수 없다. 이 AC의 두 번째 단언이 그것을 막는다
 
 ### AC-WS-055 `[P]` 매니페스트에 인라인 서지 항목을 허용하지 않는다 ↔ REQ-WS-039
 - **Given** 매니페스트 `bibliography` 값이 문자열 경로가 아니라 서지 엔트리 구조(예: `title`/`author`/`doi` 필드를 가진 매핑 또는 그런 매핑의 시퀀스)일 때
