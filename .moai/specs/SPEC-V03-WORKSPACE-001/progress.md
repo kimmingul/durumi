@@ -408,15 +408,70 @@ AC-WS-019/022의 관측 수단 자체가 무의미하다.
 조정이 비집고 들어간다. 마이크로태스크는 확정 `input`보다 먼저 실행되므로
 쓸 수 없다.
 
+### M6 — 최소 diff 적용과 캐럿 보존
+
+산출물 (신규 4 / 수정 1):
+
+| 파일 | 상태 | 내용 |
+|---|---|---|
+| `src/editor/minimalDiff.ts` | 신규 | 최소 차이 산출 (순수) — 줄 LCS + 문자 축약 + 서로게이트 안전 |
+| `src/editor/applyExternalChange.ts` | 신규 | 실행자 — 트랜잭션 구성·실행 취소 주석·스토어 배선 |
+| `tests/editor/minimalDiff.test.ts` | 신규 | 16 테스트 |
+| `tests/editor/applyExternalChange.test.ts` | 신규 | 19 테스트 |
+| `src/editor/MarkdownEditor.tsx` | 수정 | 실행자를 스토어에 배선 (M2의 미연결 effect 해소) |
+
+| AC | ↔ REQ | 상태 | 근거 테스트 |
+|---|---|---|---|
+| AC-WS-026 | 026 | PASS | 80번째 줄 캐럿이 5번째 줄 2줄 삽입 후 82번째 줄에서 같은 텍스트 지점 |
+| AC-WS-027 | 026 | PASS | 교체 영역 내부 캐럿 → 경계, 문서 범위 밖으로 나가지 않음 |
+| AC-WS-028 | 025 | PASS | 타이핑 → 조정 → undo 1회는 조정만, 2회가 사용자 편집 |
+
+**네 가지 보존 속성 — 각각의 증거**
+
+| 속성 | 방식 | 증거 |
+|---|---|---|
+| 캐럿 | `selection`을 지정하지 않고 CodeMirror 매핑에 맡김 | 삽입 지점 뒤 캐럿이 같은 텍스트 유지, 앞 캐럿은 오프셋 불변, 다지점 변경 사이의 캐럿도 보존 |
+| 선택 | 동일 | 선택 범위가 같은 텍스트를 계속 감쌈. 다중 선택도 각각 매핑 |
+| 스크롤 | `scrollIntoView`·`effects`·`selection` 모두 미지정 | 명세에 세 필드가 모두 없음을 단언. jsdom에 레이아웃이 없어 구조적 단언으로 고정 |
+| 실행 취소 | `isolateHistory('full')` | `undoDepth`가 정확히 1 증가, undo 1회는 조정만 되돌림, 타이핑 직후 조정이 병합되지 않음 |
+
+**실행 취소 결정**: `isolateHistory('full')`. 세 선택지 중 (1) `addToHistory:false`는
+조정을 되돌릴 수 없게 만들고 — 문서가 바뀌었는데 이전 상태로 갈 수단이 없다 —
+(2) 기본값은 history의 newGroupDelay 창 안에서 직전 타이핑과 **병합**될 수 있어
+Cmd+Z 한 번이 사용자 작업까지 날린다. (3)은 이력에 남기되 앞뒤 경계를 세워
+어느 항목과도 병합되지 않는다. 되돌린 결과가 디스크와 달라지는 것은 정의된
+상태이며(미저장 편집) REQ-WS-027의 배너가 이미 담당한다.
+
+**접두·접미 축약으로 충분했는가 — 측정 결과 아니다**
+
+먼저 축약만 구현해 측정했다. RED 관측:
+
+```
+× 멀리 떨어진 두 지점 사이의 텍스트를 건드리지 않는다
+  → expected 1 to be greater than or equal to 2
+× 덮는 총 범위가 전체 교체보다 훨씬 작다
+  → expected 397 to be less than 39.7
+```
+
+양 끝 6자만 바뀐 400자 문서에서 **397자짜리 단일 교체**가 나왔다 — 가운데
+변하지 않은 50줄이 통째로 범위에 들어간다. 정확성 문제가 아니라 REQ-WS-026
+위반이다: 그 안의 캐럿이 경계로 밀려난다.
+
+단일 지점 변경(AC-WS-026의 실제 시나리오)은 축약만으로 **이미 정확했다** —
+"줄 삽입은 삽입 지점만 건드린다"가 확장 전에 통과했다. 즉 확장은 다지점
+변경만을 위한 것이며, 줄 단위 LCS를 얹어 해소했다. 비용은 공통 접두·접미
+**줄**을 먼저 걷어내 차이 블록으로 좁히고, `MAX_DIFF_CELLS`(1e6)를 넘으면
+단일 교체로 물러선다 — 전체 재작성에서는 캐럿 보존이 애초에 의미가 없다.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
-run_status: in-progress            # M1~M5 구현, M6~M8 미착수
-milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a]
-milestones_partial: [M5]           # jsdom 계층 완료, e2e 계층 실행 불가
-run_commit_sha: 1f547ec
-ac_pass_count: 67                  # M1 25 + M1a 6 + M2 8 + M3 11 + M4 14 + M4a 2 + M5 1
-ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재로 실행 시 공허 통과, skip 유지
+run_status: in-progress            # M1~M6 구현, M7~M8 미착수
+milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a, M6]
+milestones_partial: [M5]           # 프리미티브 CI 검증 완료, AC-WS-019~022는 M8 차단
+run_commit_sha: pending-backfill
+ac_pass_count: 70                  # ... + M6 3 (AC-WS-026, 027, 028)
+ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재로 실행 시 공허 통과
 ac_fail_count: 0
 requirements_pass:
   m1: 20
@@ -424,35 +479,43 @@ requirements_pass:
   m2: 8
   m3: 7
   m4: 10
-  m4a: 1                           # REQ-WS-014 (2단계 재정의)
-  m5: 1                            # REQ-WS-020 (게이트, jsdom 검증) — 021/022/023은 e2e 미검증
+  m4a: 1
+  m5: 1
+  m6: 2                            # REQ-WS-025, 026
 new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
-test: "vitest run → 190 files / 2068 tests passed"
-e2e: "CI(PR #10, macOS) 206 passed / 0 failed / 9 skipped — 프리미티브 self-test 8건 전부 통과. 로컬은 실행 불가(Electron 서명 revoked)"
-e2e_history:
-  - "29aa561: 202 passed / 2 failed(P3,P5) / 9 skipped — self-test가 커밋 경로 결함 검출"
-  - "d81776d: 206 passed / 0 failed / 9 skipped — 수정 확인"
+test: "vitest run → 192 files / 2103 tests passed"
+e2e: "CI(PR #10) 206 passed / 0 failed / 9 skipped"
 coverage_command: "pnpm test:coverage"
 coverage_gate: "statements/lines 85%, perFile → exit 0"
 coverage_new_modules:
+  src/editor/minimalDiff.ts: "100% stmts / 90.9% branch"
+  src/editor/applyExternalChange.ts: "100% stmts / 100% branch"
   src/editor/compositionGate.ts: "100% stmts / 100% branch"
   electron/changeConfirmation.ts: "96.55% stmts / 100% branch"
   electron/watchScope.ts: "100% stmts / 96% branch"
   electron/projectDiscovery.ts: "100% stmts / 100% branch"
   shared/reconciliation.ts: "100% stmts / 97.5% branch"
 legacy_debt_files: 97
+undo_decision: >
+  isolateHistory('full'). addToHistory:false는 조정을 되돌릴 수 없게 만들고,
+  기본값은 직전 타이핑과 병합돼 Cmd+Z 한 번이 사용자 작업까지 날린다.
+  full은 이력에 남기되 어느 항목과도 병합되지 않는다.
+diff_algorithm_evidence: >
+  접두·접미 축약만으로 측정: 양 끝 6자가 바뀐 400자 문서에서 397자 단일 교체
+  (10배 과다). 다지점 변경에서 REQ-WS-026 위반. 단일 지점 변경은 축약만으로
+  이미 정확했으므로 줄 LCS 확장은 다지점 전용. MAX_DIFF_CELLS 초과 시 단일 교체.
 blockers:
-  - "AC-WS-019~022: external-change IPC 부재(M8). 실행하면 공허 통과하므로 test.skip 유지 — 환경 문제가 아니라 의존 문제다"
+  - "AC-WS-019~022: external-change IPC 부재(M8). 실행하면 공허 통과하므로 test.skip 유지"
 newly_required_not_yet_met:
-  - "AC-WS-070 / REQ-WS-056 (판 0.2.3 신설, D-7 #5 → M1 배정): 읽을 수 없는 bibliography 경로 폴백 시 보고 의무. 현재 findBibliographyForDocument는 조용히 폴백한다 — 미충족"
-  - "AC-WS-031b (판 0.2.3 신설, D-7 #6 → M2 배정): 사라짐 해제 불가 + 배너 해제 가능 대조. 구현은 이미 만족하나 대조 검사가 없다 — 미검증"
+  - "AC-WS-070 / REQ-WS-056 (M1 배정): 읽을 수 없는 bibliography 폴백 시 보고 의무 — 현재 조용히 폴백, 미충족"
+  - "AC-WS-031b (M2 배정): 사라짐 해제 불가 + 배너 해제 가능 대조 — 구현은 만족하나 대조 검사 없음"
 stubbed_producers:
-  - "apply-to-buffer effect의 최소 diff 실행자는 M6 소관"
   - "IPC·메뉴 진입점(REQ-WS-047a / AC-WS-058b)은 M8 소관"
-  - "ConfirmedFileEvent → 렌더러 조정 계층 전달은 M8 소관"
-total_run_phase_files: 34
+  - "main→렌더러 확정 이벤트 전달은 M8 소관 — 실행자는 렌더러 안쪽까지 연결됨"
+  - "open-diff effect의 표면은 SPEC-4 소관 — 실행자가 의도적으로 무시한다"
+total_run_phase_files: 39
 ```
 
 ## §E.4 Sync-phase Audit-Ready Signal
