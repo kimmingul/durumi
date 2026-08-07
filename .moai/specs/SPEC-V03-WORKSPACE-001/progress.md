@@ -469,7 +469,7 @@ Cmd+Z 한 번이 사용자 작업까지 날린다. (3)은 이력에 남기되 �
 run_status: in-progress            # M1~M6 구현, M7~M8 미착수
 milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a, M6]
 milestones_partial: [M5]           # 프리미티브 CI 검증 완료, AC-WS-019~022는 M8 차단
-run_commit_sha: pending-backfill
+run_commit_sha: 32f6a8b
 ac_pass_count: 70                  # ... + M6 3 (AC-WS-026, 027, 028)
 ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재로 실행 시 공허 통과
 ac_fail_count: 0
