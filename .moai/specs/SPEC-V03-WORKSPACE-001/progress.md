@@ -292,7 +292,7 @@ M4 범위 밖: AC-WS-058b(REQ-WS-047a — IPC·메뉴 진입점 = M8).
 ```yaml
 run_status: in-progress            # M1 + M1a + M2 + M3 + M3a + M4 완료, M5~M8 미착수
 milestones_complete: [M1, M1a, M2, M3, M3a, M4]
-run_commit_sha: pending-backfill
+run_commit_sha: b2c5efe
 ac_pass_count: 64                  # M1 25 + M1a 6 + M2 8 + M3 11 + M4 14
 ac_fail_count: 0
 ac_partial_remaining: 1            # AC-WS-023 (조합 관찰자 = M5)
