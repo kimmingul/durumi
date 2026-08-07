@@ -14,7 +14,8 @@
  * 규칙: 이 목록에 **추가하지 말 것**. 항목을 지우는 방향으로만 움직인다.
  * 새 코드가 85%를 못 맞추면 목록을 늘리는 게 아니라 테스트를 쓴다.
  *
- * 생성 시점: 판 0.2.2 (M3 완료 직후), 98개 파일.
+ * 생성 시점: 판 0.2.2 (M3 완료 직후) 98개.
+ * M4에서 electron/fs.ts가 93.5%에 도달해 목록을 떠났다 — 현재 97개.
  */
 export const LEGACY_COVERAGE_EXCLUSIONS: readonly string[] = [
   'electron/aiClient.ts',
@@ -25,7 +26,6 @@ export const LEGACY_COVERAGE_EXCLUSIONS: readonly string[] = [
   'electron/contextMenu.ts',
   'electron/customCss.ts',
   'electron/fileOps.ts',
-  'electron/fs.ts',
   'electron/ipc/ai.ts',
   'electron/ipc/bibliography.ts',
   'electron/ipc/bibliographyFetch.ts',

@@ -217,13 +217,83 @@ M1 미완 2건 해소: AC-WS-008(절대 경로 결합), AC-WS-043(walk-up 동일
 
 M3 범위 밖: AC-WS-012~018·056~059·066(감시 = M4), AC-WS-058b(IPC 진입점 = M8).
 
+### M3a — 커버리지 게이트 (C-5 강제 개시)
+
+`@vitest/coverage-v8`는 판 0.2.2에 들어왔으나 임계값이 없어 C-5가 강제되지 않았다.
+
+| 파일 | 상태 | 내용 |
+|---|---|---|
+| `vitest.config.ts` | 수정 | `thresholds: { statements: 85, lines: 85, perFile: true }` |
+| `vitest.legacy-coverage.ts` | 신규 | 기존 부채 파일 목록 (초기 98개 → M4 후 97개) |
+
+설계 두 가지:
+
+- **제외 목록 방식** — 새 모듈은 등록 없이 게이트 안에 들어온다. 포함 목록이면
+  등록을 잊은 모듈이 조용히 빠져나간다. 제외는 **파일 단위**다: `src/hooks/**`
+  같은 디렉터리 glob이면 M5가 그 디렉터리에 추가할 훅까지 함께 빠져나간다.
+- **perFile** — 집계 임계값은 무력하다. 게이트 대상 statements 14,430개 중 96%가
+  덮여 있어 집계 85%를 깨려면 미커버 statement ~1,900개가 더 필요하다. 테스트
+  없는 새 모듈 하나는 묻혀 통과한다. perFile이면 파일 하나가 곧바로 걸린다.
+
+게이트 실패 검증(반증): 테스트 없는 `shared/__gateProbe.ts` 투입 →
+`ERROR: Coverage for statements (0%) ... for shared/__gateProbe.ts`, exit 1.
+제거 후 exit 0.
+
+vitest 2.1.9의 glob threshold는 전역 집계에서 파일을 빼주지 않아
+(`vitest/dist/coverage.js` resolveThresholds가 전역 맵에 모든 파일을 넣는다)
+"리포트에 남기되 게이트에서만 제외"는 불가능했다. exclude를 쓰므로 제외 파일은
+리포트에서도 사라진다 — 감수한 대가이며 config에 기록했다.
+
+### M4 — 감시와 변경 확정
+
+산출물 (신규 2 / 수정 1):
+
+| 파일 | 상태 | 내용 |
+|---|---|---|
+| `electron/changeConfirmation.ts` | 신규 | 확정 계층 — 재검사·에코 억제·경로별 합류·플랫폼 흡수·재검사 복구 |
+| `electron/watchScope.ts` | 신규 | 감시 범위 결정(역할 기반 제외)·pathGuard 등록·수동 새로고침 |
+| `electron/fs.ts` | 수정 | 경로별 debounce로 교체, Linux 폴링 경로 단위 승격 |
+| `tests/electron/{changeConfirmation,watchScope,fsWatchPerPath}.test.ts` | 신규 | 49 테스트 |
+
+`src/hooks/useFolderTree.ts`는 **변경 없다** — 아래 참조.
+
+| AC | ↔ REQ | 상태 | 근거 테스트 |
+|---|---|---|---|
+| AC-WS-012 | 013 | PASS | 내용 변경 → 확정 1건. 프로젝트 밖 경로도 동일 |
+| AC-WS-013 | 014 | PASS (해석 있음) | 재검사 결과가 기준선과 같으면 미확정. 아래 §SPEC 긴장 참조 |
+| AC-WS-014 | 015 | PASS | 자기 저장 예상값 일치 시 억제, 이후 진짜 외부 변경은 확정 |
+| AC-WS-015 | 014, 016 | PASS | 주입 시계+스텁 stat으로 중간 상태 → 최종 상태 재생, 확정 1건이 최종 상태 |
+| AC-WS-016a | 017 | PASS | macOS 형태(병합 단일 이벤트) → 정규화 확정 |
+| AC-WS-016b | 017 | PASS | Windows 형태(중복+rename 분리+대소문자) → 016a와 `toEqual`. `process.platform` 미사용 |
+| AC-WS-017 | 018 | PASS | 감시 공백 중 변경을 `rescan()`이 확정 |
+| AC-WS-018 | 019 | PASS | 신뢰 밖 경로 → `PathNotAllowedError`, 등록 0건. 전 대상이 검증을 거침 |
+| AC-WS-056 | 045 | PASS | 규약 폴더 4종 감시 목록 + 추적 안 하던 새 파일 확정 |
+| AC-WS-057 | 046 | PASS | `data/` 부재, 나머지 4종 존재 |
+| AC-WS-066 | 046, 045 | PASS | `folders.data: archive` + `folders.manuscript: data` → 제외는 `archive/` 하나, `data/`는 감시 |
+| AC-WS-057b | 046, 013 | PASS | data 역할 경로 안이라도 열린 파일은 `files`에 포함 |
+| AC-WS-058 | 047 | PASS | 재열거가 data 역할 경로 포함. 재정의 경로도 포함 |
+| AC-WS-059 | 016 | PASS | 한 창 안 두 경로 → 2건. RED에서 `['b.md']` 1건 관측 |
+
+M4 범위 밖: AC-WS-058b(REQ-WS-047a — IPC·메뉴 진입점 = M8).
+
+**Linux 결정 (plan.md §B.5)**: (a) 폴링을 경로 단위로 승격. `pollSnapshot`이 이미
+경로별 mtime 맵이라 diff 비용이 사실상 없고, 감시 계약이 플랫폼에 무관하게
+하나로 유지된다. (b) Linux 조정 비활성화는 C-6상 정당하지만 플랫폼별 동작 분기를
+만들어 v0.3이 커질수록 조용히 어긋난다.
+
+**useFolderTree 영향 없음**: 소비자는 `changedPath === rootPath || startsWith(rootPath)`로
+분기하는데, 두 수정 모두 그 계약 안에 머문다 — 경로별 debounce는 이벤트 수가
+늘 뿐 각 경로가 여전히 루트의 자손이고, Linux 승격은 루트 대신 실제 파일 경로를
+주므로 펼쳐진 디렉터리 갱신이 오히려 정확해진다. 감시 수정이 폴더 트리 수정으로
+번지지 않았다.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
-run_status: in-progress            # M1 + M1a + M2 + M3 완료, M4~M8 미착수
-milestones_complete: [M1, M1a, M2, M3]
-run_commit_sha: 124455d
-ac_pass_count: 50                  # M1 25 + M1a 6 + M2 8 + M3 11(신규) — 008/009/043은 M3에서 완결
+run_status: in-progress            # M1 + M1a + M2 + M3 + M3a + M4 완료, M5~M8 미착수
+milestones_complete: [M1, M1a, M2, M3, M3a, M4]
+run_commit_sha: pending-backfill
+ac_pass_count: 64                  # M1 25 + M1a 6 + M2 8 + M3 11 + M4 14
 ac_fail_count: 0
 ac_partial_remaining: 1            # AC-WS-023 (조합 관찰자 = M5)
 requirements_pass:
@@ -231,14 +301,18 @@ requirements_pass:
   m1a: 3                           # REQ-WS-042(개정), 054, 055
   m2: 8                            # REQ-WS-023,024,027,028,029,030,031,049
   m3: 7                            # REQ-WS-004,005,006,007,008,011,012
+  m4: 10                           # REQ-WS-013~019, 045,046,047
 new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
-test: "vitest run → 186 files / 1996 tests passed"
+test: "vitest run → 189 files / 2045 tests passed"
 coverage_command: "pnpm test:coverage"
+coverage_gate: "statements/lines 85%, perFile — exit 1 on violation (반증 검증 완료)"
 coverage_new_modules:
+  electron/changeConfirmation.ts: "95.74% stmts / 100% branch"
+  electron/watchScope.ts: "100% stmts / 96% branch"
+  electron/fs.ts: "93.5% stmts / 94.73% branch (M4 이전 70.12% — 부채 목록에서 제거)"
   electron/projectDiscovery.ts: "100% stmts / 100% branch"
-  electron/bibliography.ts: "96.82% stmts / 87.09% branch (미커버 32-33행은 M3 이전부터의 공백)"
   shared/reconciliation.ts: "100% stmts / 97.5% branch"
   shared/manuscriptMetadata.ts: "100% stmts / 94.52% branch"
   shared/workspaceManifest.ts: "100% stmts / 97.36% branch"
@@ -246,23 +320,22 @@ coverage_new_modules:
   shared/yamlKeyRange.ts: "96.96% stmts / 91.83% branch"
   src/store/reconciliationStore.ts: "100% stmts / 100% branch"
   src/components/ReconciliationSurface.tsx: "100% stmts / 100% branch"
-coverage_repo_wide: "68.22% stmts / 80.95% branch"
-coverage_gate_note: >
-  저장소 전체는 C-5의 85% 목표와 80% 커밋 최소선 아래다. 이는 이 SPEC 이전부터의
-  격차이며 M1~M3가 만든 것이 아니다 — shared/는 96.51%. vitest.config.ts에
-  임계값을 걸지 않은 이유는 판 0.2.2 기록 참조.
-trust_boundary_note: >
-  D-6 유지 확인. projectDiscovery는 pathGuard 신뢰 승격 API를 호출하지 않으며
-  소스 스캔 회귀 테스트가 이를 고정한다. 다만 discovery는 조상 디렉터리의
-  durumi.project.yaml을 읽으므로, 렌더러가 직접 요청할 수 없는 경로를 main이
-  읽는다 — 신뢰 승격(REQ-WS-012이 다루는 축)이 아니라 읽기 범위 문제이며
-  SPEC이 다루지 않는다. 보고서 참조.
+coverage_gated_surface: "96.08% stmts / 84.73% branch"
+legacy_debt_files: 97              # 초기 98 → electron/fs.ts 이탈
+spec_tension_ac_ws_013: >
+  REQ-WS-014는 확정 기준을 "크기와 수정 시각"으로 지정하는데, AC-WS-013의
+  "동일한 내용으로 덮어써"는 mtime을 바꾸므로 그 기준으로는 확정된다.
+  두 문장이 요구하는 semantics가 다르다. 지정된 기준(크기+mtime)을 구현하고
+  AC-WS-013을 "재검사 결과가 기준선과 같으면 미확정"으로 읽었다 — 중복 발행·
+  속성 변경 이벤트가 이 경로로 걸러진다. 내용 해시 비교라면 양쪽을 다 만족하나
+  REQ-WS-014가 지정하지 않았고, REQ-WS-046이 data/를 빼는 이유(대용량)와
+  상충한다. 보고서 참조.
 stubbed_producers:
-  - "ConfirmedChange 생산자(감시·확정 계층)는 M4 소관"
   - "composition-start/end 관찰자는 M5 소관"
   - "apply-to-buffer effect의 최소 diff 실행자는 M6 소관"
-  - "discoverProjectFor / findBibliographyForDocument의 IPC 노출은 M8 소관 — 현재 호출부 없음"
-total_run_phase_files: 21          # 신규 13 + 수정 8
+  - "IPC·메뉴 진입점(REQ-WS-047a / AC-WS-058b)은 M8 소관"
+  - "ConfirmedFileEvent → shared/reconciliation.ts의 ConfirmedChange 변환(내용 읽기 + 디코드 실패 판정)은 M8 소관"
+total_run_phase_files: 28          # 신규 18 + 수정 10
 ```
 
 ## §E.4 Sync-phase Audit-Ready Signal
