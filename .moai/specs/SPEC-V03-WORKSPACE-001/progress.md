@@ -326,10 +326,58 @@ M4에서 보고한 REQ-WS-014 ↔ AC-WS-013 모순이 해소됐다. 읽은 내�
 | AC | ↔ REQ | 상태 | 근거 |
 |---|---|---|---|
 | AC-WS-023b | 023, 020 | **PASS (jsdom)** | 실제 `CompositionEvent` → 조정 계층이 `held-composition` 진입, 표면은 status·무버튼·포커스 불변 |
-| AC-WS-019 | 020 | **UNVERIFIED** | spec 작성 완료, 실행 불가 (Electron 바이너리 부재 + M8 차단) |
-| AC-WS-020 | 021 | **UNVERIFIED** | 동일 |
-| AC-WS-021 | 021 | **UNVERIFIED** | 동일 |
-| AC-WS-022 | 022 | **UNVERIFIED** | 동일 |
+| AC-WS-019 | 020 | **BLOCKED (M8)** | spec 작성 완료·skip. 프리미티브는 CI 검증됨 |
+| AC-WS-020 | 021 | **BLOCKED (M8)** | 동일 |
+| AC-WS-021 | 021 | **BLOCKED (M8)** | 동일 |
+| AC-WS-022 | 022 | **BLOCKED (M8)** | 동일 |
+
+**프리미티브 self-test: CI 검증 완료 (PR #10)**
+
+| 실행 | 결과 |
+|---|---|
+| 1차 (`29aa561`) | 202 passed / **2 failed** / 9 skipped — P3·P5 실패 |
+| 2차 (`d81776d`) | **206 passed / 0 failed / 9 skipped** (2.6m), P0~P5 전부 통과 |
+
+1차 실패의 근거와 수정은 아래 §M5a에 기록한다.
+
+### M5a — self-test가 잡은 프리미티브 결함 (CI 1차 실행)
+
+**증상**: P3에서 `counts.ends >= 1`은 통과하는데 `.cm-content`가 빈 문자열.
+조합은 종료되나 커밋 텍스트가 문서에 남지 않았다. P5도 `composeKorean`을
+통해 같은 경로로 실패.
+
+**근거 (CDP 프로토콜 정의)** — `playwright-core/types/protocol.d.ts`
+`Input.imeSetComposition`:
+
+```
+Use imeCommitComposition to commit the final text.
+Use imeSetComposition with empty string as text to cancel composition.
+```
+
+빈 문자열은 **취소**다. 취소도 `compositionend`를 발생시키므로 end 횟수
+단언만으로는 커밋 여부를 구분할 수 없다. 기존 `composeKorean` 주석은
+"empty imeSetComposition just finalizes"라고 적고 있었으나 호출부가 0곳이라
+**한 번도 실행된 적 없는 주장**이었고, 실행하자마자 거짓임이 드러났다.
+같은 주석의 "insertText는 위에 덧붙인다"도 미검증이었으며 실제로는 Chromium이
+`ImeCommitText`로 라우팅해 진행 중인 조합을 **교체**한다.
+
+`Input.imeCommitComposition`은 이 프로토콜 버전에 **없다** — 위 산문에만
+등장하고 커맨드 맵에 항목이 없다(`grep -c` → 1, 커맨드 맵 0건). 따라서 커밋
+경로는 `insertText`뿐이다.
+
+**수정**:
+- `endComposition`: `insertText(handle.composingText)`로 커밋 후 detach.
+  핸들이 마지막 조합 텍스트를 기억한다.
+- `cancelComposition` 신설 — 빈 문자열의 실제 semantics를 이름으로 고정.
+- P3b(마지막 update 문자열이 그대로 커밋), P3c(취소는 커밋하지 않음) 추가.
+  P3c가 "end 횟수만으로는 부족하다"를 회귀로 고정한다.
+- `withEditor` 헬퍼: 단언 실패가 `shutdownClean`을 건너뛰어
+  `Worker teardown timeout`이 진짜 원인을 덮던 부수 결함을 `finally`로 해소.
+
+**이 결함이 증명한 것**: self-test가 없었다면 AC-WS-019~022가 이 프리미티브
+위에서 전부 통과했을 것이다 — 아무것도 입력되지 않았으므로 "버퍼 불변"이
+자동으로 참이 되고, 조정 게이트가 깨져 있어도 초록이 나온다. plan.md §D가
+self-test를 M5의 첫 산출물로 지정한 판단이 실제 결함으로 입증됐다.
 
 **실행 불가의 두 원인 (서로 다른 문제다)**
 
@@ -368,7 +416,7 @@ milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a]
 milestones_partial: [M5]           # jsdom 계층 완료, e2e 계층 실행 불가
 run_commit_sha: 1f547ec
 ac_pass_count: 67                  # M1 25 + M1a 6 + M2 8 + M3 11 + M4 14 + M4a 2 + M5 1
-ac_unverified: 4                   # AC-WS-019, 020, 021, 022 (e2e 실행 불가)
+ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재로 실행 시 공허 통과, skip 유지
 ac_fail_count: 0
 requirements_pass:
   m1: 20
@@ -382,7 +430,10 @@ new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
 test: "vitest run → 190 files / 2068 tests passed"
-e2e: "실행 불가 — Electron 바이너리 부재(ENOENT). 기존 31 spec 203건 포함 전부 동일"
+e2e: "CI(PR #10, macOS) 206 passed / 0 failed / 9 skipped — 프리미티브 self-test 8건 전부 통과. 로컬은 실행 불가(Electron 서명 revoked)"
+e2e_history:
+  - "29aa561: 202 passed / 2 failed(P3,P5) / 9 skipped — self-test가 커밋 경로 결함 검출"
+  - "d81776d: 206 passed / 0 failed / 9 skipped — 수정 확인"
 coverage_command: "pnpm test:coverage"
 coverage_gate: "statements/lines 85%, perFile → exit 0"
 coverage_new_modules:
@@ -393,8 +444,7 @@ coverage_new_modules:
   shared/reconciliation.ts: "100% stmts / 97.5% branch"
 legacy_debt_files: 97
 blockers:
-  - "AC-WS-019~022: Electron 바이너리 부재로 실행 불가 (환경)"
-  - "AC-WS-019~022: external-change IPC 부재로 실행해도 공허 통과 (M8 의존) — test.skip으로 차단"
+  - "AC-WS-019~022: external-change IPC 부재(M8). 실행하면 공허 통과하므로 test.skip 유지 — 환경 문제가 아니라 의존 문제다"
 newly_required_not_yet_met:
   - "AC-WS-070 / REQ-WS-056 (판 0.2.3 신설, D-7 #5 → M1 배정): 읽을 수 없는 bibliography 경로 폴백 시 보고 의무. 현재 findBibliographyForDocument는 조용히 폴백한다 — 미충족"
   - "AC-WS-031b (판 0.2.3 신설, D-7 #6 → M2 배정): 사라짐 해제 불가 + 배너 해제 가능 대조. 구현은 이미 만족하나 대조 검사가 없다 — 미검증"
