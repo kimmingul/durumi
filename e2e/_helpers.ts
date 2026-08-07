@@ -268,6 +268,8 @@ export interface CompositionHandle {
   page: Page;
   session: CDPSession;
   detached: boolean;
+  /** 마지막으로 설정한 조합 텍스트. `endComposition`이 이 값을 커밋한다. */
+  composingText: string;
 }
 
 /** 페이지에서 관측한 조합 경계 횟수. */
@@ -308,7 +310,7 @@ export async function startComposition(
     selectionStart: composingText.length,
     selectionEnd: composingText.length,
   });
-  return { page, session, detached: false };
+  return { page, session, detached: false, composingText: composingText };
 }
 
 /** 열린 세션에서 조합 텍스트를 교체한다 (다단계 조합 근사). */
@@ -322,15 +324,45 @@ export async function updateComposition(
     selectionStart: composingText.length,
     selectionEnd: composingText.length,
   });
+  handle.composingText = composingText;
 }
 
 /**
- * 조합을 종료하고 세션을 detach한다. 빈 텍스트 `imeSetComposition`이
- * Chromium 관례의 compositionend 신호다 — `Input.insertText`는 조합을 커밋해
- * 이미 삽입된 텍스트 위에 값을 덧붙인다.
+ * 조합을 **커밋하고** 종료한 뒤 세션을 detach한다.
+ *
+ * **빈 텍스트 `imeSetComposition`을 쓰지 않는 이유** — 이 프리미티브가 실제로
+ * 물린 지점이다. CDP 프로토콜 정의가 명시한다:
+ *
+ *   "Use imeCommitComposition to commit the final text.
+ *    Use imeSetComposition with empty string as text to cancel composition."
+ *   (playwright-core/types/protocol.d.ts, Input.imeSetComposition)
+ *
+ * 즉 빈 문자열은 **취소**다 — 조합 텍스트가 버려진다. 취소도 `compositionend`를
+ * 발생시키므로 "end 횟수 >= 1"은 통과하지만 문서에는 아무것도 남지 않는다.
+ * 기존 `composeKorean` 주석은 "empty imeSetComposition just finalizes"라고
+ * 적고 있었으나 그 함수는 호출부가 0곳이어서 그 주장이 한 번도 실행된 적이
+ * 없었다. self-test P3가 처음 실행하자마자 거짓임이 드러났다.
+ *
+ * `Input.imeCommitComposition`은 이 프로토콜 버전에 **존재하지 않는다**(위
+ * 문장의 산문에만 등장하고 커맨드 맵에 항목이 없다). 따라서 커밋 경로는
+ * `Input.insertText`뿐이며, Chromium은 이를 `ImeCommitText`로 라우팅해
+ * **진행 중인 조합을 주어진 텍스트로 교체**한다 — 위에 덧붙이지 않는다.
  */
 export async function endComposition(handle: CompositionHandle): Promise<CompositionCounts> {
   if (handle.detached) throw new Error('endComposition: composition already ended');
+  await handle.session.send('Input.insertText', { text: handle.composingText });
+  await handle.session.detach();
+  handle.detached = true;
+  return observeComposition(handle);
+}
+
+/**
+ * 조합을 **취소**한다 (커밋하지 않음). 빈 문자열 `imeSetComposition`의 실제
+ * semantics를 이름으로 고정해 둔다 — `endComposition`과 헷갈리면 조합 텍스트가
+ * 조용히 사라진다.
+ */
+export async function cancelComposition(handle: CompositionHandle): Promise<CompositionCounts> {
+  if (handle.detached) throw new Error('cancelComposition: composition already ended');
   await handle.session.send('Input.imeSetComposition', {
     text: '',
     selectionStart: 0,
