@@ -366,7 +366,7 @@ AC-WS-019/022의 관측 수단 자체가 무의미하다.
 run_status: in-progress            # M1~M5 구현, M6~M8 미착수
 milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a]
 milestones_partial: [M5]           # jsdom 계층 완료, e2e 계층 실행 불가
-run_commit_sha: pending-backfill
+run_commit_sha: 1f547ec
 ac_pass_count: 67                  # M1 25 + M1a 6 + M2 8 + M3 11 + M4 14 + M4a 2 + M5 1
 ac_unverified: 4                   # AC-WS-019, 020, 021, 022 (e2e 실행 불가)
 ac_fail_count: 0
