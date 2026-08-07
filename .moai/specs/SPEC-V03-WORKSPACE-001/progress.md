@@ -299,55 +299,110 @@ M4 범위 밖: AC-WS-058b(REQ-WS-047a — IPC·메뉴 진입점 = M8).
 주므로 펼쳐진 디렉터리 갱신이 오히려 정확해진다. 감시 수정이 폴더 트리 수정으로
 번지지 않았다.
 
+### M4a — REQ-WS-014 2단계 확정 (판 0.2.3 정정)
+
+| AC | ↔ REQ | 상태 | 근거 테스트 |
+|---|---|---|---|
+| AC-WS-013 | 014 | PASS (완결) | 열린 파일 내용 동일 재작성(mtime만 변경) → 미확정, 2단계 수행 확인 |
+| AC-WS-013b | 014 | PASS | 열려 있지 않은 경로 → 확정되되 `readCalls === []` (읽기 0회) |
+
+M4에서 보고한 REQ-WS-014 ↔ AC-WS-013 모순이 해소됐다. 읽은 내용은
+`ConfirmedFileEvent.content`로 실려 나가 조정 계층이 재사용한다.
+읽기 실패는 억제하지 않는다 — 비교 불가를 "같다"로 해석하면 진짜 변경을 삼킨다.
+
+### M5 — 조합 유지형 e2e 프리미티브 + IME 게이트
+
+산출물 (신규 4 / 수정 2):
+
+| 파일 | 상태 | 실행 가능 | 내용 |
+|---|---|---|---|
+| `src/editor/compositionGate.ts` | 신규 | **예 (jsdom)** | IME 게이트 — 조합 경계 관찰 + 지연 드레인 |
+| `tests/editor/compositionGate.test.ts` | 신규 | **예** | 16 테스트 |
+| `e2e/_helpers.ts` | 수정 | **아니오** | 조합 유지형 프리미티브 4종 + `composeKorean` 래퍼 |
+| `e2e/composition-primitive.spec.ts` | 신규 | **아니오** | self-test 6건 (plan.md §D 첫 산출물) |
+| `e2e/reconciliation-ime.spec.ts` | 신규 | **아니오 (skip)** | AC-WS-019~022 — M8 차단 |
+| `src/editor/MarkdownEditor.tsx` | 수정 | — | 게이트를 `view.contentDOM`에 배선 |
+
+| AC | ↔ REQ | 상태 | 근거 |
+|---|---|---|---|
+| AC-WS-023b | 023, 020 | **PASS (jsdom)** | 실제 `CompositionEvent` → 조정 계층이 `held-composition` 진입, 표면은 status·무버튼·포커스 불변 |
+| AC-WS-019 | 020 | **UNVERIFIED** | spec 작성 완료, 실행 불가 (Electron 바이너리 부재 + M8 차단) |
+| AC-WS-020 | 021 | **UNVERIFIED** | 동일 |
+| AC-WS-021 | 021 | **UNVERIFIED** | 동일 |
+| AC-WS-022 | 022 | **UNVERIFIED** | 동일 |
+
+**실행 불가의 두 원인 (서로 다른 문제다)**
+
+1. **환경** — `node_modules/.../electron/dist/`에 Electron 바이너리가 없다
+   (`LICENSE`·`version`만 존재). `electron.launch: ... ENOENT`로 **기존 31개
+   spec 203건 전부** 동일하게 실패한다. 이 SPEC이 만든 문제가 아니며
+   `tech.md` §13.2/§13.3이 기록한 상태다.
+2. **의존** — `grep -rn "external-change" src/ electron/` → 조정 스토어 정의
+   외 **0건**. 확정 이벤트를 렌더러로 나르는 IPC가 아직 없다(M8).
+
+원인 2가 더 중요하다: 바이너리가 있어도 AC-WS-019~022는 **공허하게 통과**한다.
+외부 파일 쓰기가 렌더러에 아무 영향을 주지 못하므로 "버퍼가 변경되지 않았다"가
+자동으로 참이 되고, 조합 중 버퍼를 갈아엎는 구현도 똑같이 통과한다. 그래서
+초록을 만들지 않고 `test.skip(true, ...)`로 차단했다 — M8 완료 후 skip 한 줄
+제거로 활성화된다.
+
+**self-test가 막는 공허한 통과**: 프리미티브가 조합을 실제로 열지 못하면
+`compositionend === 0`은 자동으로 참이다. 그래서 카운터를 양방향으로 만들고
+(`starts`/`ends`) P0가 `starts >= 1`을 **먼저** 단언한다. 이 단언이 없으면
+AC-WS-019/022의 관측 수단 자체가 무의미하다.
+
+**게이트의 핵심 설계 — compositionend에서 동기 드레인 금지**: 브라우저는
+`compositionend` 다음에 확정 텍스트를 담은 `input` 이벤트를 별도 태스크로
+보낸다. 그 전에 문서를 바꾸면 IME의 composing-range 추적이 어긋난다
+(`pendingInlineFormat.ts:12-32`의 v0.2.29 실증 기록). 게이트는 드레인을
+매크로태스크로 **예약만** 하고, 실행 전에 다음 `compositionstart`가 오면
+취소한다 — 한글은 음절이 연달아 조합되므로 이 취소가 없으면 음절 사이의 틈으로
+조정이 비집고 들어간다. 마이크로태스크는 확정 `input`보다 먼저 실행되므로
+쓸 수 없다.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
-run_status: in-progress            # M1 + M1a + M2 + M3 + M3a + M4 완료, M5~M8 미착수
-milestones_complete: [M1, M1a, M2, M3, M3a, M4]
-run_commit_sha: b2c5efe
-ac_pass_count: 64                  # M1 25 + M1a 6 + M2 8 + M3 11 + M4 14
+run_status: in-progress            # M1~M5 구현, M6~M8 미착수
+milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a]
+milestones_partial: [M5]           # jsdom 계층 완료, e2e 계층 실행 불가
+run_commit_sha: pending-backfill
+ac_pass_count: 67                  # M1 25 + M1a 6 + M2 8 + M3 11 + M4 14 + M4a 2 + M5 1
+ac_unverified: 4                   # AC-WS-019, 020, 021, 022 (e2e 실행 불가)
 ac_fail_count: 0
-ac_partial_remaining: 1            # AC-WS-023 (조합 관찰자 = M5)
 requirements_pass:
-  m1: 20                           # REQ-WS-001,002,003,009,010,034~044,050~053
-  m1a: 3                           # REQ-WS-042(개정), 054, 055
-  m2: 8                            # REQ-WS-023,024,027,028,029,030,031,049
-  m3: 7                            # REQ-WS-004,005,006,007,008,011,012
-  m4: 10                           # REQ-WS-013~019, 045,046,047
+  m1: 20
+  m1a: 3
+  m2: 8
+  m3: 7
+  m4: 10
+  m4a: 1                           # REQ-WS-014 (2단계 재정의)
+  m5: 1                            # REQ-WS-020 (게이트, jsdom 검증) — 021/022/023은 e2e 미검증
 new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
-test: "vitest run → 189 files / 2045 tests passed"
+test: "vitest run → 190 files / 2068 tests passed"
+e2e: "실행 불가 — Electron 바이너리 부재(ENOENT). 기존 31 spec 203건 포함 전부 동일"
 coverage_command: "pnpm test:coverage"
-coverage_gate: "statements/lines 85%, perFile — exit 1 on violation (반증 검증 완료)"
+coverage_gate: "statements/lines 85%, perFile → exit 0"
 coverage_new_modules:
-  electron/changeConfirmation.ts: "95.74% stmts / 100% branch"
+  src/editor/compositionGate.ts: "100% stmts / 100% branch"
+  electron/changeConfirmation.ts: "96.55% stmts / 100% branch"
   electron/watchScope.ts: "100% stmts / 96% branch"
-  electron/fs.ts: "93.5% stmts / 94.73% branch (M4 이전 70.12% — 부채 목록에서 제거)"
   electron/projectDiscovery.ts: "100% stmts / 100% branch"
   shared/reconciliation.ts: "100% stmts / 97.5% branch"
-  shared/manuscriptMetadata.ts: "100% stmts / 94.52% branch"
-  shared/workspaceManifest.ts: "100% stmts / 97.36% branch"
-  shared/projectFolders.ts: "100% stmts / 100% branch"
-  shared/yamlKeyRange.ts: "96.96% stmts / 91.83% branch"
-  src/store/reconciliationStore.ts: "100% stmts / 100% branch"
-  src/components/ReconciliationSurface.tsx: "100% stmts / 100% branch"
-coverage_gated_surface: "96.08% stmts / 84.73% branch"
-legacy_debt_files: 97              # 초기 98 → electron/fs.ts 이탈
-spec_tension_ac_ws_013: >
-  REQ-WS-014는 확정 기준을 "크기와 수정 시각"으로 지정하는데, AC-WS-013의
-  "동일한 내용으로 덮어써"는 mtime을 바꾸므로 그 기준으로는 확정된다.
-  두 문장이 요구하는 semantics가 다르다. 지정된 기준(크기+mtime)을 구현하고
-  AC-WS-013을 "재검사 결과가 기준선과 같으면 미확정"으로 읽었다 — 중복 발행·
-  속성 변경 이벤트가 이 경로로 걸러진다. 내용 해시 비교라면 양쪽을 다 만족하나
-  REQ-WS-014가 지정하지 않았고, REQ-WS-046이 data/를 빼는 이유(대용량)와
-  상충한다. 보고서 참조.
+legacy_debt_files: 97
+blockers:
+  - "AC-WS-019~022: Electron 바이너리 부재로 실행 불가 (환경)"
+  - "AC-WS-019~022: external-change IPC 부재로 실행해도 공허 통과 (M8 의존) — test.skip으로 차단"
+newly_required_not_yet_met:
+  - "AC-WS-070 / REQ-WS-056 (판 0.2.3 신설, D-7 #5 → M1 배정): 읽을 수 없는 bibliography 경로 폴백 시 보고 의무. 현재 findBibliographyForDocument는 조용히 폴백한다 — 미충족"
+  - "AC-WS-031b (판 0.2.3 신설, D-7 #6 → M2 배정): 사라짐 해제 불가 + 배너 해제 가능 대조. 구현은 이미 만족하나 대조 검사가 없다 — 미검증"
 stubbed_producers:
-  - "composition-start/end 관찰자는 M5 소관"
   - "apply-to-buffer effect의 최소 diff 실행자는 M6 소관"
   - "IPC·메뉴 진입점(REQ-WS-047a / AC-WS-058b)은 M8 소관"
-  - "ConfirmedFileEvent → shared/reconciliation.ts의 ConfirmedChange 변환(내용 읽기 + 디코드 실패 판정)은 M8 소관"
-total_run_phase_files: 28          # 신규 18 + 수정 10
+  - "ConfirmedFileEvent → 렌더러 조정 계층 전달은 M8 소관"
+total_run_phase_files: 34
 ```
 
 ## §E.4 Sync-phase Audit-Ready Signal

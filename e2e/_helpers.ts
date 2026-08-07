@@ -1,4 +1,9 @@
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import {
+  _electron as electron,
+  type CDPSession,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -243,39 +248,115 @@ export async function composeKorean(
   syllables: string[],
   commitText: string,
 ): Promise<void> {
+  // 시그니처 보존용 얇은 래퍼 (plan.md §B.3). 중간 음절은 예전과 같이
+  // 문서화 목적으로만 받는다 — CDP `imeSetComposition`의 교체 semantics가
+  // 실제 macOS 한글 IME의 compositionupdate 시퀀스와 1:1이 아니기 때문이다.
+  void syllables;
+  const handle = await startComposition(page, commitText);
+  await endComposition(handle);
+}
+
+// ---------------------------------------------------------------------------
+// 조합 유지형 프리미티브 (SPEC-V03-WORKSPACE-001 M5 / plan.md §B.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * 열린 조합 세션 핸들. `startComposition`이 CDP 세션을 **detach하지 않고**
+ * 돌려주므로, 반환 이후 임의의 `await`(외부 파일 쓰기 포함)를 끼워 넣을 수 있다.
+ */
+export interface CompositionHandle {
+  page: Page;
+  session: CDPSession;
+  detached: boolean;
+}
+
+/** 페이지에서 관측한 조합 경계 횟수. */
+export interface CompositionCounts {
+  starts: number;
+  ends: number;
+}
+
+const COUNTER_KEY = '__durumiCompositionCounts';
+
+/**
+ * 조합을 **열어 둔 채** 유지한다. 기존 `composeKorean`은 시작과 종료를 한
+ * 호출에 원자적으로 수행하고 `finally`에서 detach하므로, 조합 도중에 외부
+ * 파일 쓰기를 끼워 넣을 경계가 없었다 — 그 헬퍼로 REQ-WS-020~023을 검사하면
+ * 조합 중 버퍼를 갈아엎는 구현도 통과한다.
+ *
+ * 카운터를 조합 시작 **전에** 설치하는 것이 핵심이다. `compositionstart`가
+ * 애초에 발생하지 않았다면 `ends === 0`은 공허하게 참이 되고, 그 위에 세운
+ * 모든 AC가 무의미하게 통과한다. 그래서 `observeComposition`은 starts와 ends를
+ * 함께 돌려주고, self-test가 `starts >= 1`을 먼저 단언한다.
+ */
+export async function startComposition(
+  page: Page,
+  composingText: string,
+): Promise<CompositionHandle> {
+  await page.evaluate((key) => {
+    const w = window as unknown as Record<string, { starts: number; ends: number } | undefined>;
+    if (w[key]) return; // 이미 설치됨 — 카운터를 유지한다
+    const counts = { starts: 0, ends: 0 };
+    w[key] = counts;
+    document.addEventListener('compositionstart', () => { counts.starts += 1; }, true);
+    document.addEventListener('compositionend', () => { counts.ends += 1; }, true);
+  }, COUNTER_KEY);
+
   const session = await page.context().newCDPSession(page);
-  try {
-    // The intermediate syllables are passed for documentation / future-
-    // use; CDP `Input.imeSetComposition`'s replacement semantics are
-    // not 1:1 with real macOS Korean IME's compositionupdate, so
-    // chaining multiple imeSetComposition calls in this CDP context
-    // doesn't faithfully replicate the OS-level compositionupdate
-    // sequence. Instead we issue ONE compositionstart (the final
-    // composing text) then commit — this exercises the input.compose
-    // → compositionend code path that our transactionFilter cares
-    // about, while keeping the test deterministic across Electron
-    // builds. Real OS multi-step composition stays a manual smoke
-    // (PRINCIPLES §2 verification, "Real-UI 수동 smoke").
-    void syllables;
-    // Start composition with the final composing text. CodeMirror's input
-    // pipeline sees this as a composition event; our pending-format filter
-    // wraps it as **한** (for bold) and caret lands inside the bold span.
-    await session.send('Input.imeSetComposition', {
-      text: commitText,
-      selectionStart: commitText.length,
-      selectionEnd: commitText.length,
-    });
-    // End composition cleanly: a second imeSetComposition with empty text
-    // signals compositionend without inserting additional text (Chromium
-    // convention). `Input.insertText` would COMMIT the composition as new
-    // text — adding the value on top of what was already inserted. Empty
-    // imeSetComposition just finalizes.
-    await session.send('Input.imeSetComposition', {
-      text: '',
-      selectionStart: 0,
-      selectionEnd: 0,
-    });
-  } finally {
-    await session.detach();
-  }
+  await session.send('Input.imeSetComposition', {
+    text: composingText,
+    selectionStart: composingText.length,
+    selectionEnd: composingText.length,
+  });
+  return { page, session, detached: false };
+}
+
+/** 열린 세션에서 조합 텍스트를 교체한다 (다단계 조합 근사). */
+export async function updateComposition(
+  handle: CompositionHandle,
+  composingText: string,
+): Promise<void> {
+  if (handle.detached) throw new Error('updateComposition: composition already ended');
+  await handle.session.send('Input.imeSetComposition', {
+    text: composingText,
+    selectionStart: composingText.length,
+    selectionEnd: composingText.length,
+  });
+}
+
+/**
+ * 조합을 종료하고 세션을 detach한다. 빈 텍스트 `imeSetComposition`이
+ * Chromium 관례의 compositionend 신호다 — `Input.insertText`는 조합을 커밋해
+ * 이미 삽입된 텍스트 위에 값을 덧붙인다.
+ */
+export async function endComposition(handle: CompositionHandle): Promise<CompositionCounts> {
+  if (handle.detached) throw new Error('endComposition: composition already ended');
+  await handle.session.send('Input.imeSetComposition', {
+    text: '',
+    selectionStart: 0,
+    selectionEnd: 0,
+  });
+  await handle.session.detach();
+  handle.detached = true;
+  return observeComposition(handle);
+}
+
+/**
+ * `startComposition`이 설치한 카운터를 읽는다.
+ *
+ * **AC-WS-019/022가 "조합이 조기 종료되지 않았다"를 단언할 유일한 관측
+ * 수단이다.** 저장소에 범용 조합 플래그가 없고 `dataset.composing`은 표 셀
+ * 전용(`table.ts:810-814`)이라 그것에 의존할 수 없다.
+ */
+export async function observeComposition(handle: CompositionHandle): Promise<CompositionCounts> {
+  const counts = await handle.page.evaluate((key) => {
+    const w = window as unknown as Record<string, { starts: number; ends: number } | undefined>;
+    return w[key] ?? { starts: 0, ends: 0 };
+  }, COUNTER_KEY);
+  return counts;
+}
+
+/** `compositionend` 발생 횟수만 돌려주는 좁은 관측 (plan.md §B.3 계약 이름). */
+export async function observeCompositionEnd(handle: CompositionHandle): Promise<number> {
+  return (await observeComposition(handle)).ends;
 }
