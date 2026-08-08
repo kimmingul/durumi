@@ -93,6 +93,8 @@ export function buildMenu(prefs: Preferences, onNewWindow: () => void): void {
         { label: tr('menu.file.newWindow'), accelerator: 'CmdOrCtrl+Shift+N', click: () => onNewWindow() },
         { label: tr('menu.file.open'), accelerator: 'CmdOrCtrl+O', click: () => send('open') },
         { label: tr('menu.file.openFolder'), click: () => send('openFolder') },
+        // REQ-WS-047a — 수동 새로고침 진입점 (메뉴 커맨드 라우터 쪽).
+        { label: tr('menu.file.refreshProjectTree'), click: () => send('refreshProjectTree') },
         {
           label: tr('menu.file.closeFolder'),
           submenu: closeFolderItems.length

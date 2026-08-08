@@ -235,6 +235,40 @@ export interface Preferences {
  * without enumerating sibling fields. Matches the recursive merge that
  * `electron/preferences.ts#assertPrefsPatchAllowed` already performs.
  */
+/**
+ * main이 렌더러로 올려 보내는 확정된 외부 변경 (SPEC-V03-WORKSPACE-001).
+ *
+ * M4의 확정 이벤트와 달리 **내용을 담는다** — 조정 계층이 최소 diff와 차이
+ * 보기에 그대로 쓴다. 디코드에 실패하면 `content`가 null이고 `decodeError`에
+ * 사유가 들어온다 (REQ-WS-031); 그 경우 조정은 중단되어야 한다.
+ */
+export interface ExternalFileChange {
+  path: string;
+  kind: 'changed' | 'deleted';
+  content: string | null;
+  decodeError: string | null;
+  size: number;
+  mtimeMs: number;
+}
+
+/** 소유 프로젝트 상태 (REQ-WS-004~008). */
+export type ProjectState =
+  | { kind: 'none' }
+  | {
+      kind: 'project';
+      root: string;
+      name: string;
+      /** 역할 → 절대 경로 (REQ-WS-009, 010). */
+      folders: Record<string, string>;
+    }
+  | {
+      kind: 'corrupt';
+      root: string;
+      manifestPath: string;
+      reason: 'yaml' | 'not-mapping' | 'missing-name';
+      message: string;
+    };
+
 export type PreferencesPatch = {
   [K in keyof Preferences]?: Preferences[K] extends unknown[]
     ? Preferences[K]
@@ -282,6 +316,7 @@ export type MenuCommand =
   | 'findPrev'
   | 'bold' | 'italic' | 'code' | 'link'
   | 'strikethrough' | 'insertTable' | 'toggleTask' | 'codeBlock'
+  | 'refreshProjectTree'
   | 'openFolder' | 'toggleSidebar' | 'toggleRightSidebar' | 'showFiles' | 'showOutline' | 'showSearch' | 'quickOpen'
   | 'toggleFocusMode' | 'toggleTypewriterMode'
   | 'toggleMemoPanel'
@@ -372,6 +407,17 @@ export interface IpcApi {
   fsUnwatchRoot: (path: string) => Promise<void>;
   fsUnwatchAllRoots: () => Promise<void>;
   onFsChange: (cb: (changedPath: string) => void) => () => void;
+  // --- SPEC-V03-WORKSPACE-001: 프로젝트·외부 변경 채널 ---
+  /** 파일의 소유 프로젝트를 조회한다. 신뢰 밖 경로는 거부된다. */
+  projectDiscover: (filePath: string) => Promise<ProjectState>;
+  /** 수동 새로고침 — data 역할 경로를 포함해 재열거한다 (REQ-WS-047). */
+  projectRefresh: (filePath: string) => Promise<string[]>;
+  /** 열린 파일 감시 시작. `currentContent`는 버퍼의 현재 내용이다. */
+  watchOpenFile: (path: string, currentContent: string) => Promise<void>;
+  unwatchOpenFile: (path: string) => Promise<void>;
+  /** 버퍼가 저장·재로드되어 기준 내용이 바뀌었음을 알린다. */
+  noteOpenFileContent: (path: string, content: string) => Promise<void>;
+  onExternalFileChange: (cb: (change: ExternalFileChange) => void) => () => void;
   customCssGet: () => Promise<string>;
   onCustomCssChanged: (cb: (css: string) => void) => () => void;
   gitGetStatus: (rootPath: string) => Promise<Record<string, string>>;

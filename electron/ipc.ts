@@ -5,6 +5,7 @@ import { registerBibliographyHandlers } from './ipc/bibliography';
 import { registerBibliographyFetchHandlers } from './ipc/bibliographyFetch';
 import { registerFilesHandlers } from './ipc/files';
 import { registerPandocHandlers } from './ipc/pandoc';
+import { registerProjectHandlers } from './ipc/project';
 import { registerPreferencesHandlers } from './ipc/preferences';
 import { registerReferenceHandlers } from './ipc/reference';
 import { registerSearchHandlers } from './ipc/search';
@@ -31,6 +32,7 @@ export function registerIpcHandlers(): void {
   registerAiHandlers(vault);
   registerPandocHandlers();
   registerShellHandlers();
+  registerProjectHandlers();
 
   nativeTheme.on('updated', () => {
     const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';

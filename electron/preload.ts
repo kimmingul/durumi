@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { IpcApi, Macro, MenuCommand } from '@shared/ipc-contract';
+import type { ExternalFileChange, IpcApi, Macro, MenuCommand } from '@shared/ipc-contract';
 
 const api: IpcApi = {
   ping: () => ipcRenderer.invoke('ping'),
@@ -33,6 +33,17 @@ const api: IpcApi = {
     const handler = (_: unknown, p: string) => cb(p);
     ipcRenderer.on('fs:change', handler);
     return () => { ipcRenderer.removeListener('fs:change', handler); };
+  },
+  projectDiscover: (filePath) => ipcRenderer.invoke('project:discover', filePath),
+  projectRefresh: (filePath) => ipcRenderer.invoke('project:refresh', filePath),
+  watchOpenFile: (p, content) => ipcRenderer.invoke('project:watchOpenFile', p, content),
+  unwatchOpenFile: (p) => ipcRenderer.invoke('project:unwatchOpenFile', p),
+  noteOpenFileContent: (p, content) =>
+    ipcRenderer.invoke('project:noteOpenFileContent', p, content),
+  onExternalFileChange: (cb) => {
+    const handler = (_: unknown, change: ExternalFileChange) => cb(change);
+    ipcRenderer.on('project:externalFileChange', handler);
+    return () => { ipcRenderer.removeListener('project:externalFileChange', handler); };
   },
   customCssGet: () => ipcRenderer.invoke('customCss:get'),
   onCustomCssChanged: (cb) => {

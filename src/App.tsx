@@ -7,6 +7,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { QuickOpen } from './components/QuickOpen';
 import { ToastHost } from './components/Toast';
 import { ReconciliationSurface } from './components/ReconciliationSurface';
+import { useExternalChangeWiring } from './hooks/useExternalChangeWiring';
 // Dialogs are lazy: they only mount when the user opens them, and the dialog
 // bundle (Settings panel alone is ~50 KB, plus the AI usage dashboard, the
 // citation/reference dialogs, the keyboard-shortcuts cheat sheet, and the
@@ -87,6 +88,8 @@ export function App() {
   useCustomCss();
   // Memo sidecar / bibliography binding / memo DOM events.
   useMemoEvents(filePath, content);
+  // SPEC-V03-WORKSPACE-001 M8: 외부 변경 채널 배선.
+  useExternalChangeWiring(filePath, content);
   // OS-close intercept that prompts on dirty buffers.
   useAppCloseGuard();
   // Auto-focus the matching card when the caret lands on a memo's line.
