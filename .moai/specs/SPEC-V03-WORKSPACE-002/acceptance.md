@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "수용 기준 — v0.3 멀티패널 셸"
-version: "0.3.0"
+version: "0.3.1"
 status: draft
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-08-09
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -23,9 +23,9 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 
 - 각 AC 제목 끝의 `↔ REQ-PANEL-0NN` 은 그 AC가 검증하는 요구사항이다. **제약(C-N)만 추적하는 AC**는 `↔ C-N` 으로 표기한다 — 품질 게이트·릴리스 게이트·회귀 보호처럼 요구사항이 아니라 제약에서 나오는 항목이다. 해당 AC는 정확히 여섯 개다: **AC-PANEL-090, 091, 092, 093, 094, 095**.
 - `[P]` 프로젝트 있음 / `[N]` 프로젝트 없음 / `[P+N]` 양쪽 모두. `spec.md` C-1이 정의한 범위를 따른다. **위 여섯 개의 제약 추적 AC는 상태 태그를 의도적으로 생략한다** — 품질·릴리스 게이트는 프로젝트 유무와 무관하게 저장소 전체에 적용된다.
-- 총 **89개 항목** (기본 식별자 59개 + 분할 30개). 식별자는 AC-PANEL-001 ~ 095이며, 002(b·c) / 003(b) / 006(b) / 010(b) / 011(a·b) / 013(b) / 030(b) / 032(b) / 036(b·c) / 043(b) / 044(b·c) / 048(a·b) / 050(b) / 051(b) / 053(b·c·d) / 054(b) / 055(b) / 057(b) / 062(b) / 064(b) / 080(b·c·d) 스물한 개 기본 식별자가 분할되어 항목 수가 최대 번호와 어긋난다.
+- 총 **92개 항목**. 식별자는 AC-PANEL-001 ~ 095이며, 002(b·c) / 003(b) / 006(b) / 010(b) / 011(a·b) / 013(b) / 030(b) / 032(b) / 036(b·c·d) / 043(b) / 044(b·c) / 048(a·b) / 050(b) / 051(b) / 053(b·c·d) / 054(b) / 055(b) / 057(b) / 062(b) / 064(b) / 080(b·c·d·e) / 081(b) 스물두 개 기본 식별자가 분할되어 항목 수가 최대 번호와 어긋난다. 카운트 근거는 `grep -c '^### AC-PANEL-' acceptance.md` 실측이다.
 - **번호대 배치**: `080~084` = §0 출하 중인 결함(M0), `001~065` = §A~§G 기능 요구, `090~095` = §H 품질·릴리스 게이트. **AC 번호와 REQ 번호는 대응하지 않는다** — 예컨대 `REQ-PANEL-070`(무성 버퍼 덮어쓰기)을 검증하는 것은 `AC-PANEL-080 / 080b / 080c / 080d`와 `084`이며, `AC-PANEL-090`은 타입 검사 게이트다. 각 AC 제목의 `↔` 표기가 유일한 대응 근거다.
-- **결정 상태 표시**: `plan.md` §A.2의 **확정 4건**(OQ-1·2·5·6)에서 파생된 AC는 본문에 `**확정 (OQ-N: …)**` 로 결정과 근거를 담는다. **미해결 5건**(OQ-3·4·7·8·9)에 의존하는 AC는 `⟨OQ-N 의존⟩`으로 표시하고 무엇이 확정되어야 하는지 명시한다 — 결정 없이 구현하면 그 AC는 판정 불가다. 현재 `⟨OQ-N 의존⟩` 표시는 **2건**(AC-PANEL-023 / 084)이다.
+- **결정 상태 표시**: `plan.md` §A.2의 **확정 4건**(OQ-1·2·5·6)에서 파생된 AC는 본문에 `**확정 (OQ-N: …)**` 로 결정과 근거를 담는다. **미해결 5건**(OQ-3·4·7·8·9)에 의존하는 AC는 `⟨OQ-N …⟩`으로 표시하고 무엇이 확정되어야 하는지 명시한다. 현재 표시는 **2건**(AC-PANEL-023 / 084)이다. **판정 불가와 범위 미확정을 구분한다** (감사 지적 D12, 수용): `AC-PANEL-023`은 결정에 따라 **판정 문구 자체가 바뀌므로** 결정 전에는 판정 불가다. `AC-PANEL-084`는 **판정 문구가 어느 후보에서도 동일하고** 미해결인 것은 "AC를 하나 더 둘 것인가"뿐이므로 **M0에서 판정 가능하다** — 표시 안에 그 구분을 적었다. 일괄로 "판정 불가"라고 적으면 `plan.md` §A.3과 `progress.md`의 `m0_blocked_by: none`과 충돌한다.
 - **검증 등급의 구분**: 결함을 다루는 AC는 그 결함이 **기계 재현**으로 확인되었는지 **코드 직독**으로만 확인되었는지 본문에 명시한다. 세 등급 — 기계 재현(AC-PANEL-080 계열), 코드 직독(AC-PANEL-010b / 081), 정적 소스 사실(AC-PANEL-084) — 을 혼동하지 않는다.
 
 ---
@@ -63,24 +63,49 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **깨끗한 문서 케이스가 필수인 이유**: `!state.isDirty`(`shared/reconciliation.ts:193`)가 **유일한 보호막**임이 실행으로 확인되었다(위 `[OQ-8/dirty]` 관측). dirty 문서만 검사하면 **오늘의 코드가 그대로 통과한다** — dirty 경로는 이미 올바르게 동작한다. 이 AC는 반드시 `isDirty === false`에서 판정한다
 - **RED 선행 (필수)**: 수정 전 이 AC는 실패한다. 관측된 실패 형태는 `b.md` 버퍼 = `"A의 내용\n"`이다(위 로그 `[OQ-8]` 행). 실패 출력을 증거로 기록한다
 
-### AC-PANEL-080b `[P+N]` 오적용이 정상 완료(`idle`)로 정착하지 않는다 ↔ REQ-PANEL-070
-- **Given** AC-PANEL-080과 동일한 상태
+### AC-PANEL-080b `[P+N]` 폐기된 이벤트가 **어떤 전이도 일으키지 않는다** ↔ REQ-PANEL-070
+- **Given** AC-PANEL-080과 동일한 상태에서, 리듀서 호출을 관측할 수 있는 스파이(또는 각 문서 상태 객체의 참조를 보관한 상태)
 - **When** 열지 않은 경로의 확정 변경을 주입한다
-- **Then** 조정 상태가 `idle`로 **정착하지 않는다** — 그 이벤트로 인한 상태 전이가 아예 일어나지 않거나, 폐기되었음이 상태에 표현된다
-- **이것이 별개 AC인 이유**: 재현에서 관측된 상태는 `"idle"`이었다(위 로그). `idle`은 "정상적으로 완료됨"을 뜻하므로 배너도 표시도 남지 않아 **사용자가 오적용을 알 수단이 없다** — 이 정착이 손실을 **무성(silent)** 으로 만드는 지점이다. 버퍼 내용만 고치고 상태 의미론을 그대로 두면 결함의 절반만 닫힌다
-- **RED 선행 (필수)**: 수정 전 관측값은 `"idle"`이다
+- **Then** 그 이벤트로 인해 **리듀서가 호출되지 않는다** (호출 횟수 0)
+- **And** 어느 문서의 상태 객체도 **참조가 교체되지 않는다** (전이 미발생의 관측 가능한 형태)
+- **And** 미등록 경로에 대한 **Map 항목이 생성되지 않는다** (경로→상태 / 경로→적용 대상 양쪽)
+- **판정을 상태 값이 아니라 전이 발생으로 하는 이유 (감사 지적 D2, 수용)**: 초판은 Then을 "조정 상태가 `idle`로 정착하지 않는다"로 적었는데 **그것은 반증 불가능하다.** `initialReconciliationState()`가 `status: 'idle'`을 반환하고(`shared/reconciliation.ts:164-173`) `settled()`도 초기 상태에 대해 초기 상태와 deep-equal한 값을 반환하므로(`:175-177`), `'idle'`은 **이벤트 이전 / 수정 이전 사후 / 수정 이후 사후** 세 시점 모두의 값이다. `expect(status).not.toBe('idle')`은 수정 후에도 실패한다 — 즉 만족 불가능한 AC였다
+- **RED 선행 (필수)**: 수정 전에는 **리듀서가 호출되고 settled 상태 + `apply-to-buffer` effect를 반환한다.** 그것이 관측되는 실패 형태이며, 상태 값(`'idle'`)이 아니다
 
-### AC-PANEL-080c `[P+N]` dirty 문서의 보호 경로가 회귀하지 않는다 ↔ REQ-PANEL-070
-- **Given** AC-PANEL-080과 동일한 상태에서 `dirty-changed → isDirty: true`를 선행 dispatch한 상태
-- **When** 열지 않은 경로의 확정 변경을 주입한다
-- **Then** 버퍼가 `"B의 내용\n"` 그대로다
-- **회귀 방어 AC**: 이 케이스는 **오늘 이미 올바르게 동작한다**(관측: 버퍼 불변 + `held-notify`). M0의 라우팅 계층이 dirty 강등 경로를 망가뜨리지 않음을 고정한다. 수정 전에도 통과하는 유일한 M0 AC이며, 그것이 이 AC의 목적이다
+### AC-PANEL-080c `[P+N]` **dirty 문서의 `pending`이 다른 경로의 변경으로 오염되지 않는다** ↔ REQ-PANEL-070
+- **Given** 문서 `/w/b.md`가 버퍼 `"B의 내용\n"`으로 열려 있고 **미저장 편집이 있는** 상태(`dirty-changed → isDirty: true` 선행). 그 창은 `/w/a.md`를 열지도 감시 등록하지도 않았다
+- **When** `/w/a.md` 경로의 확정 외부 변경(내용 `"A의 내용\n"`) 1건을 주입한다
+- **Then** `/w/b.md` 문서의 `pending`이 **설정되지 않는다** — 특히 다른 경로(`/w/a.md`)의 변경으로 설정되지 않는다
+- **And** `/w/b.md`에 배너가 뜨지 않는다
+- **And** 그 상태에서 `user-load-from-disk`를 dispatch해도 `/w/b.md` 버퍼가 `"B의 내용\n"` 그대로다
+- **And** 정상 경로 회귀: `/w/b.md` **자기 경로**의 확정 변경이 들어오면 배너가 뜨고 "디스크에서 불러오기"가 **그 문서의 내용**을 적용한다
+- **초판의 오류 정정 (감사 지적 D3, 수용)**: 초판은 이 AC를 "dirty 경로는 **오늘 이미 올바르게 동작한다**"는 회귀 방어 AC로 적었다. **그 진술은 거짓이다.** notify 분기가 `pending: change`를 심고(`shared/reconciliation.ts:206`) 그 `change`는 **다른 경로의** 확정 변경이며, `user-load-from-disk`가 `state.pending.content`를 적용한다(`:251-257`)
+- **기계 재현으로 확정** (관측 출력):
+  ```
+  [D3] 배너 상태 = "held-notify"
+  [D3] pending.path = "/w/a.md"          ← b.md 문서 상태에 a.md의 변경이 심겼다
+  [D3] emit 직후 버퍼 = "B의 내용\n"      ← 즉시 오염은 없다
+  [D3] 불러오기 후 버퍼 = "A의 내용\n"    ← 클릭 한 번 뒤 오염된다
+  ```
+  증거: `.moai/state/verify/goal-spec12345/d3d4-repro.log`, `…/d3d4-repro-source.ts.txt`
+- **왜 깨끗한 문서보다 나쁠 수 있는가**: 사용자에게 `b.md`의 배너가 보이고 사용자는 `b.md`를 불러오겠다고 **명시적으로 동의한다.** 적용되는 것은 `a.md`의 내용이다. SPEC-1 REQ-WS-028의 "사용자 확인"이 **형식적으로 충족된 채 대상이 틀린다**
+- **RED 선행 (필수)**: 수정 전 `pending.path === '/w/a.md'`가 관측된다
 
-### AC-PANEL-080d `[P+N]` 오염된 버퍼가 저장으로 디스크에 전파되지 않는다 ↔ REQ-PANEL-070
-- **Given** AC-PANEL-080의 상황에서 `/w/b.md`를 저장하는 시나리오
+### AC-PANEL-080d `[P+N]` 오염된 내용이 쓰기 채널로 전달되지 않는다 ↔ REQ-PANEL-070
+- **Given** AC-PANEL-080의 상황에서 `/w/b.md`를 저장하는 시나리오. 쓰기 채널은 주입된 스텁이다
 - **When** 저장을 수행한다
-- **Then** 디스크의 `/w/b.md` 바이트가 원래 `"B의 내용\n"`과 동일하다 (SHA-256 동일)
+- **Then** 쓰기 채널에 전달된 바이트 문자열이 원래 `"B의 내용\n"`과 동일하다
+- **검증 경계 (감사 지적 D13, 수용)**: 초판은 디스크의 SHA-256을 단언했으나, M0은 상태 계층 유닛으로 밀폐된다고 선언했고 §0의 대체 허용 범위는 preload 브리지 + `DispatchTarget` **둘뿐**이다. `window.api.fileSave`는 **세 번째 브리지**이므로 실제 디스크 단언은 그 밀폐성과 모순이었다. **쓰기 채널에 전달된 값**을 단언하면 같은 결함을 같은 밀폐 범위에서 잡는다
 - **결함의 실질 피해를 고정하는 AC**: 버퍼 오염 자체보다 이 전파가 데이터 손실이다. 오늘은 `appStore.filePath`가 여전히 `b.md`를 가리키므로 `a.md`의 내용이 `b.md` 파일에 기록된다
+
+### AC-PANEL-080e `[P+N]` 패널이 문서를 재바인딩하면 라우팅 키도 재키잉된다 ↔ REQ-PANEL-070a
+- **Given** 패널 하나가 문서 `/w/a.md`에 바인딩되어 등록을 마친 상태
+- **When** 그 패널을 `/w/b.md`로 **재바인딩**한 뒤, (1) `/w/a.md`의 확정 변경과 (2) `/w/b.md`의 확정 변경을 각각 주입한다
+- **Then** (1)은 그 패널의 버퍼에 도달하지 **않는다** (적용 호출 횟수 0)
+- **And** (2)는 그 패널의 버퍼에 도달한다 (적용 호출 횟수 1)
+- **And** 경로→적용 대상 Map에 `/w/a.md` 항목이 남아 있지 않다
+- **RED 선행 (필수)**: 등록이 `[]`-deps effect에 있으면 경로가 첫 마운트에 캡처되어 (1)이 도달하고 (2)가 도달하지 않는다 — **정확히 반대 결과**가 관측된다
+- **왜 M0 안인가 (감사 지적 D1, 수용)**: `src/App.tsx:153-160`이 `key` prop을 주지 않고 마운트 effect deps가 `[]`이며(`src/editor/MarkdownEditor.tsx:176`) `filePath`는 별개 effect가 처리하므로(`:166`) **하나의 `EditorView`가 문서를 갈아타며 재사용된다.** 등록 시점을 정하지 않으면 M0이 닫으려는 결함이 다른 형태로 재발한다. 승인된 구현 형태는 `design.md` §6.2a의 주입된 setter 클로저다
 
 ### AC-PANEL-081 `[P+N]` 다른 표면의 조합 종료가 진행 중인 조합의 보류를 해제하지 않는다 ↔ REQ-PANEL-071
 - **Given** 두 편집 표면 각각에 조합 게이트가 부착되고, 표면 A에서 `compositionstart`가 발생해 그 문서가 보류 상태이며 확정 변경이 큐에 있는 상태
@@ -90,13 +115,32 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **RED 선행 (필수)**: 오늘 `shared/reconciliation.ts:57`의 `composing`은 창 전역 단일 boolean이고 어느 게이트든 그것을 쓰므로(`src/editor/compositionGate.ts:109, 112` ← `src/editor/MarkdownEditor.tsx:155`), 표면 B의 `compositionend`가 표면 A의 보류를 푼다. 실패 출력을 증거로 기록한다
 - **IME 안전 최우선**: `compositionGate.ts:9-25`가 막기 위해 작성된 실패 계열을 한 계층 위에서 재도입하는 것이 이 결함이다
 
+### AC-PANEL-081b `[P+N]` **게이트 detach가 조합 보류를 영구화하지 않는다** ↔ REQ-PANEL-071
+- **Given** 편집 표면에 조합 게이트가 부착되고 `compositionstart`가 발생해 그 문서가 보류(`held-composition`) 상태이며 확정 변경이 큐에 있는 상태
+- **When** `compositionend` 없이 그 게이트를 **detach**한다 (패널 언마운트에 해당)
+- **Then** 그 문서의 조합 보류가 **해제된다**
+- **And** 큐에 있던 확정 변경이 정책 라우터로 **드레인된다** — 그 문서에 대한 이후 조정이 계속 동작한다
+- **And** `compositionGate.ts`의 지연 드레인·연속 조합 취소 로직은 변경되지 않았다 (PRESERVE — 고치는 것은 **detach 시 해제**이며 스케줄러 재작성이 아니다)
+- **기계 재현으로 확정 (감사 지적 D4)** — `detach()`(`src/editor/compositionGate.ts:88-93`)는 리스너를 제거하고 `clearPending()`으로 예약 드레인을 **취소하지만 `sink.onCompositionEnd()`를 호출하지 않는다.** `src/editor/MarkdownEditor.tsx:168-176`의 정리 함수가 그 `detach()`를 호출한다. 관측 출력:
+  ```
+  [D4] 조합 시작 후 composing = true
+  [D4] detach 후 composing = true        <- 해제되지 않는다
+  [D4] 이후 조정 상태 = "held-composition"
+  [D4] 버퍼 = "B의 내용\n"                <- 이후 어떤 외부 변경도 적용되지 않는다
+  ```
+  증거: `.moai/state/verify/goal-spec12345/d3d4-repro.log`, `…/d3d4-repro-source.ts.txt`
+- **영향 범위는 단계마다 커진다**: 오늘(전역 플래그) 조합 중 언마운트는 **세션의 모든 조정을 영구 동결**시킨다. M0의 문서별 키잉 후에는 그 문서가, §6.3의 OR 합류가 얹히면 **한 패널의 언마운트가 그 문서를** 동결시킨다
+- **REQ-PANEL-055의 대칭 결함**: 실행자의 언마운트 무장 해제는 REQ-PANEL-055가 다루는데 **게이트의 같은 형태는 초판의 어느 요구에도 없었다.** IME 안전이 최우선 축이므로 전용 AC를 둔다
+- **RED 선행 (필수)**: 수정 전 `composing`이 detach 후에도 `true`로 관측되고 이후 조정이 `held-composition`에 정착한다
+
 ### AC-PANEL-082 조정 코어 5파일의 확장자 독립이 보존된다 ↔ REQ-PANEL-072, C-12
 - **Given** M0의 라우팅 계층이 구현된 상태
 - **When** `pnpm test -- extensionIndependence` 를 실행한다
 - **Then** `tests/electron/extensionIndependence.test.ts`가 **소스 무변경 상태로** 통과한다
 - **And** `applyExternalChange.length === 2` 단언(`:171-174`)이 통과한다 — 적용 API에 `path` 인자가 추가되지 않았다
-- **And** `electron/changeConfirmation.ts`·`electron/watchScope.ts`·`shared/reconciliation.ts`·`src/editor/minimalDiff.ts` 네 파일의 `git diff --quiet` 이 exit 0이다
-- **참고**: `src/editor/applyExternalChange.ts`는 `registerReconciliationExecutor`(`:123-132`) 변경이 REQ-PANEL-055로 필요할 수 있으므로 `git diff` 단언 대상에서 제외한다. 그 파일에 대한 증거는 위 arity 단언 통과다
+- **And** **다섯 파일 전부**의 `git diff --quiet` 이 exit 0이다 — `electron/changeConfirmation.ts`·`electron/watchScope.ts`·`shared/reconciliation.ts`·`src/editor/minimalDiff.ts`·**`src/editor/applyExternalChange.ts`**
+- **예외 철회 (감사 지적 D11, 수용)**: 초판은 `applyExternalChange.ts`를 `git diff` 단언에서 제외했다 — `registerReconciliationExecutor` 변경이 필요할 수 있다고 보았기 때문이다. **불필요한 예외였다.** `design.md` §6.2a의 **주입된 setter 클로저** 형태가 그 파일을 **무변경으로 남긴다** — 두 번째 인자가 이미 주입된 setter이고 경로는 호출부 클로저에 담긴다. 예외를 유지하면 다섯 파일 중 **가장 위험한 파일**의 C-12 보호가 arity 검사 하나로 약화된다
+- **만약 그 파일을 손대야 한다면**: 그것은 예외가 아니라 **설계 재검토 신호**다. blocker report로 되돌리고 클로저 형태가 왜 불충분한지 먼저 밝힌다
 
 ### AC-PANEL-083 라우팅 키가 조정 코어 밖에 있다 ↔ REQ-PANEL-072
 - **Given** M0 구현 완료 상태
@@ -109,7 +153,8 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **Then** `BrowserWindow.getAllWindows()` 를 통한 전체 창 브로드캐스트가 여전히 유지되고 있음이 단언된다 (변경하지 않았다는 사실의 고정)
 - **왜 소스 단언에서 멈추는가 (검증 범위의 정직한 경계)**: main 절반 — 브로드캐스트가 그 경로를 등록하지 않은 창에도 실제로 도달하는가 — 는 **실행으로 관측되지 않았다.** 오케스트레이터의 재현은 렌더러 절반만 실제 모듈로 구동했고 브로드캐스트는 fake 브리지로 대체했다. 따라서 이 AC는 `getAllWindows()`가 소스에 존재함만 단언하며, **엔드투엔드 다중 창 전달을 주장하지 않는다**
 - **의도적으로 남겨 둔 것의 기록**: M0은 렌더러 측 경로 대조로 결함을 닫고 main의 브로드캐스트 범위는 건드리지 않는다(`design.md` §6.2a의 기각된 대안 3). 창 간 소유권 모델은 `spec.md` §D.4가 범위 밖으로 둔 작업이므로, 이 단언이 나중에 그 지점을 잊지 않게 한다
-- ⟨OQ-8 의존⟩ 후보 2(창 2개 e2e 추가)가 선택되면 이 소스 단언 위에 실제 다중 창 e2e AC 1건이 추가되어 main 절반도 실행으로 덮인다
+- ⟨OQ-8: **추가 AC를 둘 것인가만 미해결 — 이 AC 자체는 M0에서 판정 가능하다**⟩ 후보 2(창 2개 e2e 추가)가 선택되면 이 소스 단언 **위에** 실제 다중 창 e2e AC 1건이 추가되어 main 절반도 실행으로 덮인다. 이 AC의 판정 문구는 어느 후보에서도 바뀌지 않는다
+- **수정 전후 모두 통과한다 (의도된 것)**: 이 AC는 M0이 main의 브로드캐스트 범위를 **바꾸지 않았음**을 고정하므로 회귀 방어 성격이다. 따라서 `plan.md` §A.3과 `progress.md`의 `m0_blocked_by: none`과 모순되지 않는다 (감사 지적 D12, 수용)
 
 ---
 
@@ -360,6 +405,14 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **And** 매니페스트 발견을 근거로 신뢰를 넓히는 코드가 없다 (SPEC-1 AC-WS-011 계열 불변식 유지)
 - **확정 (OQ-5: 후보 1, 동의 배너 기각)**: 렌더러 배너가 클릭 시 신뢰 승격을 호출하면 그것은 자동 편입에 라벨을 붙인 것이다 — 손상된 렌더러는 모든 클릭과 preload API를 통제한다. 오늘 새 신뢰가 들어오는 유일한 경로는 main이 소유한 OS 다이얼로그다(`electron/ipc/shell.ts:122-125`)
 - **마찰은 결함이 아니다**: `X/scripts/`에 도달하려면 폴더 열기 다이얼로그로 등록한다 — 정의된 사용자 경로다
+
+### AC-PANEL-036d `[P]` 신뢰 확대의 읽기 표면 구속이 기록되어 있다 ↔ REQ-PANEL-036c
+- **Given** 이 SPEC의 아티팩트
+- **When** 신뢰 승격에 관한 향후 제안의 논증 의무를 검사한다
+- **Then** `spec.md` REQ-PANEL-036c가 **파일 열기만이 아니라 렌더러 읽기 표면을 함께 논증할 의무**를 명시하고, 근거로 `electron/assetProtocol.ts:124`의 `isAllowedPath` 공유와 크기 제한 부재를 인용한다
+- **And** `design.md` §8.3b가 그 게이트의 실측 형태(전체 읽기 + MIME 추측 + 무제한)를 기록한다
+- **And** 읽기/쓰기 축 분리가 `spec.md` §D에서 **별개 향후 보안 SPEC**으로 명시 제외되어 있다
+- **AC 형태에 대한 정직한 고지 (감사 지적 D6, 수용)**: REQ-PANEL-036c는 **향후 제안에 대한 구속**이므로 구현 시점에 실행 가능한 동작을 만들지 않는다. 따라서 이 AC는 **문서·검토 게이트 형태**이며 코드 단언이 아니다. 초판은 이 요구에 AC가 아예 없어 "58개 요구가 모두 AC로 매핑된다"는 §E 주장이 거짓이었다 — 그 공백을 이 AC가 닫는다. 실행 가능한 단언이 아님을 숨기지 않는다
 
 ### AC-PANEL-065 `[P+N]` 사이드바 데이터가 활성 원고 패널로 재배선된다 ↔ REQ-PANEL-065
 - **Given** 원고 패널 A(`main.md`)와 원고 패널 B(`supp.md`)가 열려 있고, 패널 순서상 B가 **왼쪽**이며 A가 활성인 상태
@@ -661,13 +714,6 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **And** `.moai/specs/SPEC-V03-WORKSPACE-001/` 하위 파일이 변경되지 않았다
 - **And** `docs/DOCUMENT_MODE_PRINCIPLES.md` 가 변경되지 않았다
 
-### AC-PANEL-095 e2e `.cm-content` 셀렉터 이관이 완료된다 ↔ C-13
-- **Given** 패널 지목 수단이 도입된 상태 (M4 계약 산출물)
-- **When** `grep -rl "cm-content" e2e/` 로 대상 파일을 열거하고 각 파일의 셀렉터 형태를 검사한다
-- **Then** 34개 파일 중 `.cm-content`를 **창 안 유일 요소로 가정하는** 셀렉터가 0건이다 — 전부 활성 패널 또는 명시 패널을 지목한다
-- **And** `pnpm test:e2e` 가 exit 0이다
-- **명시적 작업 항목**: 이 이관은 부수 효과가 아니다. 전역 `.cm-content` 규칙(`src/styles/global.css:32`)을 패널 스코프로 좁히는 어떤 작업도 이 이관을 선행으로 요구한다 (`design.md` §3.2a)
-
 ### AC-PANEL-094 릴리스 게이트 — 수동 한글 IME 스모크 ↔ C-8
 - **Given** AC-PANEL-035, 054, 054b, 053c 가 모두 자동으로 PASS한 상태
 - **When** 릴리스 사인오프를 진행한다
@@ -675,6 +721,13 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **And** 이 항목은 자동화로 대체될 수 없다 — CDP `Input.imeSetComposition`은 OS 변환 계층을 재현하지 못한다 (`product.md` §8 게이트 3, `docs/v0.3-signoff.md` §3)
 - **And** SPEC-1의 AC-WS-024와 함께 v0.3 릴리스 사인오프 게이트로 다룬다
 
+
+### AC-PANEL-095 e2e `.cm-content` 셀렉터 이관이 완료된다 ↔ C-13
+- **Given** 패널 지목 수단이 도입된 상태 (M4 계약 산출물)
+- **When** `grep -rl "cm-content" e2e/` 로 대상 파일을 열거하고 각 파일의 셀렉터 형태를 검사한다
+- **Then** 34개 파일 중 `.cm-content`를 **창 안 유일 요소로 가정하는** 셀렉터가 0건이다 — 전부 활성 패널 또는 명시 패널을 지목한다
+- **And** `pnpm test:e2e` 가 exit 0이다
+- **명시적 작업 항목**: 이 이관은 부수 효과가 아니다. 전역 `.cm-content` 규칙(`src/styles/global.css:32`)을 패널 스코프로 좁히는 어떤 작업도 이 이관을 선행으로 요구한다 (`design.md` §3.2a)
 ---
 
 ## §I 결정 상태별 AC 요약
@@ -685,7 +738,7 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 |---|---|---|
 | **OQ-1** 중앙 영역 분할 | AC-PANEL-002 / 002b / 002c, **065** | 사이드바 보존 + **사이드바 데이터 재배선이 필수 작업**. 논거는 소유권 분리이며 테스트 개수가 아니다 |
 | **OQ-2** 축 분리 + v0.3 dual-open 금지 | AC-PANEL-010 / **010b** / **011** / **011a** / **011b** / 012 / 013 / 013b | dual-open 금지 + 축 비붕괴 + 별칭 한계 명시 + **revision 파생 dirty** |
-| **OQ-5** 신뢰 범위로 좁혀 표시 | AC-PANEL-036 / 036b / **036c** | 트리는 열 수 있는 것만 제시. 동의 배너 기각 |
+| **OQ-5** 신뢰 범위로 좁혀 표시 | AC-PANEL-036 / 036b / **036c** / **036d** | 트리는 열 수 있는 것만 제시. 동의 배너 기각. 036d는 읽기 표면 구속의 문서·검토 게이트 형태 |
 | **OQ-6(i)** 채널 분리 3겹 | AC-PANEL-044 / **044b** / **044c** | 분리 + main 검증 + import 부재. 세 쓰기 진입점 전부 |
 | **OQ-6(ii)** (B′) EOL 복원 | **048** / **048a** / **048b** | 보조 파일 EOL 복원 + 조정 계층 불변 + 혼합 줄 끝 한계 명시 |
 
@@ -704,7 +757,7 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 | OQ-7 (탭 축) | 도입되면 AC-PANEL-011(중복 판정) / 013b(마지막 참조) / 053b(배너 동시 표시)에 탭 축 단언이 추가된다. **OQ-2의 dual-open 금지가 이 결정에 압력을 준다** — 탭은 판정 대상을 늘린다 |
 | OQ-9 (배치 persist) | AC-PANEL-006 / 006b의 저장 위치가 정해진다. 후보 1이면 "`panels`를 신뢰 소스로 쓰지 않는다"는 단언이 추가된다 |
 
-**M0의 AC는 어떤 미해결 결정에도 의존하지 않는다** (AC-PANEL-080~084). 라우팅 계층의 위치가 C-12/F6에 의해 강제되므로 선택지가 없고, 대상이 출하 중인 결함이므로 승인을 기다릴 이유도 없다.
+**M0의 AC는 어떤 미해결 결정에도 의존하지 않는다** (AC-PANEL-080 / 080b / 080c / 080d / 080e / 081 / 081b / 082 / 083 / 084). 라우팅 계층의 위치가 C-12/F6에 의해 강제되므로 선택지가 없고, 대상이 출하 중인 결함이므로 승인을 기다릴 이유도 없다.
 
 ---
 

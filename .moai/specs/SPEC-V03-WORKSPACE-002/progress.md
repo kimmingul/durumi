@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "진행 기록 — v0.3 멀티패널 셸"
-version: "0.3.0"
+version: "0.3.1"
 status: draft
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-08-09
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -30,9 +30,9 @@ plan_status: audit-ready
 plan_complete_at: 2026-08-08
 tier: L
 artifacts:
-  - spec.md         # 요구사항 50개 (REQ-PANEL-070~073 + 001~064)
+  - spec.md         # 요구사항 59개 (REQ-PANEL-070~073 + 070a + 001~065)
   - plan.md         # 확정 결정 + 미해결 결정 9건(OQ-1~OQ-9) + 마일스톤 M0~M8
-  - acceptance.md   # Given/When/Then AC (AC-PANEL-001~095)
+  - acceptance.md   # Given/When/Then AC 92개 (AC-PANEL-001~095)
   - design.md       # 설계 결정 + 기각된 대안 (Tier L)
   - research.md     # 코드베이스 조사 8영역 + 위험 목록 (Tier L)
   - progress.md     # 이 문서
@@ -40,6 +40,9 @@ plan_artifact_commits:
   - 310c04d  # 판 0.1.0 — plan 단계 아티팩트 5파일
   - 637398d  # AC 항목 수 정정
   - 88baf2d  # 판 0.2.0 — 출하 중인 결함 2건을 M0으로 승격
+  - 6545480  # 판 0.2.1 — OQ-8 기계 재현 반영 + progress.md 신설
+  - 91a0e1f  # 판 0.3.0 — OQ-1·2·5·6 확정, 논거 5건 정정
+  - (판 0.3.1 커밋 SHA는 이 판의 커밋 직후 backfill)
 blocking_decisions:
   total: 9
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
@@ -63,8 +66,8 @@ reproduction_first_milestone: M0
 
 | 항목 | 값 |
 |---|---|
-| 요구사항 | 58개 (`REQ-PANEL-070~073` = 출하 중인 결함, `001~065` = 기능) |
-| 수용 기준 | 89개 (`AC-PANEL-001~095`; 기본 59 + 분할 30) |
+| 요구사항 | **59개** (`REQ-PANEL-070~073` + `070a` = 출하 중인 결함, `001~065` = 기능) |
+| 수용 기준 | **92개** (`AC-PANEL-001~095`) |
 | 마일스톤 | **M0**(출하 중인 결함 재현 우선) → M1~M8 |
 | 결정 | **확정 4건**(OQ-1·2·5·6) / 미해결 5건(OQ-3·4·7·8·9) — `plan.md` §A.2 |
 | 제약 | 13건 (`spec.md` §C C-1~C-13) |
@@ -91,6 +94,27 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 
 라우팅 계층의 **위치는 선택 사항이 아니다**: `tests/electron/extensionIndependence.test.ts:34-65`(조정 코어 5파일의 확장자 판독 수단 부재) + `:171-174`(`applyExternalChange` arity 2)가 강제하므로 라우팅 키는 `src/store/` 계층에 산다 — REQ-PANEL-072 / C-12 / `design.md` §6.2a.
 
+### §E.1b-2 Plan Audit Gate 이력
+
+| 판 | 결과 | 조치 |
+|---|---|---|
+| 0.3.0 | **FAIL, 총계 0.75** (Tier L 임계 0.85). Clarity 0.78 / Completeness 0.72 / Testability 0.72 / Traceability 0.78. must-pass 7항목 전부 통과 — 실패는 총계이며 Blocking-M0 4건이 원인 | 0.3.1에서 4건 + Medium/Low 11건을 아티팩트 편집으로 해소. **새 결정은 필요하지 않았다** |
+
+**Blocking-M0 4건과 그 해소**:
+
+| # | 지적 | 해소 |
+|---|---|---|
+| D1 | 라우팅 키가 마운트 시점 경로에 고착 — 재키잉 의무 부재 | REQ-PANEL-070a 신설 + AC-PANEL-080e + `design.md` §6.2a에 주입된 setter 클로저와 `filePath` 결속 명시 |
+| D2 | AC-PANEL-080b가 **반증 불가능** — `'idle'`이 세 시점 모두의 값 | 전이 관측(리듀서 호출 횟수 + 상태 객체 참조 동일성 + Map 항목 부재)으로 재작성. REQ-PANEL-070 조항도 수정 |
+| D3 | **"dirty 경로는 이미 올바르게 동작한다"가 거짓** — dirty 문서는 배너 클릭 1회 뒤 오염 | AC-PANEL-080c 전면 재작성(`pending` 오염 + 배너 동작 단언), `spec.md` 영향 범위 표 정정, `research.md` §7.3a-3 신설 |
+| D4 | `compositionGate.detach()`가 `composing`을 영구 latch — 어느 요구에도 없었다 | REQ-PANEL-071에 detach 해제 의무 + AC-PANEL-081b 신설. 스케줄러는 PRESERVE 유지 |
+
+**D3·D4는 감사가 기계 재현했다** — 증거 `.moai/state/verify/goal-spec12345/d3d4-repro.log`, `…/d3d4-repro-source.ts.txt`. `research.md` §10.0 등급 표에서 두 항목을 코드 직독 → **기계 재현**으로 승격했고, **그 둘만 올렸다**(나머지 코드 직독 항목은 그대로).
+
+**Medium/Low 11건**: D5(§6.2b의 "이미 계산된 boolean" 오진술 + OR 억제 의무) / D6(REQ-PANEL-036c 미커버 → AC-PANEL-036d 신설) / D8(OoS 개수 7→9) / D9(요구 수 자기모순 + 커밋 누락) / D10(REQ-PANEL-072 근거 과장) / D11(AC-PANEL-082 예외 철회) / D12(⟨OQ-8⟩ 표시 범위 축소) / D13(AC-PANEL-080d를 쓰기 채널 값 단언으로) / D14(선언 순서) / D15(REQ-PANEL-043b 오인용).
+
+**감사가 확인해 준 것 (유지)**: 라우팅 키의 `src/store/` 배치는 옳다(주입된 setter가 승인된 메커니즘) · SPEC-1 D-2/D-3/D-6과 `EPIC:34`에 모순 없음 · 4개 사용자 결정이 모두 요구로 표현됨 · 검증 등급 기록이 "대체로 매우 정직" · **어떤 미해결 결정도 M0을 막지 않는다**(막은 것은 M0 자신의 명세 결함이었다) · `↔ C-` 6건 카운트는 정확했다(감사 초기 7건 지적은 철회됨).
+
 ### §E.1c plan 단계 자기 검증 (실행 관측)
 
 | 항목 | 명령 | 결과 |
@@ -99,7 +123,7 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 | 원칙 문서 불변식 (C-9) | `git diff --quiet -- docs/DOCUMENT_MODE_PRINCIPLES.md` | exit 0 |
 | 조정 코어 테스트 무변경 (C-12) | `git diff --quiet -- tests/electron/extensionIndependence.test.ts` | exit 0 |
 | frontmatter 스키마 | canonical 12필드 + `tier` + `depends_on`, snake_case 별칭 0건 | PASS |
-| spec-lint 헤딩 규약 | `### Out of Scope —` h3 하위 섹션 7개, 각각 `-` bullet 보유 | PASS |
+| spec-lint 헤딩 규약 | `### Out of Scope —` h3 하위 섹션 **9개**, 각각 `-` bullet 보유 | PASS |
 
 **미검증 (정직한 공백)**: `pnpm test` / `pnpm typecheck` / `pnpm lint`는 plan 단계에서 실행하지 않았다. baseline(199 테스트 파일 / 33 e2e spec)은 오케스트레이터 제시값을 전제로 삼았고 파일 수만 실측했다. spec-lint 도구는 이 저장소에 없어 헤딩 규약은 SPEC-1의 통과 형태 복제로 달성했다.
 

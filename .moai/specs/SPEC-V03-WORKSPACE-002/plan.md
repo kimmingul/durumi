@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "구현 계획 — v0.3 멀티패널 셸"
-version: "0.3.0"
+version: "0.3.1"
 status: draft
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-08-09
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -585,6 +585,17 @@ SPEC-1이 "조합 유지형 e2e 프리미티브 자체가 산출물"이라고 �
 
 main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)은 **정적 소스 사실이며 실행하지 않았다.** 엔드투엔드 다중 창 실행은 수행되지 않았다 — OQ-8의 검증 범위 분할 표 참조.
 
+**감사가 추가로 기계 재현한 두 얼굴 (판 0.3.1)**:
+
+| 얼굴 | 관측 | 요구 |
+|---|---|---|
+| **dirty 문서도 오염된다** — 배너 클릭 1회 뒤 | `pending.path = "/w/a.md"`가 `b.md` 문서 상태에 심기고, 불러오기가 `a.md` 내용을 적용 | AC-PANEL-080c. 초판의 "dirty는 이미 올바르게 동작한다"는 **거짓이었다** |
+| **`detach()`가 조합 보류를 영구 latch** | `detach 후 composing = true`, 이후 조정이 `held-composition`에 정착 | REQ-PANEL-071 detach 해제 의무 + AC-PANEL-081b |
+
+증거: `.moai/state/verify/goal-spec12345/d3d4-repro.log`, `…/d3d4-repro-source.ts.txt`.
+
+**설계 공백 1건 (코드 직독)**: 재바인딩 시 라우팅 키 미갱신 — REQ-PANEL-070a + AC-PANEL-080e. `design.md` §6.2a가 승인 메커니즘(주입된 setter 클로저)과 `filePath` 결속을 확정한다.
+
 **(2) 전역 조합 플래그 공유 (REQ-PANEL-071)**
 `shared/reconciliation.ts:57`의 `composing`이 창 전역 단일 boolean이고 어느 뷰의 게이트든 그것을 쓴다(`src/editor/compositionGate.ts:109, 112` ← `src/editor/MarkdownEditor.tsx:155`). 패널 B의 `compositionend`가 패널 A의 조합 보류를 해제해, `compositionGate.ts:9-25`가 막기 위해 작성된 실패 계열을 한 계층 위에서 재도입한다.
 
@@ -593,11 +604,15 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 1. **RED**: 두 결함을 각각 실증하는 실패 테스트를 **영구 테스트로** 작성하고 실패를 확인한다.
    - (1)의 **형태는 이미 검증되어 있다** — 오케스트레이터의 재현 소스(`.moai/state/verify/goal-spec12345/oq8-repro-source.ts.txt`)가 실제 모듈 3개 + 실제 `EditorState`로 성립함을 보였다. 그 임시 파일은 삭제되었고 **영구 테스트의 형태는 이 SPEC이 정한다**: 대체하는 것은 preload 브리지(`onExternalFileChange`)와 `DispatchTarget`(테스트 seam — `src/editor/applyExternalChange.ts:63-67`)뿐이고, 채널·스토어·실행자·문서 상태는 실제 모듈을 쓴다. 검사 대상은 **버퍼 내용 + 조정 상태 + 미등록 경로 폐기 + 깨끗한 문서/dirty 문서 두 분기**다(AC-PANEL-080 / 080b / 080c).
    - (2)는 게이트 2개를 붙여 한쪽의 `compositionend`가 다른 쪽 보류를 푸는 것을 단언한다(AC-PANEL-081).
+   - **(3) 재바인딩 재키잉** — 패널을 A→B로 재바인딩한 뒤 A의 변경이 도달하지 않고 B의 변경이 도달함을 단언한다(AC-PANEL-080e). 수정 전에는 **정확히 반대 결과**가 관측된다.
+   - **(4) detach 해제** — 조합 중 게이트를 detach하면 보류가 해제되고 큐가 드레인됨을 단언한다(AC-PANEL-081b). 감사가 기계 재현했으므로 실패 형태가 이미 관측되어 있다.
+   - **(5) dirty `pending` 오염** — dirty 문서의 `pending`이 다른 경로의 변경으로 설정되지 않고, 배너 동작이 그 문서의 내용만 적용함을 단언한다(AC-PANEL-080c). 감사가 기계 재현했다.
    - 두 재현 모두 **창 2개가 필요 없다** — 재현이 창 하나로 결함을 실증했고, 원인은 창이 아니라 라우팅 부재다.
 2. **GREEN**: `src/store/` 계층에 라우팅 키(`Map<path, …>` 3종)를 세운다. `design.md` §6.2a의 배치를 그대로 따른다.
 3. **불변식 확인**: `tests/electron/extensionIndependence.test.ts` 무변경 통과 (C-12). 조정 코어 5파일의 `git diff --quiet` exit 0.
 
-대상 요구: REQ-PANEL-070, 071, 072, 073
+대상 요구: REQ-PANEL-070, **070a**(재키잉), 071, 072, 073
+대상 AC: AC-PANEL-080 / 080b / 080c / 080d / **080e** / 081 / **081b** / 082 / 083 / 084
 **밀폐성**: 완전히 밀폐된다 — 상태 계층 유닛만으로 닫히고 편집 표면·레이아웃·패널 UI가 필요 없다. **이것이 M0을 맨 앞에 둘 수 있는 이유이며, 나머지 마일스톤 전부가 이 라우팅 계층 위에 선다.**
 
 > **주의**: M0의 GREEN은 `shared/reconciliation.ts`·`src/editor/applyExternalChange.ts`를 **건드리지 않는다**. `reduceReconciliation(state, event, policy)` 시그니처와 `applyExternalChange(target, nextContent)` arity 2가 그대로 유지되며, 라우팅은 그 호출자에 생긴다. 코어를 고치려는 충동이 들면 C-12와 `design.md` §6.2a의 기각된 대안 표를 읽는다.

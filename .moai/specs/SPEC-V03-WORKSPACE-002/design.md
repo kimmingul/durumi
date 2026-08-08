@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.0"
+version: "0.3.1"
 status: draft
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-08-09
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -400,6 +400,32 @@ electron/ipc/project.ts:40 │                                        │
 
 세 개의 `Map`이 라우팅 키를 담고, 셋 다 `src/store/`에 있다 — `LAYER_FILES`에 포함되지 않는 계층이다. `applyExternalChange`는 여전히 "이 target에 이 내용을 적용하라"만 안다. **경로도 확장자도 모른다.**
 
+#### 승인된 메커니즘 — 주입된 setter의 클로저 (감사 확인)
+
+초판은 대안 3건을 기각했지만 **승인된 형태를 명명하지 않았다.** 그것이 구현자가 `path` 매개변수를 추가하려는 유혹을 남긴다. 형태는 이것이다:
+
+```
+registerReconciliationExecutor(view, (h) => setEffectHandlerFor(filePath, h))
+```
+
+`registerReconciliationExecutor(target, setEffectHandler)`의 **두 번째 인자가 주입된 setter**이고(`src/editor/applyExternalChange.ts:123-132`) 호출부에는 `filePath`가 스코프에 있으므로, **경로가 클로저에 담긴다.** 시그니처는 **하나도 바뀌지 않는다** — arity 2가 유지되고 확장자 판독 수단 6종 금지도 유지된다. 즉 `applyExternalChange.ts`는 **무변경일 수 있다**(그래서 §D11에 따라 AC-PANEL-082의 `git diff` 예외를 철회했다).
+
+#### 등록·해제는 `filePath` 변화에 결속된다 — `[]`가 아니다 (감사 지적 D1)
+
+**§6.2a 초판은 Map의 *위치*만 정하고 *갱신 시점*을 말하지 않았다.** 그것이 M0 정확성의 핵심이므로 여기서 확정한다.
+
+오늘의 마운트 구조:
+
+| 사실 | 근거 |
+|---|---|
+| 상위가 `key` prop을 주지 않는다 | `src/App.tsx:153-160` — `<MarkdownEditor value={…} onChange={…} onReady={…} filePath={filePath} …/>` |
+| 마운트 effect의 deps가 `[]`다 | `src/editor/MarkdownEditor.tsx:176` |
+| `filePath`는 prop으로 들어와 **별개 effect**가 처리한다 | `:166` |
+
+**따라서 하나의 `EditorView`가 문서를 갈아타며 재사용된다.** 등록을 `[]`-deps effect에 두면 경로가 첫 마운트에 캡처되어 갱신되지 않고, 파일 전환 후 (a) 새 경로의 변경이 아무 데도 가지 않고 (b) **옛 경로의 변경이 그 패널로 들어온다.** M0이 닫으려는 결함이 다른 형태로 재발한다.
+
+**확정**: 라우팅 등록·해제는 **`filePath` 변화에 결속된다.** 재바인딩 시 이전 경로의 항목을 해제하고 새 경로로 등록한다(REQ-PANEL-070a, AC-PANEL-080e). 위 클로저 형태가 이것을 자연스럽게 만든다 — `filePath`가 deps에 있는 effect 안에서 등록하면 클로저가 매번 새 경로를 담는다.
+
 이 배치가 F6의 근거와 정합한다: `:162` 주석의 "조정 계층은 경로를 아예 받지 않는다 — 그 자체가 확장자 독립의 증거다"는 **코어를 두고 한 말**이고, 그 위에 라우팅 계층을 얹는 것은 그 증거를 약화시키지 않는다. 오히려 라우팅이 위에 있어야 코어가 계속 경로 무지일 수 있다.
 
 **기각된 대안**
@@ -410,13 +436,42 @@ electron/ipc/project.ts:40 │                                        │
 `applyExternalChange(target, content, path)` | `:171-174`가 arity 2를 단언하므로 **테스트가 즉시 깨진다.** C-12 위반 |
 `ExternalFileChange`를 창별로 필터링해 main에서 보낸다 | main이 어느 창이 어느 파일을 여는지 알아야 하는데 `electron/ipc/project.ts:36`의 `service`는 프로세스 전역 1개이고 `owned` Set이 경로 기준이라 **창 귀속 정보가 없다**. 그 정보를 넣는 것은 창 소유권 모델 도입이며 `spec.md` §D.4가 범위 밖으로 둔 작업이다. 렌더러 측 대조가 최소 변경이고, 브로드캐스트를 유지하면 같은 파일을 두 창이 열었을 때 둘 다 알림을 받는 것이 자연히 성립한다 |
 
-### 6.2b 조합 플래그 — 같은 결함, 같은 해법 위치
+### 6.2b 조합 플래그 — 리듀서 코어는 무변경, **게이트 dispatch 경로와 합류 계산이 추가된다**
 
-`shared/reconciliation.ts:57`의 `composing`은 `ReconciliationState`의 필드다. 상태를 `Map<path, ReconciliationState>`로 키잉하면 **`composing`도 자동으로 문서별이 된다** — 별도 조치가 필요 없다. 필드 정의도, 전이 로직(`:218-228`)도 바뀌지 않는다.
+`shared/reconciliation.ts:57`의 `composing`은 `ReconciliationState`의 필드다. 상태를 `Map<path, ReconciliationState>`로 키잉하면 `composing`도 문서별이 된다. **리듀서 코어(필드 정의 + 전이 로직 `:218-228`)는 바뀌지 않는다.**
 
-바뀌는 것은 게이트가 어디로 dispatch하는가뿐이다. 오늘은 `compositionGate.ts:109, 112`가 창 전역 스토어의 단일 상태를 쓰므로 패널 B의 `compositionend`가 패널 A의 조합 보류를 해제한다(REQ-PANEL-071의 결함). 문서 키잉 후에는 각 패널의 게이트가 **자기 패널이 참조하는 문서의 상태**로 dispatch한다.
+**초판의 두 문장을 정정한다 (감사 지적 D5, 수용)**:
 
-§6.3의 OR 합류는 그 위에 얹힌다: 한 문서를 두 패널이 참조하면 그 문서의 `composing`은 두 게이트의 논리적 OR이어야 한다. 이 합류 계산도 `src/store/` 계층의 몫이다 — `reduceReconciliation`은 이미 계산된 boolean을 받는 이벤트(`composition-start`/`composition-end`)만 본다.
+| 초판 | 정정 |
+|---|---|
+| "별도 조치가 필요 없다" | **틀렸다** — 자기 다음 두 문장(게이트 dispatch 변경 + OR 합류)과 모순이다. 정확히는 **리듀서 코어가 무변경이고, 게이트 dispatch 경로와 합류 계산이 스토어 계층에 추가된다** |
+| "`reduceReconciliation`은 이미 계산된 boolean을 받는 이벤트만 본다" | **틀렸다.** `shared/reconciliation.ts:32-33`이 `composition-start` / `composition-end`를 **payload 없이** 선언하고, 리듀서가 boolean을 **스스로 계산한다**(`:219` `composing: true`, `:222` `composing: false`) |
+
+**귀결 — 이것이 D5를 Blocking으로 만든 이유**: `composition-end`가 `composing`을 **무조건 false로 설정한다.** 따라서 OR 합류는 "리듀서 위에 얹히는" 것이 **아니다.** 스토어가 **다른 게이트가 아직 조합 중인 동안 `composition-end` dispatch를 억제하고, OR가 false로 떨어질 때만 방출해야 한다.**
+
+그 억제를 빼면 패널 B의 `compositionend`가 패널 A의 보류를 해제한다 — **정확히 REQ-PANEL-071이 닫으려는 결함이다.** 즉 문서별 키잉만으로는 부족하고 억제 로직이 함께 필요하다.
+
+```
+패널 A 게이트 ──┐
+                ├─ OR ─► 스토어가 판정
+패널 B 게이트 ──┘         ├─ OR가 아직 true → composition-end dispatch 억제
+                          └─ OR가 false로 떨어짐 → composition-end 1회 방출
+```
+
+### 6.2c OR 방향 — 안전 축에서는 옳고, **liveness는 D4가 담보한다**
+
+감사가 이 질문에 답했고 결론을 기록한다.
+
+**OR는 안전(safety) 축에서 옳다.** 대안 둘 다 IME를 깨뜨린다:
+
+| 대안 | 왜 깨지는가 |
+|---|---|
+| AND (모든 게이트가 조합 중일 때만 보류) | 패널 A만 조합 중이면 보류하지 않고 적용한다 — **같은 문서**이므로 그것이 곧 A의 문서를 조합 도중 바꾸는 것이다 |
+| "조합 중인 패널만 보류" | 같은 문서를 다른 패널에 적용하는 것이 곧 조합 중인 패널의 문서를 바꾸는 것이다. 성립 불가 |
+
+**위험은 safety가 아니라 liveness다**: OR가 참인 동안 조정이 무한히 보류될 수 있다. 그리고 **D4가 그 liveness를 실제로 깨뜨리는 구체적 경로다** — `detach()`가 `composing`을 해제하지 않으므로(`compositionGate.ts:88-93`) 한 게이트가 latch되면 **다른 게이트의 `compositionend`로는 OR가 결코 false로 떨어지지 않는다.**
+
+즉 **OR는 채택하되 liveness는 REQ-PANEL-071의 detach 해제 의무가 담보한다.** 둘을 함께 보아야 한다 — OR만 도입하고 D4를 방치하면 "한 패널이 latch되어 다른 패널이 아무리 조합을 끝내도 드레인되지 않는" 상태가 **실재한다**(기계 재현으로 확인됨).
 
 ### 6.3 조합(IME) 축은 패널별, 조정 상태는 문서별 — 두 축이 다르다
 
@@ -521,7 +576,7 @@ raw 저장            →  LF → 보관된 eol 복원
 
 같은 파일 `:99-107`의 특성화 테스트(`[기록] CRLF 파일은 열리는 시점에 LF로 접힌다`)도 **(B′) 아래에서 그대로 green이다** — (B′)는 읽기 방향의 접기를 유지하고 쓰기 방향만 복원하므로 그 테스트가 고정한 현재 동작을 바꾸지 않는다. 그 주석이 제시한 해소 경로("파일별 줄바꿈을 감지해 `lineSeparator`를 구성하고 저장 시 재직렬화")보다 (B′)가 좁은 이유가 여기 있다: **바이트 보존에 필요한 것은 쓰기 방향뿐이고, `lineSeparator`는 읽기 방향을 위한 장치다.**
 
-**결정적 논거 (AC 부기보다 상위)**: `EPIC-V03-WORKSPACE.md:34`가 `.py`/`.bib`/`.csv`/`.json`의 바이트 무결성을 **end-state 요구**로 못박는다. 첫 저장에서 모든 줄 끝을 다시 쓰는 보조 편집 표면은 각주가 아니라 **Epic 위반**이다. "편집 없이 열었다 닫으면 바이트 보존"(REQ-PANEL-043b)은 참이지만 불충분하다 — **저장이 에디터의 목적이다.**
+**결정적 논거 (AC 부기보다 상위)**: `EPIC-V03-WORKSPACE.md:34`가 `.py`/`.bib`/`.csv`/`.json`의 바이트 무결성을 **end-state 요구**로 못박는다. 첫 저장에서 모든 줄 끝을 다시 쓰는 보조 편집 표면은 각주가 아니라 **Epic 위반**이다. "편집 없이 열었다 닫으면 바이트 보존"(REQ-PANEL-043, AC-PANEL-043b)은 참이지만 불충분하다 — **저장이 에디터의 목적이다.**
 
 **메커니즘이 제공할 수 없는 것 (AC가 약속하지 않아야 하는 것)**: 파일당 EOL 하나로는 **혼합 줄 끝**을 바이트 보존할 수 없다. 혼합 파일에서 저장은 모든 줄 끝을 지배적 EOL로 정규화한다. REQ-PANEL-048a가 탐지 정책(동수 시 `\r\n` 우선, 줄 끝 없으면 LF)과 이 한계를 명시하고, AC-PANEL-048b가 한계를 **명시적으로** 판정한다 — 통과 조건이 "정규화된다"이지 "보존된다"가 아니다.
 

@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "코드베이스 조사 — 멀티패널 셸"
-version: "0.3.0"
+version: "0.3.1"
 status: draft
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-08-09
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -424,7 +424,48 @@ useFileMenuCommands.ts:50-77  doSave → window.api.fileSave(filePath, content) 
 
 **귀결**: 창 A가 `a.md`, 창 B가 `b.md`를 열고 창 B의 버퍼가 깨끗할 때, `a.md`에 외부 쓰기가 들어오면 `a.md`의 내용이 창 B의 `b.md` 버퍼에 적용된다. `appStore.filePath`는 여전히 `b.md`이므로 저장 시 **A의 내용이 B의 파일을 덮어쓴다 — 데이터 손실이다.**
 
-**영향 범위의 역설**: `!state.isDirty`(`reconciliation.ts:193`)가 dirty 버퍼를 배너로 강등해 보호하므로, **영향을 받는 것은 깨끗한 문서 — 파일을 막 열어 아무것도 하지 않은 상태**다. 편집 중인 문서가 안전하고 손대지 않은 문서가 취약하다는 비대칭이 이 결함을 특히 위험하게 만든다.
+**영향 범위 — 초판의 결론은 틀렸다 (감사 지적 D3, 정정)**: 초판은 `!state.isDirty`(`reconciliation.ts:193`)가 dirty 버퍼를 보호한다고 결론했다. **dirty 문서도 오염되며, 손실이 사용자 클릭 한 번만큼 지연될 뿐이다.** §7.3a-3이 그 사슬과 재현을 담는다.
+
+**초판이 실제로 확립한 것의 정확한 범위**: 첫 재현(`[OQ-8/dirty]`)은 **emit 시점의 버퍼 불변**만 관측했고 `pending`을 관측하지 않았다. 그것으로 "dirty 보호"를 결론한 것은 **증거를 넘어선 주장**이었다 — 관측하지 않은 필드에 대해 안전을 주장했다.
+
+### 7.3a-3 결함 A의 두 번째 얼굴 — dirty 문서는 **배너 경유로** 오염된다 (기계 재현)
+
+| 문서 상태 | 오염 시점 | 사슬 |
+|---|---|---|
+| 깨끗한 문서 | **즉시** | `!state.isDirty` 통과 → `apply-to-buffer` → 버퍼 교체 |
+| **dirty 문서** | **배너 동작 경유 (클릭 1회 후)** | notify 분기가 `pending: change`를 심는다(`shared/reconciliation.ts:206`) — 그 `change`는 **다른 경로의** 확정 변경이다. `user-load-from-disk`가 `state.pending.content`를 적용한다(`:251-257`) |
+
+관측 출력 (verbatim):
+
+```
+[D3] 배너 상태 = "held-notify"
+[D3] pending.path = "/w/a.md"          ← b.md 문서 상태에 a.md의 변경이 심겼다
+[D3] emit 직후 버퍼 = "B의 내용\n"      ← 즉시 오염은 없다
+[D3] 불러오기 후 버퍼 = "A의 내용\n"    ← 클릭 한 번 뒤 오염된다
+```
+
+증거: `.moai/state/verify/goal-spec12345/d3d4-repro.log`, `…/d3d4-repro-source.ts.txt` (§7.3a-1의 증거 지속성 한계가 동일하게 적용된다).
+
+**dirty 경로가 더 나쁠 수 있는 이유**: 사용자에게 `b.md`의 배너가 보이고 사용자는 `b.md`를 불러오겠다고 **명시적으로 동의한다.** 적용되는 것은 `a.md`의 내용이다. SPEC-1 REQ-WS-028의 "사용자 확인"이 **형식적으로 충족된 채 대상이 틀린다** — 확인 없는 손실보다 나쁠 수 있다.
+
+**AC 귀결**: AC-PANEL-080c가 이 사슬을 판정하며, 초판이 그 AC를 "dirty 경로는 오늘 이미 올바르게 동작한다"는 회귀 방어로 적은 것은 **거짓 진술이었다.**
+
+### 7.3d 결함 C — `compositionGate.detach()`가 조합 보류를 영구 latch한다 (기계 재현)
+
+`src/editor/compositionGate.ts:88-93`의 `detach()`는 리스너 2개를 제거하고 `clearPending()`으로 예약된 드레인을 **취소하지만 `sink.onCompositionEnd()`를 호출하지 않는다.** `src/editor/MarkdownEditor.tsx:168-176`의 정리 함수가 그 `detach()`를 호출한다.
+
+```
+[D4] 조합 시작 후 composing = true
+[D4] detach 후 composing = true        ← 해제되지 않는다
+[D4] 이후 조정 상태 = "held-composition"
+[D4] 버퍼 = "B의 내용\n"                ← 이후 어떤 외부 변경도 적용되지 않는다
+```
+
+**영향 범위는 단계마다 커진다**: 오늘(전역 플래그 1개)은 조합 중 언마운트가 **세션의 모든 조정을 영구 동결**시킨다. M0의 문서별 키잉 후에는 그 문서가, §6.3의 OR 합류가 얹히면 **한 패널의 언마운트가 그 문서를** 동결시킨다.
+
+이것은 REQ-PANEL-055가 실행자에 대해 다루는 **언마운트 무장 해제의 대칭 형태**이며 초판의 어느 요구에도 없었다. REQ-PANEL-071에 detach 해제 의무를 추가하고 AC-PANEL-081b가 판정한다. `compositionGate.ts`의 스케줄러 로직은 PRESERVE 그대로다 — 고치는 것은 detach 시 해제다.
+
+**§6.2c의 OR 방향과의 관계**: OR는 안전 축에서 옳지만 **liveness는 이 결함이 실제로 깨뜨린다** — 한 게이트가 latch되면 다른 게이트의 `compositionend`로는 OR가 결코 false로 떨어지지 않는다.
 
 ### 7.3b 결함 B — 전역 조합 플래그 공유 (**확인됨**, v0.2.31 출하 중)
 
@@ -647,14 +688,30 @@ codex와 grok이 독립적으로 read-only 검토했다. **gemini는 참여하�
 
 ---
 
+## 9.9 재바인딩 시 라우팅 키 미갱신 — M0 설계 공백 (감사 지적 D1, 코드 직독)
+
+| 사실 | 근거 |
+|---|---|
+| 상위가 `key` prop을 주지 않는다 | `src/App.tsx:153-160` |
+| 마운트 effect deps가 `[]`다 | `src/editor/MarkdownEditor.tsx:176` |
+| `filePath`는 prop으로 들어와 **별개 effect**가 처리한다 | `:166` |
+
+**따라서 하나의 `EditorView`가 문서를 갈아타며 재사용된다.** 라우팅 등록을 그 `[]`-deps effect에 두면 경로가 첫 마운트에 캡처되어 갱신되지 않고, 파일 전환 후 (a) 새 경로의 변경이 아무 데도 가지 않고 (b) **옛 경로의 변경이 그 패널로 들어온다** — M0이 닫으려는 결함이 다른 형태로 재발한다.
+
+`design.md` §6.2a 초판은 Map의 **위치**만 정하고 **갱신 시점**을 말하지 않았다. REQ-PANEL-070a가 재키잉 의무를, AC-PANEL-080e가 판정을, §6.2a의 **주입된 setter 클로저**가 구현 형태를 담는다 — `registerReconciliationExecutor(view, (h) => setEffectHandlerFor(filePath, h))`는 시그니처를 바꾸지 않고 경로를 클로저에 담으므로 arity 2와 확장자 독립이 모두 유지된다.
+
+**검증 등급**: 코드 직독. 재현하지 않았다 — M0의 RED(AC-PANEL-080e)가 처음 재현한다.
+
+---
+
 ## 10. 미검증 항목 (정직한 공백)
 
 ### 10.0 검증 등급 표 — 세 등급을 혼동하지 않는다
 
 | 등급 | 의미 | 이 SPEC의 해당 항목 |
 |---|---|---|
-| **기계 재현** | 실제 모듈을 구동해 결함을 관측했다 | 결함 A(§7.3a-1) — 크로스-문서 버퍼 오적용 + `idle` 정착 |
-| **코드 직독** | 소스를 읽어 형태를 확인했고 실행하지 않았다 | 조합 플래그 공유(§7.3b), 저장 await 창(§9.8d), 사이드카 재바인딩 플러시(§9.7), pandoc 신뢰 우회(§9.6) |
+| **기계 재현** | 실제 모듈을 구동해 결함을 관측했다 | 결함 A 즉시 오염(§7.3a-1), **결함 A dirty 경유 오염 + `pending` 오염(§7.3a-3)**, **게이트 detach latch(§7.3d)** |
+| **코드 직독** | 소스를 읽어 형태를 확인했고 실행하지 않았다 | 조합 플래그 공유(§7.3b), 저장 await 창(§9.8d), 사이드카 재바인딩 플러시(§9.7), pandoc 신뢰 우회(§9.6), 재바인딩 시 라우팅 키 미갱신(§9.9) |
 | **정적 소스 사실** | 코드에 그렇게 쓰여 있다는 것만 확인했고 그 결과를 관측하지 않았다 | `getAllWindows()` 브로드캐스트가 미등록 창에 전달(§7.3a-2 main 절반) |
 
 AC 본문이 각 결함의 등급을 명시하며(`acceptance.md` 표기 규약), **등급을 올려 적지 않는다.**
@@ -662,7 +719,9 @@ AC 본문이 각 결함의 등급을 명시하며(`acceptance.md` 표기 규약)
 1. **테스트 스위트 재실행을 하지 않았다.** 오케스트레이터가 제시한 baseline(199 파일 / 2191 테스트 전부 통과, typecheck·lint exit 0)을 그대로 전제했다. 파일 수 199와 e2e spec 33은 실측했으나 통과 여부·테스트 개수는 실행하지 않았다.
 2. ~~**§7.3의 크로스-윈도 버퍼 오적용은 소스 근거 기반 가설이며 실행 재현하지 않았다.**~~ **정정 2 (2026-08-08, 기계 재현)**: 렌더러 절반이 **실제 모듈로 실행 재현되었다** — §7.3a-1의 관측 출력과 증거 경로 2개 참조. 이 항목은 더 이상 미검증 공백이 아니다. **여전히 남는 공백은 정확히 하나**: main 절반(`broadcast()`가 미등록 창에도 전달)의 실행 관측. 이것은 `getAllWindows()`라는 정적 소스 사실로만 확정되어 있고 엔드투엔드 다중 창 실행은 수행되지 않았다(§7.3a-2). `plan.md` OQ-8이 그 공백을 소스 단언(AC-PANEL-084)으로 갈음할 것을 권고하며, 근거는 재현이 **창 하나로** 결함을 실증해 창 축이 원인이 아님을 보였다는 점이다.
 
-2a. **조합 플래그 공유(§7.3b)는 코드 직독 확정, 실행 재현 미수행.** 결함 A와 달리 이쪽은 기계적 재현이 없다 — 근거는 `shared/reconciliation.ts:57`의 단일 boolean과 `src/editor/compositionGate.ts:109, 112`의 공유 dispatch라는 소스 사실이다. M0의 RED 단계(AC-PANEL-081)가 이 재현을 처음 수행하게 된다.
+2a. **조합 플래그 공유(§7.3b)는 여전히 코드 직독 확정이며 실행 재현 미수행.** 근거는 `shared/reconciliation.ts:57`의 단일 boolean과 `src/editor/compositionGate.ts:109, 112`의 공유 dispatch라는 소스 사실이다. M0의 RED 단계(AC-PANEL-081)가 이 재현을 처음 수행한다. **주의**: 이것은 §7.3d(게이트 detach latch)와 **별개 결함**이다 — 후자는 기계 재현되었고 전자는 아니다. 등급을 함께 올리지 않는다.
+
+2b. **정정 (2026-08-09)**: §7.3a-3(dirty 경유 오염)과 §7.3d(detach latch)는 **기계 재현되었다.** 초판 §10은 두 항목을 코드 직독 등급으로 기재했으나 감사 재현으로 승격되었다 — §10.0 등급 표에 반영했다. **등급을 올린 것은 이 둘뿐이며** 나머지 코드 직독 항목(저장 await 창 / 사이드카 플러시 / pandoc / 재바인딩)은 그대로다.
 3. **`RightSidebar.tsx` 내부 구조는 표면만 읽었다** — 탭 렌더링·persist 패턴이 `Sidebar.tsx`와 동형이라는 주석(`global.css:1043`)과 테스트(`tests/sidebar/rightSidebar.test.tsx`) 근거로 판단했다.
 4. **`@codemirror/language-data`의 지연 로드 동작을 실행 확인하지 않았다.** 카탈로그가 `LanguageDescription[]`을 제공한다는 것은 `MarkdownEditor.tsx:93-95`의 사용 형태와 `src/editor/decorations/codeHighlight.ts:4, 31`의 지연 하이라이트 로딩 사용에서 추론했다.
 
