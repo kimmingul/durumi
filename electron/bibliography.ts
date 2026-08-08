@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { discoverProjectFor } from './projectDiscovery';
-import { manifestBibliographyPath } from '../shared/workspaceManifest';
 
 const CANDIDATE_NAMES = ['references.bib', 'references.bibtex', 'bibliography.bib'];
 
@@ -57,35 +56,91 @@ async function probeDir(dir: string): Promise<BibliographyHit | null> {
 }
 
 /**
- * 프로젝트를 아는 서지 해석 (REQ-WS-040).
+ * 매니페스트 선언 경로를 채택하지 못한 사유.
+ *
+ * `schema-violation`은 값이 경로가 아니라 인라인 서지 항목인 경우이고
+ * (REQ-WS-039), 나머지는 경로는 맞으나 읽지 못한 경우다 (REQ-WS-056).
+ */
+export type BibliographyFallbackReason =
+  | 'schema-violation'
+  | 'missing'
+  | 'permission-denied'
+  | 'not-a-file'
+  | 'unreadable';
+
+export interface BibliographyFallback {
+  /** 매니페스트가 선언한, 채택하지 못한 경로. */
+  declaredPath: string;
+  reason: BibliographyFallbackReason;
+}
+
+export interface BibliographyResolution {
+  hit: BibliographyHit | null;
+  /** 선언 경로를 쓰지 못해 walk-up으로 물러섰을 때만 채워진다. */
+  fallback: BibliographyFallback | null;
+}
+
+/**
+ * 읽기 오류를 폴백 사유로 분류한다.
+ *
+ * 순수 함수로 떼어 낸 이유: 실제 EACCES를 만들려면 실행 사용자가 root가
+ * 아니어야 해서 검사가 비결정적이 된다. 분류 규칙만 따로 검증한다.
+ */
+export function bibliographyFallbackReason(err: unknown): BibliographyFallbackReason {
+  const code = (err as { code?: unknown } | null)?.code;
+  switch (code) {
+    case 'ENOENT':
+      return 'missing';
+    case 'EACCES':
+    case 'EPERM':
+      return 'permission-denied';
+    case 'EISDIR':
+      return 'not-a-file';
+    default:
+      return 'unreadable';
+  }
+}
+
+/**
+ * 프로젝트를 아는 서지 해석 (REQ-WS-040, REQ-WS-056).
  *
  * 소유 프로젝트의 매니페스트가 `bibliography` 경로를 선언하면 그것이 기존
- * walk-up보다 우선한다. 키가 없거나, 스키마 위반(인라인 서지 항목 —
- * REQ-WS-039)이거나, 선언된 파일을 읽을 수 없으면 `findBibliographyFor`가
- * **변경 없이** 그대로 적용된다 — 기존 탐색 순서
- * (`references.bib` → `references.bibtex` → `bibliography.bib`)는 손대지 않았다.
+ * walk-up보다 우선한다. 선언 경로를 쓸 수 없으면 `findBibliographyFor`가
+ * **변경 없이** 그대로 적용되며 — 기존 탐색 순서는 손대지 않았다 — 폴백이
+ * 일어났다는 사실과 문제의 선언 경로를 함께 돌려준다.
  *
- * 읽기 실패 시 폴백은 SPEC이 정하지 않은 부분에 대한 선택이다: 편집·저장을
- * 계속 가능하게 두는 쪽(REQ-WS-007의 태도)과 AC-WS-055가 스키마 위반에 대해
- * 정한 폴백 방향을 따랐다.
+ * **조용한 폴백은 실패다** (REQ-WS-056). 보고 없이 물러서면 매니페스트의 오타
+ * 하나가 다른 서지 파일로 조용히 해결되어, 사용자가 의도하지 않은 참고문헌으로
+ * 원고를 쓰고도 끝까지 알 수 없다. 표시 자체는 UI(M8/SPEC-2)의 몫이고 이
+ * 함수는 표시에 필요한 사실을 반환값에 싣는다.
  */
 export async function findBibliographyForDocument(
   filePath: string | null,
   workspaceRoots: readonly string[],
-): Promise<BibliographyHit | null> {
+): Promise<BibliographyResolution> {
   const discovery = await discoverProjectFor(filePath);
+  let fallback: BibliographyFallback | null = null;
+
   if (discovery.kind === 'project') {
-    const relPath = manifestBibliographyPath(discovery.manifest);
-    if (relPath) {
-      const declared = join(discovery.root, relPath);
+    const declared = discovery.manifest.bibliography;
+    if (declared.kind === 'path') {
+      const absolute = join(discovery.root, declared.relPath);
       try {
-        return { path: declared, source: await fs.readFile(declared, 'utf8') };
-      } catch {
-        // 선언된 파일이 없거나 읽히지 않으면 기존 탐색으로 되돌아간다.
+        const source = await fs.readFile(absolute, 'utf8');
+        return { hit: { path: absolute, source }, fallback: null };
+      } catch (err) {
+        fallback = {
+          declaredPath: declared.relPath,
+          reason: bibliographyFallbackReason(err),
+        };
       }
+    } else if (declared.kind === 'invalid') {
+      // 값이 경로가 아니다 — 인라인 서지 항목 등 (REQ-WS-039).
+      fallback = { declaredPath: '', reason: 'schema-violation' };
     }
   }
-  return findBibliographyFor(filePath, workspaceRoots);
+
+  return { hit: await findBibliographyFor(filePath, workspaceRoots), fallback };
 }
 
 function pickStopRoot(dir: string, roots: readonly string[]): string {

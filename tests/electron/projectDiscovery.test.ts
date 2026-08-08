@@ -15,7 +15,11 @@ import {
   MAX_WALK_UP_LEVELS,
   type ProjectDiscovery,
 } from '../../electron/projectDiscovery';
-import { findBibliographyFor, findBibliographyForDocument } from '../../electron/bibliography';
+import {
+  findBibliographyFor,
+  findBibliographyForDocument,
+  bibliographyFallbackReason,
+} from '../../electron/bibliography';
 import {
   assertAllowedPath,
   isAllowedPath,
@@ -296,9 +300,10 @@ describe('서지 경로 해석 — REQ-WS-040 / AC-WS-042, AC-WS-043, AC-WS-055'
     await writeFile(join(dir, 'references.bib'), '@article{adjacent}');
     await writeFile(join(dir, 'a.md'), '# x');
 
-    const hit = await findBibliographyForDocument(join(dir, 'a.md'), []);
-    expect(hit?.path).toBe(join(resolve(dir), 'refs', 'custom.bib'));
-    expect(hit?.source).toContain('custom');
+    const r = await findBibliographyForDocument(join(dir, 'a.md'), []);
+    expect(r.hit?.path).toBe(join(resolve(dir), 'refs', 'custom.bib'));
+    expect(r.hit?.source).toContain('custom');
+    expect(r.fallback).toBeNull();
   });
 
   it('bibliography 키가 없으면 기존 walk-up 결과와 동일하다', async () => {
@@ -308,8 +313,8 @@ describe('서지 경로 해석 — REQ-WS-040 / AC-WS-042, AC-WS-043, AC-WS-055'
 
     const legacy = await findBibliographyFor(join(dir, 'a.md'), []);
     const next = await findBibliographyForDocument(join(dir, 'a.md'), []);
-    expect(next).toEqual(legacy);
-    expect(next?.path).toBe(join(dir, 'references.bib'));
+    expect(next.hit).toEqual(legacy);
+    expect(next.hit?.path).toBe(join(dir, 'references.bib'));
   });
 
   it('프로젝트가 없으면 기존 walk-up 결과와 동일하다', async () => {
@@ -319,8 +324,8 @@ describe('서지 경로 해석 — REQ-WS-040 / AC-WS-042, AC-WS-043, AC-WS-055'
 
     const legacy = await findBibliographyFor(join(dir, 'sub', 'a.md'), [dir]);
     const next = await findBibliographyForDocument(join(dir, 'sub', 'a.md'), [dir]);
-    expect(next).toEqual(legacy);
-    expect(next?.path).toBe(join(dir, 'references.bibtex'));
+    expect(next.hit).toEqual(legacy);
+    expect(next.hit?.path).toBe(join(dir, 'references.bibtex'));
   });
 
   it('인라인 서지 항목은 채택되지 않고 walk-up으로 폴백한다', async () => {
@@ -328,18 +333,57 @@ describe('서지 경로 해석 — REQ-WS-040 / AC-WS-042, AC-WS-043, AC-WS-055'
     await writeFile(join(dir, 'references.bib'), '@article{fallback}');
     await writeFile(join(dir, 'a.md'), '# x');
 
-    const hit = await findBibliographyForDocument(join(dir, 'a.md'), []);
-    expect(hit?.path).toBe(join(dir, 'references.bib'));
-    expect(hit?.source).toContain('fallback');
+    const r = await findBibliographyForDocument(join(dir, 'a.md'), []);
+    expect(r.hit?.path).toBe(join(dir, 'references.bib'));
+    expect(r.hit?.source).toContain('fallback');
+    expect(r.fallback!.reason).toBe('schema-violation');
   });
 
-  it('선언된 경로를 읽을 수 없으면 walk-up으로 폴백한다', async () => {
-    await writeManifest(dir, 'name: x\nbibliography: refs/missing.bib\n');
+  it('선언된 경로를 읽을 수 없으면 폴백하되 그 사실을 보고한다 (AC-WS-070)', async () => {
+    // 조용한 폴백은 실패다 — 매니페스트 오타가 다른 서지 파일로 조용히
+    // 해결되면 사용자가 잘못된 참고문헌을 쓰고도 알 수 없다.
+    await writeManifest(dir, 'name: x\nbibliography: refs/typo.bib\n');
     await writeFile(join(dir, 'references.bib'), '@article{fallback}');
     await writeFile(join(dir, 'a.md'), '# x');
 
-    const hit = await findBibliographyForDocument(join(dir, 'a.md'), []);
-    expect(hit?.path).toBe(join(dir, 'references.bib'));
+    const r = await findBibliographyForDocument(join(dir, 'a.md'), []);
+    expect(r.hit?.path).toBe(join(dir, 'references.bib'));
+    expect(r.fallback).not.toBeNull();
+    expect(r.fallback!.declaredPath).toBe('refs/typo.bib');
+    expect(r.fallback!.reason).toBe('missing');
+  });
+
+  it('선언 경로가 디렉터리여도 같은 결과가 나온다 (AC-WS-070)', async () => {
+    await mkdir(join(dir, 'refs'));
+    await mkdir(join(dir, 'refs', 'notafile.bib'));
+    await writeManifest(dir, 'name: x\nbibliography: refs/notafile.bib\n');
+    await writeFile(join(dir, 'references.bib'), '@article{fallback}');
+    await writeFile(join(dir, 'a.md'), '# x');
+
+    const r = await findBibliographyForDocument(join(dir, 'a.md'), []);
+    expect(r.hit?.path).toBe(join(dir, 'references.bib'));
+    expect(r.fallback!.declaredPath).toBe('refs/notafile.bib');
+    expect(r.fallback!.reason).toBe('not-a-file');
+  });
+
+  it('권한 거부도 폴백 사유로 분류된다 (AC-WS-070)', () => {
+    // 실제로 EACCES를 만들려면 root 여부에 의존하므로 비결정적이다.
+    // 사유 분류는 순수 함수로 떼어 내 오류 코드로 직접 검증한다.
+    expect(bibliographyFallbackReason({ code: 'EACCES' })).toBe('permission-denied');
+    expect(bibliographyFallbackReason({ code: 'EPERM' })).toBe('permission-denied');
+    expect(bibliographyFallbackReason({ code: 'ENOENT' })).toBe('missing');
+    expect(bibliographyFallbackReason({ code: 'EISDIR' })).toBe('not-a-file');
+    expect(bibliographyFallbackReason({ code: 'WHATEVER' })).toBe('unreadable');
+    expect(bibliographyFallbackReason(new Error('no code'))).toBe('unreadable');
+  });
+
+  it('폴백이 없으면 fallback이 null이다', async () => {
+    await writeManifest(dir, 'name: x\n');
+    await writeFile(join(dir, 'references.bib'), '@article{a}');
+    await writeFile(join(dir, 'a.md'), '# x');
+
+    const r = await findBibliographyForDocument(join(dir, 'a.md'), []);
+    expect(r.fallback).toBeNull();
   });
 
   it('손상된 매니페스트는 서지 해석을 막지 않는다', async () => {
@@ -347,7 +391,8 @@ describe('서지 경로 해석 — REQ-WS-040 / AC-WS-042, AC-WS-043, AC-WS-055'
     await writeFile(join(dir, 'references.bib'), '@article{a}');
     await writeFile(join(dir, 'a.md'), '# x');
 
-    const hit = await findBibliographyForDocument(join(dir, 'a.md'), []);
-    expect(hit?.path).toBe(join(dir, 'references.bib'));
+    const r = await findBibliographyForDocument(join(dir, 'a.md'), []);
+    expect(r.hit?.path).toBe(join(dir, 'references.bib'));
+    expect(r.fallback).toBeNull();
   });
 });

@@ -101,6 +101,38 @@ export async function listDirectory(absPath: string): Promise<DirEntry[]> {
 export const WATCH_DEBOUNCE_MS = 200;
 export const WATCH_POLL_MS = 5000;
 
+/**
+ * 폴링 스냅샷용 열거 — **확장자로 거르지 않는다** (REQ-WS-032).
+ *
+ * `listDirectory`를 재사용하면 안 되는 이유: 그 함수는 폴더 트리 UI용이라
+ * 마크다운이 아닌 파일을 의도적으로 제외한다. 감시가 그것을 재사용하면
+ * `.py`·`.csv` 변경이 Linux에서 통째로 보이지 않는다 — 감시 규칙이 확장자에
+ * 의존해서는 안 된다는 REQ-WS-032 위반이다. 숨김·제외 디렉터리 규칙만 공유한다.
+ */
+async function pollEntries(absPath: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  let entries: Array<{ name: string; isDirectory: () => boolean }>;
+  try {
+    entries = (await readdir(absPath, { withFileTypes: true })) as never;
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    if (isHidden(e.name)) continue;
+    if (isExcluded(e.name)) continue;
+    const full = pathLib.join(absPath, e.name);
+    let mtimeMs = 0;
+    try {
+      const st = await stat(full);
+      mtimeMs = st.mtimeMs;
+    } catch {
+      // stat 실패는 mtime 0으로 둔다 — listDirectory와 같은 처리다.
+    }
+    out.set(full, mtimeMs);
+  }
+  return out;
+}
+
 interface RootWatchEntry {
   watcher: fs.FSWatcher | null;
   pollInterval: NodeJS.Timeout | null;
@@ -137,13 +169,7 @@ export async function watchRoot(
 
   if (process.platform === 'linux') {
     entry.pollInterval = setInterval(async () => {
-      const cur = new Map<string, number>();
-      try {
-        const list = await listDirectory(rootPath);
-        for (const e of list) cur.set(e.path, e.mtimeMs);
-      } catch {
-        return;
-      }
+      const cur = await pollEntries(rootPath);
       // 폴링도 **경로 단위**로 방출한다 (plan.md §B.5 선택 (a)).
       // 이전에는 무엇이 바뀌었든 `onChange(rootPath)`를 방출해 REQ-WS-016의
       // 경로별 보장을 구조적으로 만족할 수 없었다. 스냅샷이 이미 경로별
@@ -162,8 +188,7 @@ export async function watchRoot(
         for (const path of changedPaths) onChange(path);
       }
     }, WATCH_POLL_MS);
-    const initList = await listDirectory(rootPath);
-    entry.pollSnapshot = new Map(initList.map((e) => [e.path, e.mtimeMs]));
+    entry.pollSnapshot = await pollEntries(rootPath);
   } else {
     entry.watcher = fs.watch(rootPath, { recursive: true }, (_event, filename) => {
       const changedPath = filename ? pathLib.join(rootPath, String(filename)) : rootPath;

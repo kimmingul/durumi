@@ -463,15 +463,72 @@ Cmd+Z 한 번이 사용자 작업까지 날린다. (3)은 이력에 남기되 �
 **줄**을 먼저 걷어내 차이 블록으로 좁히고, `MAX_DIFF_CELLS`(1e6)를 넘으면
 단일 교체로 물러선다 — 전체 재작성에서는 캐럿 보존이 애초에 의미가 없다.
 
+### M7 — 파일 종류 무관 무결성 + 이월 AC 2건
+
+| 파일 | 상태 | 내용 |
+|---|---|---|
+| `tests/electron/extensionIndependence.test.ts` | 신규 | 확장자 독립 — 구조 + 행위 이중 단언 (10) |
+| `tests/editor/reconcileIntegrity.test.ts` | 신규 | 바이트 정규화 금지 회귀 (18) |
+| `electron/fs.ts` | 수정 | 폴링 열거를 확장자 무관으로 분리 (REQ-WS-032 위반 수정) |
+| `src/editor/applyExternalChange.ts` | 수정 | 문서 좌표 공간으로 접어 비교 (`\r\r\n` 손상 수정) |
+| `electron/bibliography.ts` | 수정 | 폴백 보고 (REQ-WS-056) |
+| `tests/shared/reconciliation.test.ts` | 수정 | 해제 대조 검사 (AC-WS-031b) |
+
+| AC | ↔ REQ | 상태 | 근거 테스트 |
+|---|---|---|---|
+| AC-WS-034 | 032 | PASS | 구조: 계층 5파일에 확장자 읽는 수단 부재 + 감지력 자체 검증. 행위: 5확장자 동일 이벤트·동일 조정 |
+| AC-WS-035 | 033 | PASS (부분) | 고립 `\r` 미생성·좌표 불일치 없음·전체 재작성 아님. **전 구간 CRLF 보존은 편집기 모델 밖** — 아래 |
+| AC-WS-036 | 033 | PASS | 후행 공백·탭·BOM·NFD 결합문자·제로폭·한글/이모지 각각 보존 |
+| AC-WS-070 | 056 | PASS | 부재·디렉터리·권한거부(사유 분류 순수함수) 3경로 + 폴백 없을 때 null |
+| AC-WS-031b | 030 | PASS | 한 검사 안에서 대조 — 사라짐은 해제 불가, 배너는 해제됨 |
+
+**부정 명제를 어떻게 단언했는가**: 다섯 확장자를 넣어 보는 것만으로는 여섯 번째
+분기를 배제하지 못한다. 확장자로 분기하려면 반드시 `extname`·`endsWith('.'`·
+확장자 정규식·`split('.')` 중 하나가 필요하므로, **그 수단의 부재**를 계층
+5파일에 대해 단언했다(주석 줄 제외). 감지 정규식이 오타여도 통과하는 것을 막기
+위해, 실제 확장자 분기가 있는 `electron/fs.ts`에 대해 정규식이 무언가를 잡는지
+따로 확인한다 — 이 sanity 검사가 없으면 구조적 단언 전체가 공허해진다.
+
+**M7이 찾아낸 결함 2건**
+
+1. **Linux 폴링이 마크다운만 감시했다** (REQ-WS-032 위반). 폴링이 폴더 트리용
+   `listDirectory`를 재사용했는데 그 함수는 비마크다운을 의도적으로 제외한다.
+   RED: `.py` 변경에 `expected [] to deeply equal ['/w/script.py']`. 폴링 전용
+   열거(`pollEntries`)로 분리해 해소. `listDirectory`의 필터는 UI용으로 유지.
+2. **조정이 `\r\r\n`을 만들었다** (REQ-WS-033을 넘어선 파일 손상). M6이
+   `doc.toString()`으로 비교했는데 그 값은 언제나 LF다. CRLF 입력과 비교하면
+   삽입된 `\r`이 문서 줄바꿈과 겹쳐 없던 바이트가 생긴다.
+   RED: `expected 'a\r\nCHANGED\r\r\nc' to be 'a\r\nCHANGED\r\nc'`.
+
+**AC-WS-035가 부분인 이유 (측정)**
+
+| 실측 | 값 |
+|---|---|
+| `EditorState.create({doc:'x\r\ny'}).doc.length` | 3 (줄바꿈은 1 위치) |
+| 같은 상태 + `lineSeparator('\r\n')`의 `doc.length` | **3** (구분자 설정과 무관) |
+| `doc.toString()` | 언제나 LF |
+| `sliceDoc()` | 구분자 반영, 그러나 오프셋 공간이 다름 |
+| 앱의 `lineSeparator` 설정 | **없음** (grep 0건) |
+
+CodeMirror 문서 좌표는 줄바꿈을 언제나 1 위치로 세고, 이 앱은 구분자를 설정하지
+않으므로 **CRLF 파일은 열리는 시점에 이미 LF로 접힌다** — 조정 계층보다 앞선
+단계다. 전 구간 CRLF 보존은 파일별 줄바꿈 감지 + `lineSeparator` compartment +
+저장 시 재직렬화를 요구하며, 이는 모든 파일의 열기·저장 동작을 바꾸는 편집기
+구조 변경이다. M7의 "유닛 계층 검증" 범위 밖이므로 **기록만** 하고, 조정 계층이
+책임질 수 있는 것(없던 바이트 미생성·좌표 정합·전체 재작성 회피)만 단언했다.
+현재 동작은 특성화 검사로 남겨 고쳐진 것으로 오독되지 않게 했다.
+
+`docs/DOCUMENT_MODE_PRINCIPLES.md`는 수정하지 않았다 (AC-WS-037 유지).
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
-run_status: in-progress            # M1~M6 구현, M7~M8 미착수
-milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a, M6]
+run_status: in-progress            # M1~M7 구현, M8만 남음
+milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a, M6, M7]
 milestones_partial: [M5]           # 프리미티브 CI 검증 완료, AC-WS-019~022는 M8 차단
-run_commit_sha: 32f6a8b
-ac_pass_count: 70                  # ... + M6 3 (AC-WS-026, 027, 028)
-ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재로 실행 시 공허 통과
+run_commit_sha: pending-backfill
+ac_pass_count: 75                  # + M7 5 (034, 035부분, 036, 070, 031b)
+ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재
 ac_fail_count: 0
 requirements_pass:
   m1: 20
@@ -481,41 +538,39 @@ requirements_pass:
   m4: 10
   m4a: 1
   m5: 1
-  m6: 2                            # REQ-WS-025, 026
+  m6: 2
+  m7: 3                            # REQ-WS-032, 033, 056
 new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
-test: "vitest run → 192 files / 2103 tests passed"
-e2e: "CI(PR #10) 206 passed / 0 failed / 9 skipped"
+test: "vitest run → 194 files / 2136 tests passed"
 coverage_command: "pnpm test:coverage"
 coverage_gate: "statements/lines 85%, perFile → exit 0"
-coverage_new_modules:
-  src/editor/minimalDiff.ts: "100% stmts / 90.9% branch"
+coverage_touched_modules:
+  electron/bibliography.ts: "97.64% stmts / 89.74% branch"
+  electron/fs.ts: "93.49% stmts / 90.16% branch"
   src/editor/applyExternalChange.ts: "100% stmts / 100% branch"
-  src/editor/compositionGate.ts: "100% stmts / 100% branch"
-  electron/changeConfirmation.ts: "96.55% stmts / 100% branch"
-  electron/watchScope.ts: "100% stmts / 96% branch"
-  electron/projectDiscovery.ts: "100% stmts / 100% branch"
-  shared/reconciliation.ts: "100% stmts / 97.5% branch"
+  src/editor/minimalDiff.ts: "100% stmts / 91.17% branch"
+  shared/reconciliation.ts: "100% stmts / 97.67% branch"
 legacy_debt_files: 97
-undo_decision: >
-  isolateHistory('full'). addToHistory:false는 조정을 되돌릴 수 없게 만들고,
-  기본값은 직전 타이핑과 병합돼 Cmd+Z 한 번이 사용자 작업까지 날린다.
-  full은 이력에 남기되 어느 항목과도 병합되지 않는다.
-diff_algorithm_evidence: >
-  접두·접미 축약만으로 측정: 양 끝 6자가 바뀐 400자 문서에서 397자 단일 교체
-  (10배 과다). 다지점 변경에서 REQ-WS-026 위반. 단일 지점 변경은 축약만으로
-  이미 정확했으므로 줄 LCS 확장은 다지점 전용. MAX_DIFF_CELLS 초과 시 단일 교체.
+m7_defects_found:
+  - "Linux 폴링이 listDirectory 재사용으로 마크다운만 감시 — REQ-WS-032 위반, pollEntries로 분리해 수정"
+  - "조정이 CRLF 입력에서 \r\r\n 생성 — M6의 doc.toString() 비교가 원인, 문서 좌표로 접어 수정"
+spec_tension_ac_ws_035: >
+  전 구간 CRLF 보존은 이 편집기에서 달성 불가. CodeMirror 문서 좌표는 줄바꿈을
+  언제나 1 위치로 세고(lineSeparator 설정과 무관, 실측), 앱은 lineSeparator를
+  설정하지 않아 CRLF가 열기 시점에 LF로 접힌다. 파일별 줄바꿈 감지 +
+  compartment + 저장 재직렬화가 필요하며 편집기 구조 변경이다. 조정 계층이
+  책임질 수 있는 범위만 PASS로 기록하고 나머지는 특성화 검사로 남겼다.
 blockers:
   - "AC-WS-019~022: external-change IPC 부재(M8). 실행하면 공허 통과하므로 test.skip 유지"
-newly_required_not_yet_met:
-  - "AC-WS-070 / REQ-WS-056 (M1 배정): 읽을 수 없는 bibliography 폴백 시 보고 의무 — 현재 조용히 폴백, 미충족"
-  - "AC-WS-031b (M2 배정): 사라짐 해제 불가 + 배너 해제 가능 대조 — 구현은 만족하나 대조 검사 없음"
+newly_required_not_yet_met: []     # AC-WS-070·031b 해소됨
 stubbed_producers:
   - "IPC·메뉴 진입점(REQ-WS-047a / AC-WS-058b)은 M8 소관"
-  - "main→렌더러 확정 이벤트 전달은 M8 소관 — 실행자는 렌더러 안쪽까지 연결됨"
-  - "open-diff effect의 표면은 SPEC-4 소관 — 실행자가 의도적으로 무시한다"
-total_run_phase_files: 39
+  - "main→렌더러 확정 이벤트 전달은 M8 소관"
+  - "open-diff effect의 표면은 SPEC-4 소관"
+  - "BibliographyResolution.fallback의 사용자 표시는 M8/SPEC-2 소관 — 사실은 반환값에 실려 있다"
+total_run_phase_files: 45
 ```
 
 ## §E.4 Sync-phase Audit-Ready Signal

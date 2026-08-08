@@ -45,6 +45,18 @@ import { computeMinimalChanges } from './minimalDiff';
  * 상태이며 REQ-WS-027의 배너가 이미 담당한다.
  */
 
+/**
+ * 디스크 내용을 CodeMirror 문서 좌표 공간으로 접는다.
+ *
+ * 기본 설정에서 CodeMirror는 `\r\n`·`\r`·`\n`을 모두 줄바꿈으로 보고 문서에
+ * 1 위치로 담는다. `lineSeparator`가 설정된 경우에는 그 문자열만 줄바꿈이다.
+ */
+export function toDocumentSpace(content: string, lineBreak: string): string {
+  return lineBreak === '\n'
+    ? content.replace(/\r\n?/g, '\n')
+    : content.split(lineBreak).join('\n');
+}
+
 /** 이 트랜잭션이 외부 변경 조정에서 왔음을 표시한다. */
 export const RECONCILE_ANNOTATION = Annotation.define<boolean>();
 
@@ -64,7 +76,22 @@ export function buildReconcileTransaction(
   state: EditorState,
   nextContent: string,
 ): TransactionSpec | null {
-  const changes = computeMinimalChanges(state.doc.toString(), nextContent);
+  // 디스크 내용을 **문서 좌표 공간**으로 접은 뒤 비교한다.
+  //
+  // CodeMirror의 문서 좌표는 줄바꿈을 **언제나 1 위치**로 센다 — `lineSeparator`를
+  // `\r\n`으로 설정해도 `'x\r\ny'`의 `doc.length`는 3이다(실측). 구분자는 출력
+  // 시 직렬화에만 쓰인다. 따라서 CRLF 문자열의 오프셋으로 변경 범위를 만들면
+  // 문서 좌표와 어긋나 `Invalid change range`가 나거나, 삽입된 `\r`이 문서의
+  // 줄바꿈과 겹쳐 `\r\r\n`이라는 없던 바이트를 만든다 — REQ-WS-033이 금지하는
+  // 정규화를 넘어선 파일 손상이다.
+  //
+  // 접는 것 자체는 조정 계층이 만든 정규화가 아니다: 이 편집기는
+  // `lineSeparator`를 설정하지 않으므로 CRLF 파일은 **열리는 시점에** 이미
+  // LF로 접힌다. 조정은 그 표현에 충실할 뿐이다(§SPEC 긴장 참조).
+  const changes = computeMinimalChanges(
+    state.doc.toString(),
+    toDocumentSpace(nextContent, state.lineBreak),
+  );
   if (changes.length === 0) return null;
 
   return {

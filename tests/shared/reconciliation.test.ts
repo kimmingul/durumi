@@ -178,6 +178,29 @@ describe('파일 삭제 시 버퍼가 보존된다 — REQ-WS-030 / AC-WS-031', 
     expect(noticeFor(after.state)!.actions).not.toContain('dismiss');
   });
 
+  it('해제 동작이 두 표면에서 반대로 작동한다 (AC-WS-031b)', () => {
+    // 같은 검사 안에서 대조하는 것이 요점이다. 따로 두면 한쪽이 조용히
+    // 다른 쪽을 닮아가도 둘 다 통과한다.
+    //
+    // 배너(REQ-WS-027)는 "이런 일이 있었다"는 알림이므로 해제된다.
+    // 상태 표시(REQ-WS-030)는 "지금 이렇다"는 디스크의 사실이므로 해제되지
+    // 않는다 — 해제 가능하면 파일이 없는데 있는 것처럼 보여 사용자가
+    // 저장 가능 여부를 오판한다.
+    const missing = run([
+      { type: 'external-delete', path: '/w/a.md' },
+      { type: 'user-dismiss' },
+    ]);
+    expect(missing.state.status, '사라짐 표시는 해제되지 않는다').toBe('missing');
+    expect(noticeFor(missing.state)!.actions).not.toContain('dismiss');
+
+    const banner = run([dirty(true), change(), { type: 'user-dismiss' }]);
+    expect(banner.state.status, '배너는 해제된다').toBe('idle');
+    expect(noticeFor(banner.state)).toBeNull();
+
+    // 대조가 성립하려면 두 상태가 애초에 서로 달라야 한다.
+    expect(missing.state.status).not.toBe(banner.state.status);
+  });
+
   it('저장·재로드로 동기화되면 사라짐 상태가 풀린다', () => {
     const { state } = run([{ type: 'external-delete', path: '/w/a.md' }, { type: 'document-synced' }]);
     expect(state.status).toBe('idle');

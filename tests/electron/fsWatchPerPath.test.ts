@@ -182,6 +182,25 @@ describe('Linux 폴링 경로 단위 승격 — REQ-WS-016 / plan.md §B.5 (a)',
     expect(seen.sort()).toEqual([join(ROOT, 'a.md'), join(ROOT, 'b.md')].sort());
   });
 
+  it('마크다운이 아닌 파일의 변경도 방출한다 — REQ-WS-032', async () => {
+    // 감시 계층은 확장자에 의존하면 안 된다. 폴링이 폴더 트리용 열거를
+    // 재사용하면 그 열거가 마크다운만 반환하므로 .py/.csv 변경이 통째로
+    // 보이지 않는다 — 감시 계층에 남은 확장자 특례다.
+    const seen: string[] = [];
+    mockTree([
+      ['script.py', 100],
+      ['data.csv', 100],
+    ]);
+    await watchRoot(ROOT, (p) => seen.push(p));
+
+    mockTree([
+      ['script.py', 200],
+      ['data.csv', 100],
+    ]);
+    await vi.advanceTimersByTimeAsync(WATCH_POLL_MS);
+    expect(seen).toEqual([join(ROOT, 'script.py')]);
+  });
+
   it('변경이 없으면 아무것도 방출하지 않는다', async () => {
     const seen: string[] = [];
     mockTree([['a.md', 100]]);
