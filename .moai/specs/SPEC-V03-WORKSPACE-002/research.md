@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "코드베이스 조사 — 멀티패널 셸"
-version: "0.2.0"
+version: "0.2.1"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -366,7 +366,50 @@ useFileMenuCommands.ts:50-77  doSave → window.api.fileSave(filePath, content) 
 
 ### 7.3a 결함 A — 크로스-윈도 무성 버퍼 덮어쓰기 (**확인됨**, v0.2.31 출하 중)
 
-> **판정 이력**: 이 문서 초판은 이 항목을 "소스 근거 기반 미검증 가설"로 표시했다. **오케스트레이터가 코드 직독으로 4단계 사슬을 독립 확인해 확정되었다** (2026-08-08). `verification-claim-integrity` §1.1 surface 3의 요구("결함 주장은 도메인 도구/직독으로 확인될 때까지 가설")를 충족하므로 가설 표시를 해제한다. REQ-PANEL-070이 소유하고 `plan.md` §C의 **M0**이 재현 우선으로 닫는다.
+> **판정 이력 (2단계)**: 이 문서 초판은 이 항목을 "소스 근거 기반 미검증 가설"로 표시했다. ① 오케스트레이터가 코드 직독으로 4단계 사슬을 독립 확인했고, ② 이어서 **실제 모듈을 구동해 기계적으로 재현했다** (2026-08-08). `verification-claim-integrity` §1.1 surface 3의 요구("결함 주장은 도메인 도구로 확인될 때까지 가설")를 실행 관측으로 충족하므로 가설 표시를 해제한다. REQ-PANEL-070이 소유하고 `plan.md` §C의 **M0**이 재현 우선으로 닫는다.
+
+### 7.3a-1 기계적 재현 — 관측된 출력과 증거 경로
+
+구동된 것: **실제 모듈 3개** `attachExternalChangeChannel`(`src/store/externalChangeChannel.ts`) + `useReconciliationStore`(`src/store/reconciliationStore.ts`) + `registerReconciliationExecutor`(`src/editor/applyExternalChange.ts`), 그리고 **실제 `EditorState`**(`@codemirror/state`). 대체된 것: preload 브리지(`onExternalFileChange`)와 `DispatchTarget` — 후자는 `src/editor/applyExternalChange.ts:63-67`이 테스트 seam으로 선언한 인터페이스다.
+
+조건: 창이 `/w/b.md`를 버퍼 `"B의 내용\n"`으로 열고 미저장 편집 없음. 그 창이 **한 번도 열지 않았고 감시 등록도 하지 않은** 경로 `/w/a.md`에 대한 확정 `ExternalFileChange` 1건 투입.
+
+관측 출력 (verbatim):
+
+```
+[OQ-8]       emit 후 b.md 버퍼 = "A의 내용\n"
+[OQ-8]       조정 상태 = "idle"
+[OQ-8/dirty] emit 후 b.md 버퍼 = "B의 내용\n"
+[OQ-8/dirty] 조정 상태 = "held-notify"
+```
+
+증거 (디스크 보존, AC에서 인용):
+
+| 항목 | 경로 |
+|---|---|
+| 실행 로그 | `.moai/state/verify/goal-spec12345/oq8-repro.log` |
+| 재현 소스 | `.moai/state/verify/goal-spec12345/oq8-repro-source.ts.txt` |
+
+**증거의 지속성 (정직한 한계)**: 위 두 경로는 `.gitignore:207`의 `.moai/state/` 규칙에 걸리는 **런타임 상태이며 커밋되지 않는다.** `agent-common-protocol.md` § Evidence persistence obligation가 지정한 위치이므로 배치는 맞지만, **새 클론에는 존재하지 않는다.** 따라서 이 SPEC의 결함 주장은 증거 파일이 아니라 (a) 위에 verbatim으로 옮긴 관측 출력과 (b) M0의 RED 단계가 재생산하는 영구 테스트에 근거한다 — 후자가 증거를 저장소 안으로 옮기는 수단이다.
+
+세 가지 관측이 각각 요구사항을 규정한다:
+
+| # | 관측 | 함의 | 반영 |
+|---|---|---|---|
+| 1 | 버퍼가 `"A의 내용\n"`으로 교체 | 열지도 않은 파일의 내용이 현재 버퍼에 적용된다 | AC-PANEL-080 |
+| 2 | 조정 상태 `"idle"` | 앱이 오적용을 **정상 완료로 취급한다.** 배너도 표시도 남지 않아 사용자가 알 수단이 없다 — **손실을 무성으로 만드는 지점** | AC-PANEL-080b (별개 AC) |
+| 3 | dirty 선행 시 버퍼 불변 + `"held-notify"` | `shared/reconciliation.ts:193`의 `!state.isDirty`가 **유일한 보호막**. 깨끗한 문서만 취약하다 | AC-PANEL-080/080c — AC는 **깨끗한 문서 케이스를 반드시** 다뤄야 한다 |
+
+**초판이 놓쳤던 것 — 결함은 "크로스-윈도"보다 넓다**: 재현에서 창은 **하나**였고 문제의 파일을 **열지도 감시 등록하지도 않았다**. 즉 두 창의 경쟁이 필요 없고, **어떤 창이든 도착한 브로드캐스트를 무조건 자기 버퍼에 적용한다.** 초판이 이 결함을 창 축 문제로 좁혀 기술한 것은 부정확했다.
+
+### 7.3a-2 검증 범위의 정직한 분할 — 엔드투엔드 실행은 하지 않았다
+
+| 절반 | 검증 방식 | 근거 |
+|---|---|---|
+| **렌더러 절반** — 경로 미대조 → 무조건 적용 → `idle` 정착 | **기계적 실행 관측** | 위 증거 경로 2개 |
+| **main 절반** — `broadcast()`가 그 경로를 등록하지 않은 창에도 전달 | **정적 소스 사실. 실행하지 않았다** | `electron/ipc/project.ts:40-44` `BrowserWindow.getAllWindows()` |
+
+**두 절반을 합친 창 간 시나리오는 추론이다.** 미확인 고리는 정확히 하나 — "브로드캐스트가 실제로 그 창에 도착하는가". `getAllWindows()`가 그것을 보장하지만 실행 관측은 없다. `acceptance.md` AC-PANEL-084가 main 절반을 **소스 스캔으로만** 고정하고 엔드투엔드 전달을 주장하지 않는 것이 이 분할의 반영이다.
 
 확인된 사슬:
 
@@ -557,7 +600,9 @@ ipcMain.handle('pandoc:setCustomPath', async (_e, customPath: string) => {
 ## 10. 미검증 항목 (정직한 공백)
 
 1. **테스트 스위트 재실행을 하지 않았다.** 오케스트레이터가 제시한 baseline(199 파일 / 2191 테스트 전부 통과, typecheck·lint exit 0)을 그대로 전제했다. 파일 수 199와 e2e spec 33은 실측했으나 통과 여부·테스트 개수는 실행하지 않았다.
-2. ~~**§7.3의 크로스-윈도 버퍼 오적용은 소스 근거 기반 가설이며 실행 재현하지 않았다.**~~ **정정 (2026-08-08)**: 오케스트레이터가 코드 직독으로 4단계 사슬을 독립 확인해 **결함으로 확정되었다** — §7.3a 참조. 이 항목은 더 이상 미검증 공백이 아니다. **여전히 남는 공백**: 실행 재현(창 2개를 실제로 띄워 파일을 외부 수정)은 하지 않았다. `plan.md` OQ-8이 유닛 재현(같은 렌더러 문서 2개)으로 갈음할 것을 권고하며, 근거는 결함의 뿌리가 창이 아니라 라우팅 부재라는 점이다. 조합 플래그 공유(§7.3b)도 같은 상태다 — 코드 직독 확정, 실행 재현 미수행.
+2. ~~**§7.3의 크로스-윈도 버퍼 오적용은 소스 근거 기반 가설이며 실행 재현하지 않았다.**~~ **정정 2 (2026-08-08, 기계 재현)**: 렌더러 절반이 **실제 모듈로 실행 재현되었다** — §7.3a-1의 관측 출력과 증거 경로 2개 참조. 이 항목은 더 이상 미검증 공백이 아니다. **여전히 남는 공백은 정확히 하나**: main 절반(`broadcast()`가 미등록 창에도 전달)의 실행 관측. 이것은 `getAllWindows()`라는 정적 소스 사실로만 확정되어 있고 엔드투엔드 다중 창 실행은 수행되지 않았다(§7.3a-2). `plan.md` OQ-8이 그 공백을 소스 단언(AC-PANEL-084)으로 갈음할 것을 권고하며, 근거는 재현이 **창 하나로** 결함을 실증해 창 축이 원인이 아님을 보였다는 점이다.
+
+2a. **조합 플래그 공유(§7.3b)는 코드 직독 확정, 실행 재현 미수행.** 결함 A와 달리 이쪽은 기계적 재현이 없다 — 근거는 `shared/reconciliation.ts:57`의 단일 boolean과 `src/editor/compositionGate.ts:109, 112`의 공유 dispatch라는 소스 사실이다. M0의 RED 단계(AC-PANEL-081)가 이 재현을 처음 수행하게 된다.
 3. **`RightSidebar.tsx` 내부 구조는 표면만 읽었다** — 탭 렌더링·persist 패턴이 `Sidebar.tsx`와 동형이라는 주석(`global.css:1043`)과 테스트(`tests/sidebar/rightSidebar.test.tsx`) 근거로 판단했다.
 4. **`@codemirror/language-data`의 지연 로드 동작을 실행 확인하지 않았다.** 카탈로그가 `LanguageDescription[]`을 제공한다는 것은 `MarkdownEditor.tsx:93-95`의 사용 형태와 `src/editor/decorations/codeHighlight.ts:4, 31`의 지연 하이라이트 로딩 사용에서 추론했다.
 

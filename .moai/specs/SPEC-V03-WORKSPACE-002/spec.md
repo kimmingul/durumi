@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "v0.3 멀티패널 셸 — 패널 레이아웃·모드·커맨드 라우팅·비마크다운 편집 표면"
-version: "0.2.0"
+version: "0.2.1"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -23,6 +23,7 @@ tags: "multipanel, layout, editmode, focus, menurouting, nonmarkdown, language, 
 |---|---|---|
 | 2026-08-08 | 0.1.0 | 최초 작성 — `EPIC-V03-WORKSPACE`의 2번 SPEC. SPEC-1(`status: completed`, 커밋 `3a51f72`)의 D-1~D-7을 승계하고 D-5가 비워 둔 비마크다운 편집 표면을 채운다 |
 | 2026-08-08 | 0.2.0 | **오케스트레이터가 코드 직독으로 확인한 출하 중인 결함 2건을 §B.0으로 승격.** ① 크로스-윈도 무성 버퍼 덮어쓰기(REQ-PANEL-070) — 확정 이벤트가 모든 창에 브로드캐스트되고 렌더러가 `path`를 대조하지 않아 깨끗한 버퍼가 다른 파일 내용으로 덮어써지고 저장 시 데이터 손실. ② 전역 조합 플래그 공유(REQ-PANEL-071) — 다른 표면의 `compositionend`가 진행 중인 조합의 보류를 해제. 두 건 모두 `plan.md` §C **M0**이 재현 우선(REQ-PANEL-073)으로 닫는다. **라우팅 계층의 위치를 하드 제약으로 고정**(REQ-PANEL-072 / C-12): `tests/electron/extensionIndependence.test.ts:34-65, 171-174`가 조정 코어 5파일의 확장자 독립과 `applyExternalChange` arity 2를 강제하므로 라우팅 키는 `src/store/` 계층에 산다(`design.md` §6.2a). C-13(`.cm-content` 이중 스타일링 + e2e 34파일 셀렉터 이관) 신설, REQ-PANEL-055에 언마운트 무장 해제 경로 추가, REQ-PANEL-062에 사이드카 재바인딩 플러시 위험 추가. `plan.md`에 OQ-9(패널 배치 persist 슬롯 부재) 신설 |
+| 2026-08-08 | 0.2.1 | **OQ-8이 기계적으로 재현되어 확정 결함이 되었다.** 오케스트레이터가 실제 모듈 3개(`attachExternalChangeChannel`/`useReconciliationStore`/`registerReconciliationExecutor`) + 실제 `EditorState`로 구동해 관측: 열지도 감시 등록하지도 않은 경로의 확정 변경이 깨끗한 버퍼를 교체하고 **조정 상태가 `idle`로 정착**하며, dirty 선행 시에만 보호된다. 증거 `.moai/state/verify/goal-spec12345/oq8-repro.log` + `…/oq8-repro-source.ts.txt`. REQ-PANEL-070에 **미등록 경로 폐기 조항과 `idle` 정착 금지 조항**을 추가하고, AC를 4건으로 분할(080 깨끗한 버퍼 / 080b `idle` 정착 금지 / 080c dirty 보호 회귀 / 080d 디스크 전파 금지). **검증 범위 분할을 정직하게 기록**: 렌더러 절반은 실행 관측, main 절반(`getAllWindows()` 브로드캐스트)은 정적 소스 사실이며 엔드투엔드 다중 창 실행은 수행되지 않았다 — AC-PANEL-084가 소스 스캔에서 멈춘다. 결함이 창 축 문제보다 넓다는 정정(창 하나로 재현됨). OQ-8 잠정 권고를 후보 1(유닛 재현 + main 소스 단언)로 유지·강화. **`progress.md` 신설** — `§E.1` 채움 + `§E.2`/`§E.3`/`§E.4` 자리표시자 + `sync_commit_sha` + `§F` 예약 |
 
 ---
 
@@ -87,8 +88,25 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 >
 > 두 결함은 같은 뿌리를 갖는다: **확정 이벤트의 라우팅 계층이 존재하지 않는다.** SPEC-1은 조정 코어를 의도적으로 경로 무지(path-blind)로 설계하고 라우팅을 위 계층에 남겼는데, 그 계층이 아직 만들어지지 않았다.
 
-**REQ-PANEL-070** (Event-driven — 출하 중인 결함) — 확정 이벤트는 대상 문서를 벗어나 적용되지 **않는다**
+**REQ-PANEL-070** (Event-driven — 출하 중인 결함, **기계적으로 재현됨**) — 확정 이벤트는 대상 문서를 벗어나 적용되지 **않는다**
 **When** 확정된 외부 변경이 렌더러에 도달하면, 앱은 그 변경을 **그 경로에 해당하는 문서에만** 적용**해야 하며(shall)**, 다른 문서의 버퍼에 적용하지 **않아야 한다(shall not)**.
+
+**When** 어떤 문서도 그 경로를 열고 있지 않으면, 앱은 그 이벤트를 폐기**해야 하며(shall)** 어떤 버퍼에도 적용하지 **않아야 한다(shall not)**.
+
+**적용되지 않은 이벤트는 조정 상태를 `idle`로 정착시켜서는 안 된다(shall not)** — 정착은 "정상적으로 완료됨"을 뜻하므로, 오적용을 정착으로 표현하면 사용자가 알 수단이 사라진다. 이것이 이 결함을 **무성(silent)** 으로 만드는 지점이며, 버퍼 내용만 고치고 상태 의미론을 그대로 두면 결함의 절반만 닫힌다.
+
+**재현 근거 (실행 관측)**: 실제 모듈(`attachExternalChangeChannel`, `useReconciliationStore`, `registerReconciliationExecutor`)과 실제 `EditorState`로 재현되었다. `/w/b.md`를 깨끗하게 열고 있는 창에 그 창이 **열지도 감시 등록하지도 않은** `/w/a.md`의 확정 변경 1건을 투입한 결과:
+
+```
+[OQ-8]       emit 후 b.md 버퍼 = "A의 내용\n"      ← 버퍼가 교체됨
+[OQ-8]       조정 상태 = "idle"                    ← 오적용이 정상 완료로 정착
+[OQ-8/dirty] emit 후 b.md 버퍼 = "B의 내용\n"      ← dirty면 보호됨
+[OQ-8/dirty] 조정 상태 = "held-notify"
+```
+
+증거: `.moai/state/verify/goal-spec12345/oq8-repro.log`, `.moai/state/verify/goal-spec12345/oq8-repro-source.ts.txt`.
+
+**결함은 "두 창의 경쟁"보다 넓다**: 재현에서 창이 하나였고 문제의 파일을 열지도 않았다. 즉 **어떤 창이든 도착한 브로드캐스트를 무조건 자기 버퍼에 적용한다.**
 
 **검증된 결함 사슬** (v0.2.31 출하본, 다중 창은 이미 지원됨 — `electron/main.ts:103` `onNewWindow`, `shared/ipc-contract.ts:310` `MenuCommand 'newWindow'`):
 
@@ -101,7 +119,11 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 
 **귀결**: 창 A가 `a.md`를, 창 B가 `b.md`를 열고 있고 창 B의 버퍼가 깨끗할 때, `a.md`에 외부 쓰기가 들어오면 **`a.md`의 내용이 창 B의 `b.md` 버퍼에 적용된다.** 이때 `appStore.filePath`는 여전히 `b.md`이므로, 사용자가 저장하면 **A의 내용이 B의 파일을 덮어쓴다 — 데이터 손실이다.**
 
-미저장 편집이 있는 버퍼는 보호된다 — `!state.isDirty`가 배너로 강등하기 때문이다(`shared/reconciliation.ts:193`). 따라서 **영향 범위는 깨끗한 문서이며, 그것은 파일을 막 열었을 때의 상태다.** 보호 조건이 "더러운 버퍼"라는 것이 이 결함을 특히 위험하게 만든다: 사용자가 아무것도 하지 않은 문서가 가장 취약하다.
+미저장 편집이 있는 버퍼는 보호된다 — `!state.isDirty`가 배너로 강등하기 때문이다(`shared/reconciliation.ts:193`). **이 보호막이 유일하다는 것은 실행으로 확인되었다**(위 `[OQ-8/dirty]` 관측). 따라서 **영향 범위는 깨끗한 문서이며, 그것은 파일을 막 열었을 때의 상태다.** 보호 조건이 "더러운 버퍼"라는 것이 이 결함을 특히 위험하게 만든다: 사용자가 아무것도 하지 않은 문서가 가장 취약하다.
+
+**수용 기준에 대한 귀결**: 이 요구를 검증하는 AC는 **깨끗한 문서 케이스를 반드시 다뤄야 한다(shall)**. dirty 문서만 검사하면 오늘의 코드가 그대로 통과한다 — dirty 경로는 이미 올바르게 동작하기 때문이다.
+
+**검증 범위의 정직한 분할**: 위 재현은 **렌더러 절반**(경로 미대조 → 무조건 적용 → `idle` 정착)을 실행으로 확정했다. **main 절반**(`broadcast()`가 그 경로를 등록하지 않은 창에도 전달 — `electron/ipc/project.ts:40-44` `BrowserWindow.getAllWindows()`)은 **정적 소스 사실이며 실행하지 않았다.** 엔드투엔드 다중 창 실행은 수행되지 않았다.
 
 **REQ-PANEL-071** (State-driven — 출하 중인 결함) — 조합 플래그는 표면을 벗어나 공유되지 **않는다**
 **While** 어떤 편집 표면에서 IME 조합이 진행 중인 동안, 다른 편집 표면의 `compositionend`가 그 조합의 보류 상태를 해제**해서는 안 된다(shall not)**.
