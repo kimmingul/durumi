@@ -645,6 +645,114 @@ AC-WS-020b의 전제("버퍼가 여전히 clean")가 이 앱에서 성립하지 
 것인지 **CI 1회로 가르지 못했다**. 소스상 sticky 플래그만으로도 충분히
 설명되지만, 두 원인이 겹쳐 있을 수 있다. 결정 전에 계측 1회가 필요하다.
 
+## §E.2b 통합 AC 판정 표 (§A–§F, 83항목)
+
+§H가 참조하는 단일 표다. 마일스톤별 표는 이력으로 남기고, 현재 상태는 여기서 읽는다.
+증거 열의 `unit` = `pnpm test`, `e2e` = CI(PR #10, macOS), `src` = 소스 스캔 단언.
+
+### §A 매니페스트·폴더 규약 (13)
+
+| AC | 상태 | 증거 |
+|---|---|---|
+| 001 | PASS | unit `projectDiscovery` — 루트·manifestPath 보고 |
+| 002 | PASS | unit `projectDiscovery` — walk-up 32단계, 33단계는 none |
+| 003 | PASS | unit — 최근접 우선, 최근접 손상 시 상위로 강등 안 함 |
+| 004 | PASS | unit — 매니페스트 부재 → `{kind:'none'}`, throw 없음 |
+| 005 | PASS | unit — 손상 판정 + 읽기 전후 SHA-256 동일 |
+| 006 | PASS | unit — `name` 결여 → corrupt/missing-name |
+| 007 | PASS | unit `workspaceManifest` — 주석·미정의 키·순서 보존, 범위 밖 diff 0 |
+| 008 | PASS | unit `projectFolders`+`projectDiscovery` — 절대 경로 결합 |
+| 009 | PASS | unit — 루트 밖 재정의 → 기본값 절대 경로 |
+| 010 | PASS | unit — 열기 전후 디렉터리 목록 동일 |
+| 011 | PASS | unit — 발견 후에도 `PathNotAllowedError`, 승격 API 소스 부재 |
+| 052 | PASS | unit — 7키 파싱 + `future_key` 무경고 |
+| 053 | PASS | unit — 기본 5종 + `REFERENCE_DIR_NAME` 문자열 동일 |
+
+### §B 감지와 변경 확정 (14)
+
+| AC | 상태 | 증거 |
+|---|---|---|
+| 012 | PASS | unit `changeConfirmation` — 확정 1건, 위치 무관 |
+| 013 | PASS | unit — 2단계 내용 대조로 동일 재작성 미확정 |
+| 013b | PASS | unit — 미열림 경로 `readCalls === []` (읽기 0회) |
+| 014 | PASS | unit — 자기 저장 예상값 일치 시 억제 |
+| 015 | PASS | unit — 주입 시계+스텁으로 중간→최종 재생, 확정 1건 |
+| 016a/016b | PASS | unit — Windows 형태가 macOS 형태와 `toEqual` |
+| 017 | PASS | unit — `rescan()`이 감시 공백 중 변경 확정 |
+| 018 | PASS | unit `watchScope`+`projectIpc` — 신뢰 밖 등록 거부, 전 채널 검증 |
+| 056 | PASS | unit — 규약 폴더 4종 감시 + 미추적 새 파일 확정 |
+| 057 | PASS | unit — `data/` 부재, 나머지 4종 존재 |
+| 057b | PASS | unit — data 역할 경로 안의 열린 파일 포함 |
+| 058 | PASS | unit — 재열거가 data 역할 경로 포함 |
+| 058b | PASS | unit `refreshEntryPoint` — IPC·메뉴 6곳 |
+| 059 | PASS | unit `fsWatchPerPath` — 한 창 두 경로 → 2건 |
+| 066 | PASS | unit — `folders.manuscript: data`에서 제외는 `archive/` 하나 |
+
+### §C IME 안전 (7)
+
+| AC | 상태 | 증거 |
+|---|---|---|
+| 019 | PASS | **e2e** — 표면 계측 3단 + 채널 생존 확인 선행 |
+| 020 | PASS | **e2e** — 조합 텍스트 유지 + 디스크 미적용 + held-notify + 2동작 |
+| 020b | PASS | **e2e** — 취소해도 보류분이 라우터로 (hold-and-forget 검출) |
+| 021 | PASS | **e2e** — 3건 합류 후 배너, v1·v2·v3 미적용 |
+| 022 | PASS | **e2e** — 조합 경계 유지 + 커밋 텍스트 일치 |
+| 023a | PASS | unit `reconciliation`+`compositionGate` — status 표면·무버튼·포커스 불변 |
+| 023b | PASS | unit `compositionGate` — 실제 CompositionEvent → held-composition |
+| 023c | PASS | **e2e** + unit — 무성 소실 금지, 세 정책 분기 인계 확인 |
+| 060 | PASS | unit `reconciliationBanner` — 5상태 DOM 검사 + union에 modal 부재 |
+| 024 | **미완** | 릴리스 사인오프 수동 스모크 — 자동화 대체 불가 |
+
+### §D 조정 (9)
+
+| AC | 상태 | 증거 |
+|---|---|---|
+| 025 | PASS | unit `applyExternalChange` — 깨끗하면 apply 1건 |
+| 026 | PASS | unit — 80행 캐럿이 82행 같은 텍스트 |
+| 027 | PASS | unit — 교체 영역 내부 캐럿 → 경계, 범위 밖 이탈 없음 |
+| 028 | PASS | unit — undo 1회는 조정만, 2회가 사용자 편집 |
+| 029 | PASS | unit `reconciliation` — 버퍼 불변 + 3동작 배너 |
+| 030 | PASS | unit — 해제·무시·rogue 정책 3경로 모두 apply 0 |
+| 031 | PASS | unit — 삭제 시 effect 0 + missing 표시 |
+| 031b | PASS | unit — 한 검사 안에서 대조(사라짐 해제 불가 / 배너 해제됨) |
+| 032 | PASS | unit — decode-error 시 조정 중단, 보류분 폐기 |
+| 033 | PASS | unit — 승인 대기 정책 주입 → held-approval |
+
+### §E 파일 종류 무관 무결성 (4)
+
+| AC | 상태 | 증거 |
+|---|---|---|
+| 034 | PASS | unit `extensionIndependence` — 구조(수단 부재+감지력 확인) + 행위(5확장자) |
+| 035 | PASS (부분) | unit `reconcileIntegrity` — 고립 `\r` 미생성·좌표 정합. 전 구간 CRLF는 issue #11 |
+| 036 | PASS | unit — 후행공백·탭·BOM·NFD·제로폭·한글/이모지 |
+| 037 | PASS | `git diff --quiet -- docs/DOCUMENT_MODE_PRINCIPLES.md` exit 0 |
+
+### §F 메타데이터 (24)
+
+| AC | 상태 | 증거 |
+|---|---|---|
+| 038 / 038b / 038c | PASS | unit `manuscriptMetadata` — 정본·기본값·5 미기입 형태 |
+| 039 / 039b | PASS | unit — 감사의 글 정본 및 미기입 폴백 |
+| 040 / 041 | PASS | unit — 유효 NCT 무경고 / 위반 보존+경고 |
+| 042 / 043 | PASS | unit `workspaceManifest` — 매니페스트 우선 / walk-up 동일성 |
+| 044 / 045 / 046 / 047 | PASS | unit — 무프로젝트 3값 / 무음 대체 / 본문 diff 0 / 두 번째 파서 부재 |
+| 054 / 055 | PASS | unit — 3계층 우선순위 / 인라인 서지 거부 |
+| 061~065 | PASS | unit — 화이트리스트·단복수·PROSPERO·placeholder·무프로젝트 경고 |
+| 067 / 067b / 067c | PASS | unit — 미채택 무검증 / 기본값 검증 / placeholder 미억제 |
+| 068 / 069 | PASS | unit — 미기입 6형태 / `MANUSCRIPT_TEMPLATES` 전수 상속 |
+| 070 | PASS | unit `projectDiscovery` — 부재·디렉터리·권한거부 폴백 보고 |
+
+### §G 품질 게이트 (4)
+
+| AC | 상태 | 증거 |
+|---|---|---|
+| 048 | PASS | typecheck(2명령) / lint / test 전부 exit 0 |
+| 049 | PASS | CI e2e 212 passed, `composeKorean` 시그니처 보존 |
+| 050 | PASS | `pnpm test:coverage` exit 0 (perFile 85%) |
+| 051 | PASS | run 단계 errors 0 / type errors 0 / lint errors 0 |
+
+**합계: 82 PASS (2건은 부분 — AC-WS-035), 1건 미완 (AC-WS-024).**
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
