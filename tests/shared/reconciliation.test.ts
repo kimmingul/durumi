@@ -157,6 +157,44 @@ describe('IME 조합 중에는 보류한다 — REQ-WS-020, 021, 023 / AC-WS-023
     expect(state.status).toBe('held-notify');
   });
 
+  it('보류 표시는 정책 결과로 인계된다 — 무성 소실 경로가 없다 (AC-WS-023c)', () => {
+    // 금지 상태: 보류가 풀렸는데 배너도 없고 버퍼도 그대로. 사용자가 외부
+    // 변경이 취소된 것으로 오해한다. 세 정책 분기 전부에서 확인한다.
+    const cases: Array<[string, ReconciliationPolicy, boolean]> = [
+      ['clean/auto', autoApplyPolicy, false],
+      ['dirty/auto', autoApplyPolicy, true],
+      ['banner', bannerNotifyPolicy, false],
+    ];
+    for (const [label, policy, isDirty] of cases) {
+      const events: ReconciliationEvent[] = [dirty(isDirty), { type: 'composition-start' }, change()];
+      const held = run(events, { policy });
+      expect(held.state.status, `${label}: 보류 표시가 뜨지 않았다`).toBe('held-composition');
+      expect(noticeFor(held.state)).not.toBeNull();
+
+      const after = run([{ type: 'composition-end' }], { policy, from: held.state });
+      const hasSurface = noticeFor(after.state) !== null;
+      const bufferChanged = after.effects.some((e) => e.kind === 'apply-to-buffer');
+      expect(
+        hasSurface || bufferChanged,
+        `${label}: 보류 표시가 후속 표면 없이 사라졌다 (무성 소실)`,
+      ).toBe(true);
+    }
+  });
+
+  it('게이트는 라우팅을 지연시킬 뿐 결과를 결정하지 않는다 (REQ-WS-021 불변식)', () => {
+    // 같은 게이트를 통과한 두 시나리오가 dirty 여부로만 갈린다.
+    const viaGate = (isDirty: boolean) =>
+      run([dirty(isDirty), { type: 'composition-start' }, change(), { type: 'composition-end' }]);
+    const direct = (isDirty: boolean) => run([dirty(isDirty), change()]);
+
+    for (const isDirty of [false, true]) {
+      const g = viaGate(isDirty);
+      const d = direct(isDirty);
+      expect(g.state.status, `dirty=${isDirty}: 게이트가 결과를 바꿨다`).toBe(d.state.status);
+      expect(g.effects.map((e) => e.kind)).toEqual(d.effects.map((e) => e.kind));
+    }
+  });
+
   it('보류할 변경이 없으면 조합 종료는 무해하다', () => {
     const { state, effects } = run([{ type: 'composition-start' }, { type: 'composition-end' }]);
     expect(effects).toEqual([]);

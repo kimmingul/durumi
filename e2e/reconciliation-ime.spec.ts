@@ -9,6 +9,7 @@ import {
   startComposition,
   updateComposition,
   endComposition,
+  cancelComposition,
   observeCompositionEnd,
 } from './_helpers';
 
@@ -93,6 +94,20 @@ async function installSurfaceCounter(page: Page): Promise<void> {
   });
 }
 
+/** 조정 표면의 현재 상태. 없으면 null. */
+const reconcileStatus = (page: Page): Promise<string | null> =>
+  page
+    .locator('[data-reconcile-status]')
+    .getAttribute('data-reconcile-status')
+    .catch(() => null);
+
+const bannerActions = (page: Page): Promise<string[]> =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('[data-reconcile-surface] button')].map(
+      (b) => (b as HTMLElement).dataset.action ?? '',
+    ),
+  );
+
 const surfaceCounts = (page: Page): Promise<{ starts: number; ends: number }> =>
   page.evaluate(() => {
     const w = window as unknown as { __cmCounts?: { starts: number; ends: number } };
@@ -157,27 +172,54 @@ test('AC-WS-019: 조합 중에는 조정이 적용되지 않는다', async () =>
   });
 });
 
-test('AC-WS-020: 조합 종료 후 보류된 조정이 적용된다', async () => {
+test('AC-WS-020: 조합 종료 시 보류된 변경이 배너로 라우팅된다', async () => {
   await withOpenDoc('원래 내용\n', async (f) => {
     await proveChannelLive(f);
+    await installSurfaceCounter(f.page);
 
     const handle = await startComposition(f.page, '한');
     fs.writeFileSync(f.filePath, '디스크 내용\n', 'utf8');
     await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
     await endComposition(handle);
+    await f.page.waitForTimeout(800);
+
+    const text = await bufferText(f.page);
+    // 커밋된 조합 텍스트는 미저장 편집이다 → REQ-WS-028이 교체를 금지한다.
+    expect(text, '커밋된 조합 텍스트가 사라졌다').toContain('한');
+    expect(text, '미저장 편집이 있는데 디스크 내용이 적용됐다').not.toContain('디스크 내용');
+
+    expect(await reconcileStatus(f.page), '배너 상태로 라우팅되지 않았다').toBe('held-notify');
+    const actions = await bannerActions(f.page);
+    expect(actions).toContain('view-diff');
+    expect(actions).toContain('load-from-disk');
+  });
+});
+
+test('AC-WS-020b: 텍스트를 남기지 않은 조합 취소는 자동 반영으로 돌아간다', async () => {
+  // AC-WS-020과의 대비가 REQ-WS-021의 불변식을 고정한다 — 같은 게이트를
+  // 통과한 두 시나리오가 dirty 여부로만 갈린다. "조합 후엔 항상 배너"로
+  // 하드코딩한 구현은 이 검사에서 떨어진다.
+  await withOpenDoc('원래 내용\n', async (f) => {
+    await proveChannelLive(f);
+
+    const handle = await startComposition(f.page, '한');
+    fs.writeFileSync(f.filePath, '자동 반영 대상\n', 'utf8');
+    await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
+    await cancelComposition(handle);
 
     await f.page.waitForFunction(
       () =>
         (document.querySelector('.cm-content') as HTMLElement | null)?.innerText.includes(
-          '디스크 내용',
+          '자동 반영 대상',
         ) ?? false,
       undefined,
       { timeout: 10_000 },
     );
+    expect(await reconcileStatus(f.page), '자동 반영인데 배너가 남았다').toBeNull();
   });
 });
 
-test('AC-WS-021: 보류 중 다중 변경은 최종 상태 1회만 적용된다', async () => {
+test('AC-WS-021: 보류 중 다중 변경은 최종 상태 1건으로 합류되어 라우팅된다', async () => {
   await withOpenDoc('v0\n', async (f) => {
     await proveChannelLive(f);
 
@@ -187,17 +229,40 @@ test('AC-WS-021: 보류 중 다중 변경은 최종 상태 1회만 적용된다'
       await f.page.waitForTimeout(300);
     }
     await endComposition(handle);
+    await f.page.waitForTimeout(800);
 
-    await f.page.waitForFunction(
-      () =>
-        (document.querySelector('.cm-content') as HTMLElement | null)?.innerText.includes('v3') ??
-        false,
-      undefined,
-      { timeout: 10_000 },
-    );
+    // 합류 대상은 라우팅이지 적용이 아니다 — dirty 버퍼이므로 배너다.
+    expect(await reconcileStatus(f.page)).toBe('held-notify');
     const text = await bufferText(f.page);
-    expect(text).not.toContain('v1');
-    expect(text).not.toContain('v2');
+    expect(text, '조합 텍스트가 사라졌다').toContain('한');
+    for (const v of ['v1', 'v2', 'v3']) {
+      expect(text, `${v}가 버퍼에 적용됐다`).not.toContain(v);
+    }
+  });
+});
+
+test('AC-WS-023c: 보류 표시는 정책 결과로 인계된다 (무성 소실 금지)', async () => {
+  await withOpenDoc('원래 내용\n', async (f) => {
+    await proveChannelLive(f);
+
+    const handle = await startComposition(f.page, '한');
+    fs.writeFileSync(f.filePath, '디스크 내용\n', 'utf8');
+    await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
+
+    expect(await reconcileStatus(f.page), '보류 표시가 뜨지 않았다').toBe('held-composition');
+    const beforeEnd = await bufferText(f.page);
+
+    await endComposition(handle);
+    await f.page.waitForTimeout(800);
+
+    // 금지 상태: 보류가 풀렸는데 후속 표면도 없고 버퍼도 그대로.
+    const status = await reconcileStatus(f.page);
+    const changed = (await bufferText(f.page)) !== beforeEnd;
+    expect(
+      status !== null || changed,
+      '보류 표시가 후속 표면 없이 사라졌다 — 사용자는 외부 변경이 취소된 것으로 오해한다',
+    ).toBe(true);
+    expect(status, '보류 상태가 그대로 멈춰 있다').not.toBe('held-composition');
   });
 });
 
