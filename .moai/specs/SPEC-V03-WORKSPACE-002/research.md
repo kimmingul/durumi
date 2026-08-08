@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "코드베이스 조사 — 멀티패널 셸"
-version: "0.3.1"
+version: "0.3.2"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -30,7 +30,7 @@ tags: "research, multipanel, layout, editmode, menurouting, language, singleton"
 
 ```
 index.html #root
-  └─ src/main.tsx:9-11        document.getElementById('root') → createRoot
+  └─ src/main.tsx:9           document.getElementById('root')  /  :23 createRoot(container).render
        └─ src/main.tsx:24-29  <React.StrictMode><ErrorBoundary><App/>
             └─ src/App.tsx:62 App()
                  └─ src/App.tsx:153-160  <MarkdownEditor …/>   ← 저장소 전체에서 유일한 JSX 인스턴스
@@ -60,7 +60,7 @@ index.html #root
 | A4 | `src/hooks/useMenuCommandRouter.ts:34, 98` | `editorViewRef` 단수 → `const view = editorViewRef.current` | 40여 개 뷰 의존 커맨드가 갈 곳이 없다 (§4) |
 | A5 | `src/store/appStore.ts:8-10` `filePath`/`content`/`isDirty` | 열린 문서 **정확히 1개** | 문서 상태 전체가 패널 축을 갖지 않는다 |
 | A6 | `src/components/StatusBar.tsx:32-37` | appStore 단수 읽기(경로·dirty·모드·힌트) | 어느 패널의 상태를 보여줄지 미정의 |
-| A7 | `src/store/memoSidecarStore.ts:31` `docPath` | 메모 사이드카가 문서 1개에 결속 | 두 원고를 동시에 열면 한쪽 메모가 보이지 않거나 잘못 저장된다 |
+| A7 | `src/store/memoSidecarStore.ts:30` `docPath` | 메모 사이드카가 문서 1개에 결속 | 두 원고를 동시에 열면 한쪽 메모가 보이지 않거나 잘못 저장된다 |
 | A8 | `src/store/bibliographyStore.ts:57` `filePath` + `bindToDocument` | 서지 해석이 문서 1개에 결속 | 동일 |
 | A9 | `src/hooks/useExternalChangeWiring.ts:31-42` | `watchOpenFile`을 **단일** `filePath`로만 등록 | main은 이미 경로별인데(§7.1) 렌더러가 1건만 등록한다 |
 | A10 | `src/components/EditorToolbar.tsx:388, 413` | `window` 수준 `durumi:edit-link` / `durumi:open-link-dialog` 리스너 | 툴바가 N개면 N개가 동시에 반응한다 |
@@ -317,7 +317,7 @@ useFileMenuCommands.ts:50-77  doSave → window.api.fileSave(filePath, content) 
 | 캐럿·선택·스크롤 | **뷰별** (`EditorState.selection`, `view.scrollDOM`) | 구조상 |
 | 편집 모드 | **이중** (전역 store + 뷰별 field) | §3.1 |
 | 조합 상태 | 뷰별 게이트 인스턴스이나 싱크가 **전역 스토어** | `MarkdownEditor.tsx:155`, `compositionGate.ts:101-117` |
-| 메모 사이드카 | **전역 1개** (`docPath`) | `memoSidecarStore.ts:31` |
+| 메모 사이드카 | **전역 1개** (`docPath`) | `memoSidecarStore.ts:30` |
 | 서지 해석 | **전역 1개** (`filePath` + `bindToDocument`) | `bibliographyStore.ts:57, 80` |
 | main의 열린 파일 감시 | **경로별 N개** | §7.1 |
 | 조정 상태 | **전역 1개** | §7.2 |
@@ -398,7 +398,7 @@ useFileMenuCommands.ts:50-77  doSave → window.api.fileSave(filePath, content) 
 |---|---|---|---|
 | 1 | 버퍼가 `"A의 내용\n"`으로 교체 | 열지도 않은 파일의 내용이 현재 버퍼에 적용된다 | AC-PANEL-080 |
 | 2 | 조정 상태 `"idle"` | 앱이 오적용을 **정상 완료로 취급한다.** 배너도 표시도 남지 않아 사용자가 알 수단이 없다 — **손실을 무성으로 만드는 지점** | AC-PANEL-080b (별개 AC) |
-| 3 | dirty 선행 시 버퍼 불변 + `"held-notify"` | `shared/reconciliation.ts:193`의 `!state.isDirty`가 **유일한 보호막**. 깨끗한 문서만 취약하다 | AC-PANEL-080/080c — AC는 **깨끗한 문서 케이스를 반드시** 다뤄야 한다 |
+| 3 | dirty 선행 시 버퍼 불변 + `"held-notify"` | `!state.isDirty`(`:193`)가 **즉시 적용만** 막는다. **유일한 보호막이 아니고 dirty 문서를 안전하게 만들지도 않는다** — §7.3a-3이 배너 경유 오염을 담는다. 이 관측이 확립한 것은 **emit 시점 버퍼 불변**뿐이다 | AC-PANEL-080(깨끗한 문서) + AC-PANEL-080c(dirty `pending`·배너) — **양쪽 모두** 필요하다 |
 
 **초판이 놓쳤던 것 — 결함은 "크로스-윈도"보다 넓다**: 재현에서 창은 **하나**였고 문제의 파일을 **열지도 감시 등록하지도 않았다**. 즉 두 창의 경쟁이 필요 없고, **어떤 창이든 도착한 브로드캐스트를 무조건 자기 버퍼에 적용한다.** 초판이 이 결함을 창 축 문제로 좁혀 기술한 것은 부정확했다.
 
@@ -534,6 +534,14 @@ REQ-PANEL-071이 소유하고 M0이 닫는다. `design.md` §6.2b가 해법 위�
 | `tests/editor/reconcileIntegrity.test.ts` | 후행공백·탭·BOM·NFD·제로폭 보존 | 비마크다운 AC가 이 위에 얹힌다 ✅ |
 
 🔴 = 멀티 인스턴스 도입 시 **재작성이 불가피**, ⚠️ = 설계 선택에 따라 깨질 수 있음, ✅ = 안전 또는 제약으로만 작용.
+
+---
+
+### 8.1 `.cm-content` 셀렉터 — 34파일 이관 (명시적 작업)
+
+`grep -rl "cm-content" e2e/ | wc -l` → **34**. 이 파일들은 `.cm-content`를 **창 안 유일 요소로 가정**한다. 패널이 N개가 되면 그 가정이 깨지고, 전역 CSS 규칙(`src/styles/global.css:32`)을 패널 스코프로 좁히려는 어떤 시도도 이 34파일을 먼저 이관하게 만든다(`design.md` §3.2a의 순서 의존).
+
+`plan.md` §B.8이 이것을 M4의 패널 지목 수단과 **같은 작업**으로 묶고, `acceptance.md` AC-PANEL-095가 "유일 요소 가정 셀렉터 0건"을 판정한다. 34는 파일 수 상한이며 실제 이관 대상은 §10 항목 4b의 이유로 그보다 적을 수 있다.
 
 ---
 
@@ -694,7 +702,8 @@ codex와 grok이 독립적으로 read-only 검토했다. **gemini는 참여하�
 |---|---|
 | 상위가 `key` prop을 주지 않는다 | `src/App.tsx:153-160` |
 | 마운트 effect deps가 `[]`다 | `src/editor/MarkdownEditor.tsx:176` |
-| `filePath`는 prop으로 들어와 **별개 effect**가 처리한다 | `:166` |
+| `filePath`를 처리하는 **`[filePath]`-deps effect가 이미 존재한다** | `:74-81` (`[filePath]` deps) — 이 effect는 문서 전환마다 이미 재실행된다 |
+| (주의) `:166`은 별개 effect가 **아니다** | `[]`-deps 마운트 effect 안의 마운트 시점 시드이며 `:165` 주석이 `Subsequent changes go through the filePath effect`라고 적는다 |
 
 **따라서 하나의 `EditorView`가 문서를 갈아타며 재사용된다.** 라우팅 등록을 그 `[]`-deps effect에 두면 경로가 첫 마운트에 캡처되어 갱신되지 않고, 파일 전환 후 (a) 새 경로의 변경이 아무 데도 가지 않고 (b) **옛 경로의 변경이 그 패널로 들어온다** — M0이 닫으려는 결함이 다른 형태로 재발한다.
 
@@ -732,12 +741,6 @@ AC 본문이 각 결함의 등급을 명시하며(`acceptance.md` 표기 규약)
 6. **Windows 경로에서의 패널 동작은 코드 읽기만 했다** — e2e가 macOS 전용이라는 SPEC-1 C-6 제약이 그대로 승계된다.
 
 ---
-
-### 8.1 `.cm-content` 셀렉터 — 34파일 이관 (명시적 작업)
-
-`grep -rl "cm-content" e2e/ | wc -l` → **34**. 이 파일들은 `.cm-content`를 **창 안 유일 요소로 가정**한다. 패널이 N개가 되면 그 가정이 깨지고, 전역 CSS 규칙(`src/styles/global.css:32`)을 패널 스코프로 좁히려는 어떤 시도도 이 34파일을 먼저 이관하게 만든다(`design.md` §3.2a의 순서 의존).
-
-`plan.md` §B.8이 이것을 M4의 패널 지목 수단과 **같은 작업**으로 묶고, `acceptance.md` AC-PANEL-095가 "유일 요소 가정 셀렉터 0건"을 판정한다. 34는 파일 수 상한이며 실제 이관 대상은 §10 항목 4b의 이유로 그보다 적을 수 있다.
 
 ---
 

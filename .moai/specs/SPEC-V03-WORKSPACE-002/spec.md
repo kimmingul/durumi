@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "v0.3 멀티패널 셸 — 패널 레이아웃·모드·커맨드 라우팅·비마크다운 편집 표면"
-version: "0.3.1"
+version: "0.3.2"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -25,7 +25,8 @@ tags: "multipanel, layout, editmode, focus, menurouting, nonmarkdown, language, 
 | 2026-08-08 | 0.2.0 | **오케스트레이터가 코드 직독으로 확인한 출하 중인 결함 2건을 §B.0으로 승격.** ① 크로스-윈도 무성 버퍼 덮어쓰기(REQ-PANEL-070) — 확정 이벤트가 모든 창에 브로드캐스트되고 렌더러가 `path`를 대조하지 않아 깨끗한 버퍼가 다른 파일 내용으로 덮어써지고 저장 시 데이터 손실. ② 전역 조합 플래그 공유(REQ-PANEL-071) — 다른 표면의 `compositionend`가 진행 중인 조합의 보류를 해제. 두 건 모두 `plan.md` §C **M0**이 재현 우선(REQ-PANEL-073)으로 닫는다. **라우팅 계층의 위치를 하드 제약으로 고정**(REQ-PANEL-072 / C-12): `tests/electron/extensionIndependence.test.ts:34-65, 171-174`가 조정 코어 5파일의 확장자 독립과 `applyExternalChange` arity 2를 강제하므로 라우팅 키는 `src/store/` 계층에 산다(`design.md` §6.2a). C-13(`.cm-content` 이중 스타일링 + e2e 34파일 셀렉터 이관) 신설, REQ-PANEL-055에 언마운트 무장 해제 경로 추가, REQ-PANEL-062에 사이드카 재바인딩 플러시 위험 추가. `plan.md`에 OQ-9(패널 배치 persist 슬롯 부재) 신설 |
 | 2026-08-08 | 0.2.1 | **OQ-8이 기계적으로 재현되어 확정 결함이 되었다.** 오케스트레이터가 실제 모듈 3개(`attachExternalChangeChannel`/`useReconciliationStore`/`registerReconciliationExecutor`) + 실제 `EditorState`로 구동해 관측: 열지도 감시 등록하지도 않은 경로의 확정 변경이 깨끗한 버퍼를 교체하고 **조정 상태가 `idle`로 정착**하며, dirty 선행 시에만 보호된다. 증거 `.moai/state/verify/goal-spec12345/oq8-repro.log` + `…/oq8-repro-source.ts.txt`. REQ-PANEL-070에 **미등록 경로 폐기 조항과 `idle` 정착 금지 조항**을 추가하고, AC를 4건으로 분할(080 깨끗한 버퍼 / 080b `idle` 정착 금지 / 080c dirty 보호 회귀 / 080d 디스크 전파 금지). **검증 범위 분할을 정직하게 기록**: 렌더러 절반은 실행 관측, main 절반(`getAllWindows()` 브로드캐스트)은 정적 소스 사실이며 엔드투엔드 다중 창 실행은 수행되지 않았다 — AC-PANEL-084가 소스 스캔에서 멈춘다. 결함이 창 축 문제보다 넓다는 정정(창 하나로 재현됨). OQ-8 잠정 권고를 후보 1(유닛 재현 + main 소스 단언)로 유지·강화. **`progress.md` 신설** — `§E.1` 채움 + `§E.2`/`§E.3`/`§E.4` 자리표시자 + `sync_commit_sha` + `§F` 예약 |
 | 2026-08-08 | 0.3.0 | **외부 검토(codex + grok, 2인 수렴 — gemini는 `IneligibleTierError`로 불참) + 사용자 결정으로 OQ-1·2·5·6 확정.** ① **OQ-1** 중앙 영역 분할 — **논거 교체**: 소유권 분리(사이드바=전역 저작 표면 / 패널=문서 국소). 초판의 "폭 SSOT 유출"·"테스트 841줄" 논거는 잘못된 전제에서 파생되어 **철회**. 실제 비용은 **사이드바 데이터 재배선**(REQ-PANEL-065)이며 `RightSidebar`는 활성 원고 패널에 귀속된다(가장 왼쪽 패널 아님). ② **OQ-2** 축 분리 유지 + **v0.3 dual-open 금지**(v0.4 연기) — `design.md:57`의 "1문서 N뷰 공유" 정정(CM6가 하지 않는 일이며 오늘 전파는 문서 전체 교체), §2.5에 v0.4 5개 의무 기록, 별칭 탐지 한계 명시(REQ-PANEL-011a), **revision 파생 dirty**로 sticky(issue #12)와 저장 await 창 결함을 함께 해소(REQ-PANEL-015). ③ **OQ-5** 트리를 신뢰 범위로 좁혀 표시 — **동의 배너 기각**(내 잠정 권고 철회): main 다이얼로그를 통과하지 않는 동의는 자동 승격이다. 신뢰 확대가 asset 읽기 표면도 확대함을 기록(REQ-PANEL-036c). ④ **OQ-6** (i) 채널 분리 **3겹**(분리 + main 대상 검증 + import 부재) — "분리만으로 표현 불가능" 주장 정정, 세 쓰기 진입점 전부(REQ-PANEL-044a); (ii) **(B′)** 보조 파일 EOL 복원 — 내 Residual-risk 과장 정정(`applyExternalChange.ts:51-52` 주석과 `reconcileIntegrity.test.ts:90-97`이 이미 이 모델을 문서화·증명), 혼합 줄 끝 보존은 범위 밖 명시(REQ-PANEL-048a). REQ 50 → 58, AC 79 → 89 |
-| 2026-08-09 | 0.3.1 | **Plan Audit Gate FAIL(총계 0.75 / 임계 0.85) 대응 — Blocking-M0 4건 + Medium/Low 11건 해소. 새 결정은 필요하지 않았다.** ① **D1** 라우팅 키가 마운트 시점 경로에 고착되는 공백 — `src/App.tsx:153-160`이 `key`를 주지 않고 마운트 effect deps가 `[]`(`MarkdownEditor.tsx:176`)이며 `filePath`는 별개 effect(`:166`)가 처리하므로 하나의 `EditorView`가 문서를 갈아탄다. **REQ-PANEL-070a**(재키잉 의무) + **AC-PANEL-080e** 신설, `design.md` §6.2a에 승인 메커니즘(주입된 setter 클로저 — 시그니처 무변경)과 `filePath` 결속 명시. ② **D2** AC-PANEL-080b가 **반증 불가능**했다 — `'idle'`이 이벤트 이전·수정 전 사후·수정 후 사후 세 시점 모두의 값(`shared/reconciliation.ts:164-177`). 전이 관측(리듀서 호출 횟수 + 상태 객체 참조 동일성 + Map 항목 부재)으로 재작성하고 REQ-PANEL-070 조항도 수정. ③ **D3** **"dirty 경로는 이미 올바르게 동작한다"는 거짓이었다** — notify 분기가 다른 경로의 `change`를 `pending`에 심고(`:206`) `user-load-from-disk`가 그것을 적용한다(`:251-257`). 즉 dirty 문서는 **배너 클릭 1회 뒤** 오염되며, REQ-WS-028의 "사용자 확인"이 형식만 충족된 채 대상이 틀린다. AC-PANEL-080c 전면 재작성 + 영향 범위 표 정정 + `research.md` §7.3a-3 신설. 초판이 확립한 것은 **emit 시점 버퍼 불변**뿐이었고 `pending`을 관측하지 않았다. ④ **D4** `compositionGate.detach()`가 `sink.onCompositionEnd()`를 호출하지 않아 `composing`을 **영구 latch**한다(`:88-93`) — 오늘은 세션 전체, M0 후에는 그 문서, OR 합류 후에는 한 패널의 언마운트가 문서를 동결시킨다. **REQ-PANEL-071에 detach 해제 의무** + **AC-PANEL-081b** 신설(스케줄러는 PRESERVE 유지). **D3·D4는 감사가 기계 재현** — `research.md` §10.0에서 두 항목만 코드 직독 → 기계 재현으로 승격. Medium/Low: D5(§6.2b의 "이미 계산된 boolean" 오진술 정정 — 리듀서가 스스로 계산하므로 스토어가 `composition-end` dispatch를 억제해야 한다 + §6.2c에 OR는 safety에서 옳고 liveness는 D4가 담보함을 기록) / D6(REQ-PANEL-036c 미커버 → AC-PANEL-036d, 문서·검토 게이트 형태임을 명시) / D8(OoS 7→9) / D9(요구 수 자기모순 + 커밋 누락) / D10(REQ-PANEL-072 근거를 테스트 강제분과 SPEC 추가분으로 분리) / D11(AC-PANEL-082의 `applyExternalChange.ts` 예외 철회 — 클로저 형태가 그 파일을 무변경으로 남긴다) / D12(⟨OQ-8⟩을 "추가 AC 여부만 미해결"로 축소 + 일괄 판정불가 규칙에 예외) / D13(AC-PANEL-080d를 디스크 SHA에서 **쓰기 채널 전달값**으로 — M0 밀폐성과의 모순 해소) / D14(선언 순서 048/048a→047 뒤, 095→094 뒤) / D15(REQ-PANEL-043b 오인용 → REQ-PANEL-043, AC-PANEL-043b). REQ 58 → 59, AC 89 → 92 |
+| 2026-08-09 | 0.3.1 | **Plan Audit Gate FAIL(총계 0.75 / 임계 0.85) 대응 — Blocking-M0 4건 + Medium/Low 11건 해소. 새 결정은 필요하지 않았다.** ① **D1** 라우팅 키가 마운트 시점 경로에 고착되는 공백 — `src/App.tsx:153-160`이 `key`를 주지 않고 마운트 effect deps가 `[]`(`MarkdownEditor.tsx:176`)이며 `filePath`는 별개 effect(`:166`)가 처리하므로 하나의 `EditorView`가 문서를 갈아탄다. **REQ-PANEL-070a**(재키잉 의무) + **AC-PANEL-080e** 신설, `design.md` §6.2a에 승인 메커니즘(주입된 setter 클로저 — 시그니처 무변경)과 `filePath` 결속 명시. ② **D2** AC-PANEL-080b가 **반증 불가능**했다 — `'idle'`이 이벤트 이전·수정 전 사후·수정 후 사후 세 시점 모두의 값(`shared/reconciliation.ts:164-177`). 전이 관측(리듀서 호출 횟수 + 상태 객체 참조 동일성 + Map 항목 부재)으로 재작성하고 REQ-PANEL-070 조항도 수정. ③ **D3** **"dirty 경로는 이미 올바르게 동작한다"는 거짓이었다** — notify 분기가 다른 경로의 `change`를 `pending`에 심고(`:206`) `user-load-from-disk`가 그것을 적용한다(`:251-257`). 즉 dirty 문서는 **배너 클릭 1회 뒤** 오염되며, REQ-WS-028의 "사용자 확인"이 형식만 충족된 채 대상이 틀린다. AC-PANEL-080c 전면 재작성 + 영향 범위 표 정정 + `research.md` §7.3a-3 신설. 초판이 확립한 것은 **emit 시점 버퍼 불변**뿐이었고 `pending`을 관측하지 않았다. ④ **D4** `compositionGate.detach()`가 `sink.onCompositionEnd()`를 호출하지 않아 `composing`을 **영구 latch**한다(`:88-93`) — 오늘은 세션 전체, M0 후에는 그 문서, OR 합류 후에는 한 패널의 언마운트가 문서를 동결시킨다. **REQ-PANEL-071에 detach 해제 의무** + **AC-PANEL-081b** 신설(스케줄러는 PRESERVE 유지). **D3·D4는 감사가 기계 재현** — `research.md` §10.0에서 두 항목만 코드 직독 → 기계 재현으로 승격. Medium/Low: D5(§6.2b의 "이미 계산된 boolean" 오진술 정정 — 리듀서가 스스로 계산하므로 스토어가 `composition-end` dispatch를 억제해야 한다 + §6.2c에 OR는 safety에서 옳고 liveness는 D4가 담보함을 기록) / D6(REQ-PANEL-036c 미커버 → AC-PANEL-036d, 문서·검토 게이트 형태임을 명시) / **D7(판 0.3.1에서 누락 — 판 0.3.2에서 해소)** / D8(OoS 7→9) / D9(요구 수 자기모순 + 커밋 누락) / D10(REQ-PANEL-072 근거를 테스트 강제분과 SPEC 추가분으로 분리) / D11(AC-PANEL-082의 `applyExternalChange.ts` 예외 철회 — 클로저 형태가 그 파일을 무변경으로 남긴다) / D12(⟨OQ-8⟩을 "추가 AC 여부만 미해결"로 축소 + 일괄 판정불가 규칙에 예외) / D13(AC-PANEL-080d를 디스크 SHA에서 **쓰기 채널 전달값**으로 — M0 밀폐성과의 모순 해소) / D14(선언 순서 048/048a→047 뒤, 095→094 뒤) / D15(REQ-PANEL-043b 오인용 → REQ-PANEL-043, AC-PANEL-043b). REQ 58 → 59, AC 89 → 92 |
+| 2026-08-09 | 0.3.2 | **재감사 0.85(임계 도달) 후속 — iteration-1 **D7** 실질 해소 + F1~F14.** ① **F5/D7** `plan.md` OQ-9이 요구한 D-6/C-4 조건이 REQ-PANEL-006에 없었다 — **persist된 패널 경로는 신뢰 판정의 입력이 되어서는 안 된다**는 `shall not` 추가(C-4 · SPEC-1 D-6 인용) + **AC-PANEL-006c** 신설 + OQ-9에 후보 무관 조건 명시. `prefs:set` 가드가 `workspaceFolders`/`recentFiles`/`recentFolders` 세 필드만 검사하므로(`pathGuard.ts:188`) 신규 `panels` 필드는 **기본적으로 검사 밖**이라는 점을 근거로 적었다 — "명시하지 않으면 취약"이다. 판 0.3.1이 "Medium/Low 11건"이라 적고 10건만 열거한 빈 슬롯도 채웠다. ② **F1** 네 아티팩트가 `MarkdownEditor.tsx:166`을 "별개 effect"로 인용했으나 그 줄은 `[]`-deps 마운트 effect **안의** 마운트 시점 시드이고 `:165` 주석이 스스로 그렇다고 적는다 — 따라가면 **D1을 정확히 재현한다.** 실제 `[filePath]`-deps effect는 **`:74-81`이며 이미 존재하고 문서 전환마다 이미 재실행된다** → D1의 의무가 "새 effect 추가"에서 "이미 있는 effect 안에서 등록"으로 좁아졌다(구현이 더 싸고 오구현 여지도 작다). 4곳 정정 + `design.md` §6.2a에 그 사실 기록. ③ **F4** D3이 철회한 거짓 진술이 3곳에 남아 있었다 — `acceptance.md`의 같은 AC 안에서 19줄 간격으로 자기모순. 삭제하고 **남는 참을 정확히** 적었다: 재현이 확립한 것은 **emit 시점 버퍼 불변**뿐이고 `!state.isDirty`는 "유일한 보호막"이 아니라 **즉시 적용만** 막는다. ④ **F2** AC-PANEL-080e의 RED 형태 정정 — 오늘은 경로 필터가 **아예 없어** 둘 다 도달하며, "정확히 반대"는 **반쪽 키잉** 구현의 형태다(그것이 이 AC가 방어하는 회귀임을 별도로 적었다). ⑤ **F3** teardown 순서 미규정 — 오늘 `detachExecutor(); compositionGate.detach();` 순(`:169-172`)에서 해제가 드레인하면 `effectHandler?.()`(`reconciliationStore.ts:45`)가 **조용히 삼키고** 상태만 `settled`가 된다. **REQ-PANEL-071a** + **AC-PANEL-081c** 신설, 단계별 심각도 기술. ⑥ **F8** null-path 문서 키잉 미규정 → **REQ-PANEL-070b** + **AC-PANEL-080f**. ⑦ **F9** AC-003b에 기준선 앵커 부재 → M0 착수 전 커밋(`2541727`) DOM 스냅샷 픽스처를 M2 산출물로. 나머지: F6(요구 수 4곳) / F7(AC §E 순서) / F10(등급 요약에 081b) / F11(§8.1 orphan) / F12(중복 문단) / F13(폭 합 허용 오차) / F14(off-by-one 2건). REQ 59 → 61, AC 92 → 95 |
 
 ---
 
@@ -102,7 +103,9 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 **REQ-PANEL-070a** (Event-driven) — 패널이 문서를 재바인딩하면 라우팅 키도 재키잉**되어야 한다(shall)**
 **When** 어떤 패널이 다른 문서로 재바인딩되면, 앱은 그 시점에 경로→조정 상태 / 경로→적용 대상 매핑을 **재키잉해야 한다(shall)**. 이전 경로에 대한 등록은 해제**되고(shall)**, 새 경로에 대한 등록이 수립**된다(shall)**.
 
-**왜 이것이 M0의 핵심인가**: 오늘 `MarkdownEditor`의 마운트 effect는 deps가 `[]`이고(`src/editor/MarkdownEditor.tsx:176`), `filePath`는 prop으로 들어와 **별개 effect**가 처리한다(`:166`). 상위에서 `key` prop도 주지 않으므로(`src/App.tsx:153-160`) **하나의 `EditorView`가 문서를 갈아타며 재사용된다.**
+**왜 이것이 M0의 핵심인가**: 오늘 `MarkdownEditor`의 마운트 effect는 deps가 `[]`이고(`src/editor/MarkdownEditor.tsx:176`), `filePath`는 prop으로 들어와 **`[filePath]`-deps effect(`:74-81`)가 처리한다**. 상위에서 `key` prop도 주지 않으므로(`src/App.tsx:153-160`) **하나의 `EditorView`가 문서를 갈아타며 재사용된다.**
+
+> **`:166`을 등록 지점으로 오해하지 말 것.** 그 줄은 `[]`-deps 마운트 effect **안의** 마운트 시점 시드이며, `:165` 주석이 스스로 `Subsequent changes go through the filePath effect`라고 적는다. `:166`을 따라가면 마운트 시점 경로를 클로저에 캡처해 **이 요구가 닫으려는 결함을 정확히 재현한다.**
 
 따라서 등록을 그 `[]`-deps effect에 두면 **경로가 첫 마운트 시점에 캡처되어 갱신되지 않는다.** 파일을 바꾼 뒤에는 (a) 새 경로의 변경이 아무 데도 라우팅되지 않고 (b) **옛 경로의 변경이 그 패널로 들어온다** — M0이 닫으려는 결함 계열이 다른 형태로 재발한다. 등록·해제는 **`filePath` 변화에 결속되어야 하며 `[]`에 결속되어서는 안 된다(shall not)**. 구현 형태는 `design.md` §6.2a가 확정한다.
 
@@ -111,7 +114,7 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 ```
 [OQ-8]       emit 후 b.md 버퍼 = "A의 내용\n"      ← 버퍼가 교체됨
 [OQ-8]       조정 상태 = "idle"                    ← 오적용이 정상 완료로 정착
-[OQ-8/dirty] emit 후 b.md 버퍼 = "B의 내용\n"      ← dirty면 보호됨
+[OQ-8/dirty] emit 후 b.md 버퍼 = "B의 내용\n"      ← emit 시점만 불변 (배너 경유로는 오염됨 — D3)
 [OQ-8/dirty] 조정 상태 = "held-notify"
 ```
 
@@ -156,6 +159,13 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 
 **검증 범위의 정직한 분할**: 위 재현은 **렌더러 절반**(경로 미대조 → 무조건 적용 → `idle` 정착)을 실행으로 확정했다. **main 절반**(`broadcast()`가 그 경로를 등록하지 않은 창에도 전달 — `electron/ipc/project.ts:40-44` `BrowserWindow.getAllWindows()`)은 **정적 소스 사실이며 실행하지 않았다.** 엔드투엔드 다중 창 실행은 수행되지 않았다.
 
+**REQ-PANEL-070b** (Where) — 경로 없는 문서(null path)의 키잉이 규정**되어야 한다(shall)**
+**Where** 문서가 디스크 경로를 갖지 않는 경우(untitled / 새 빈 버퍼), 그 문서는 경로 키 Map에 **어떤 항목도 갖지 않아야 한다(shall not)** — null이나 빈 문자열을 키로 삼지 **않는다(shall not)**. 경로 없는 문서에는 감시 등록도 조정 대상도 없으므로 라우팅 키가 존재할 이유가 없다.
+
+**When** 경로 없는 문서가 경로를 획득하면(다른 이름으로 저장), 앱은 그 시점에 **새 경로로 등록을 수립해야 한다(shall)** — REQ-PANEL-070a의 재키잉과 동일한 경로를 탄다.
+
+**왜 명시하는가**: 프로젝트 없음은 1급 상태이고(REQ-PANEL-003, C-1) 빈 버퍼는 REQ-PANEL-004가 정의하는 정상 상태다. `design.md` §6.2a의 클로저 형태는 `filePath`가 null이면 등록을 건너뛰는 것이 자연스러우므로 **우연히 안전하지만**, 그것을 고정하는 요구가 없으면 구현이 null을 키로 쓰는 쪽으로 갈 수 있다 — 그 경우 서로 다른 untitled 문서가 같은 키를 공유한다(감사 지적 F8, 수용).
+
 **REQ-PANEL-071** (State-driven — 출하 중인 결함) — 조합 플래그는 표면을 벗어나 공유되지 **않는다**
 **While** 어떤 편집 표면에서 IME 조합이 진행 중인 동안, 다른 편집 표면의 `compositionend`가 그 조합의 보류 상태를 해제**해서는 안 된다(shall not)**.
 
@@ -179,6 +189,20 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 **이 결함은 REQ-PANEL-055가 실행자에 대해 다루는 언마운트 무장 해제의 대칭 형태이며, 초판의 어느 요구에도 없었다.** IME 안전이 최우선 축이고 v0.2.19~.28 계열이 다섯 번 출하되었으므로 작은 공백이 아니다.
 
 **수정 범위 제한**: `compositionGate.ts`의 지연 드레인·연속 조합 취소 로직은 **PRESERVE 대상 그대로다**(`plan.md` §A.5). 고치는 것은 **detach 시 해제**이며 스케줄러 재작성이 아니다.
+
+**REQ-PANEL-071a** (Ubiquitous) — 해제와 실행자 분리의 **순서가 규정되어야 한다(shall)**
+detach 시 조합 보류를 해제하는 동작은 **그 문서의 조정 실행자가 아직 부착된 상태에서** 수행**되어야 한다(shall)**. 또는 해제가 보류분을 드레인하지 **않도록(shall not)** 규정한다. 둘 중 하나를 **명시적으로 선택해야 하며(shall)**, 순서를 규정하지 않은 채 두어서는 **안 된다(shall not)**.
+
+**근거 — 오늘의 순서가 해제를 조용히 손실시킨다**: 현재 정리 함수는 `detachExecutor(); compositionGate.detach(); view.destroy();` 순이다(`src/editor/MarkdownEditor.tsx:169-172`). REQ-PANEL-071의 해제 의무가 그대로 얹히면:
+
+1. `detachExecutor()`가 먼저 실행되어 실행자가 이미 분리된다
+2. `compositionGate.detach()`의 해제가 보류분을 드레인한다
+3. 산출된 `apply-to-buffer` effect가 `src/store/reconciliationStore.ts:45`의 `effectHandler?.(effect)`에 도달하는데 **핸들러가 null이므로 옵셔널 체이닝이 조용히 삼킨다**
+4. 문서 상태는 `settled`(= `idle`)로 정착한다
+
+**결과: 버퍼는 변경을 받지 못했는데 상태는 완료를 주장한다** — 정확히 REQ-PANEL-070의 세 번째 조항(폐기된 이벤트가 전이를 일으키지 않아야 한다)이 막으려는 결함 계열이며, 이번에는 **teardown 순서를 통해** 재도입된다.
+
+**단계별 심각도** (D4와 같은 형태로 기술한다): v0.3은 문서당 패널 1개이므로 그 문서가 닫히는 중이라 **실질 피해가 없다.** §6.2c의 OR 합류가 얹히면 **같은 문서를 참조하는 다른 패널이 남아 있는 상태에서** 이 손실이 일어나 그 패널이 변경을 받지 못한다 — 그때 실재한다.
 
 이것은 **`src/editor/compositionGate.ts:9-25`가 막기 위해 작성된 실패 계열을 한 계층 위에서 재도입하는 것이다.** 그 파일의 주석은 `compositionend` 직후 확정 `input` 이벤트가 별도 태스크로 오므로 그 사이에 문서를 바꾸면 IME의 composing-range 추적이 어긋난다고 기록하고, 연속 조합의 틈을 막기 위해 드레인을 예약·취소하는 구조를 만들었다. 플래그가 공유되면 그 정교한 방어가 **다른 패널에 의해** 무효화된다. 최우선 요구다 — `docs/DOCUMENT_MODE_PRINCIPLES.md` §0의 우선순위(소스 무결성 > IME 안전)와 SPEC-1 REQ-WS-020~022의 계열이다.
 
@@ -219,6 +243,14 @@ REQ-PANEL-070·071의 수정은 **결함을 실증하는 실패 테스트를 먼
 
 **REQ-PANEL-006** (Ubiquitous)
 패널 배치(패널 수, 각 패널의 상대 크기, 각 패널이 바인딩한 문서 경로)는 세션 간 복원 가능한 형태로 persist **되어야 한다(shall)**. 복원 시 신뢰 경계(`pathGuard`) 검증에 실패하는 경로는 그 패널을 빈 버퍼로 열고 **오류를 표시해야 한다(shall)** — 조용히 건너뛰지 **않는다(shall not)**.
+
+**persist된 패널 경로는 신뢰 판정의 입력이 되어서는 안 된다(shall not)** — `pathGuard`의 신뢰 소스(`sessionAllowed` / `sessionAllowedTrees` / `workspaceFolders` / `recentFiles` / `recentFolders`)에 패널 경로가 추가되어서도, `isAllowedPath`가 그 값을 참조해서도 **안 된다(shall not)**. 패널 경로는 **복원 후보 목록일 뿐이며 권한의 근거가 아니다(shall)**.
+
+**근거 — OQ-5와 같은 공격 형태다** (C-4, SPEC-1 D-6): persist된 패널 경로가 신뢰 판정의 입력이 되면, 손상된 렌더러가 `prefs:set`으로 임의 경로를 패널 배치에 심어 **스스로 신뢰를 넓힐 수 있다.** 그것이 `assertPrefsPatchAllowed`(`electron/pathGuard.ts:183-215`)가 막기 위해 존재하는 형태다.
+
+**추가 위험 — 기본적으로 검사 밖이다**: `prefs:set` 가드는 현재 `workspaceFolders` / `recentFiles` / `recentFolders` **세 필드만** 검사한다(`:188`). 따라서 신규 `panels` 필드는 **기본적으로 그 검사를 통과한다** — 금지를 요구로 명시하지 않으면 구현이 자연스럽게 취약해진다. `plan.md` §A.2 OQ-9이 이 조건을 후보 선택과 함께 확정한다.
+
+이 금지는 REQ-PANEL-006b(복원 실패 경로 표시)와 **양립한다**: 복원 시 `assertAllowedPath`가 각 경로를 검증하므로 신뢰되지 않은 경로는 빈 버퍼 + 오류가 된다. 즉 persist된 경로는 **검증을 받는 입력**이며 검증의 **근거**가 아니다.
 
 **REQ-PANEL-007** (Unwanted)
 패널 수·패널 폭 변화가 사이드바의 가시성이나 폭을 변경해서는 **안 된다(shall not)**. 두 축은 독립**이다(shall)**.
@@ -602,7 +634,7 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 
 ## §E 성공 기준
 
-- §B의 요구사항(REQ-PANEL-070~073, 001~007, 010~015, 020~024, 030~036c, 040~048a, 050~058, 060~065 — 총 58개)이 모두 관측 가능한 수용 기준으로 매핑된다(`acceptance.md`, 모든 AC가 REQ ID 또는 제약 ID를 인용)
+- §B의 요구사항(REQ-PANEL-070~073 + 070a·070b·071a, 001~007, 010~015, 020~024, 030~036c, 040~048a, 050~058, 060~065 — **총 61개**, 실측 `grep -c '^\*\*REQ-PANEL-' spec.md`)이 모두 관측 가능한 수용 기준으로 매핑된다(`acceptance.md`, 모든 AC가 REQ ID 또는 제약 ID를 인용). **단 REQ-PANEL-036c는 향후 제안에 대한 구속이므로 AC-PANEL-036d가 문서·검토 게이트 형태로 커버한다** — 실행 가능한 단언이 아님을 그 AC가 명시한다
 - **확정된 4개 결정(OQ-1·2·5·6)의 귀결이 요구사항으로 표현된다**: dual-open 금지(011/011a) + revision 파생 dirty(015) + 트리 신뢰 범위 표시(036b/036c) + 저장 채널 3겹(044/044a) + 보조 파일 EOL 복원(048/048a) + 사이드바 재배선(065)
 - **§B.0의 출하 중인 결함 두 건이 재현 우선으로 해소된다** — 실패 테스트 선행, 수정, 통과 확인. 이것이 M0이며 기능 마일스톤보다 앞선다
 - `tests/electron/extensionIndependence.test.ts`가 무변경 통과한다 (C-12)

@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.1"
+version: "0.3.2"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -420,11 +420,28 @@ registerReconciliationExecutor(view, (h) => setEffectHandlerFor(filePath, h))
 |---|---|
 | 상위가 `key` prop을 주지 않는다 | `src/App.tsx:153-160` — `<MarkdownEditor value={…} onChange={…} onReady={…} filePath={filePath} …/>` |
 | 마운트 effect의 deps가 `[]`다 | `src/editor/MarkdownEditor.tsx:176` |
-| `filePath`는 prop으로 들어와 **별개 effect**가 처리한다 | `:166` |
+| `filePath`를 처리하는 **`[filePath]`-deps effect가 이미 존재한다** | `:74-81` (`[filePath]` deps) — 이 effect는 문서 전환마다 이미 재실행된다 |
+| (주의) `:166`은 별개 effect가 **아니다** | `[]`-deps 마운트 effect 안의 마운트 시점 시드이며 `:165` 주석이 `Subsequent changes go through the filePath effect`라고 적는다 |
 
 **따라서 하나의 `EditorView`가 문서를 갈아타며 재사용된다.** 등록을 `[]`-deps effect에 두면 경로가 첫 마운트에 캡처되어 갱신되지 않고, 파일 전환 후 (a) 새 경로의 변경이 아무 데도 가지 않고 (b) **옛 경로의 변경이 그 패널로 들어온다.** M0이 닫으려는 결함이 다른 형태로 재발한다.
 
-**확정**: 라우팅 등록·해제는 **`filePath` 변화에 결속된다.** 재바인딩 시 이전 경로의 항목을 해제하고 새 경로로 등록한다(REQ-PANEL-070a, AC-PANEL-080e). 위 클로저 형태가 이것을 자연스럽게 만든다 — `filePath`가 deps에 있는 effect 안에서 등록하면 클로저가 매번 새 경로를 담는다.
+**확정**: 라우팅 등록·해제는 **`filePath` 변화에 결속된다.** 재바인딩 시 이전 경로의 항목을 해제하고 새 경로로 등록한다(REQ-PANEL-070a, AC-PANEL-080e).
+
+#### 등록 위치는 **이미 존재하는 effect**다 — 새 기계를 만들지 않는다
+
+`[filePath]`-deps effect가 **오늘 이미 있고 문서 전환마다 이미 재실행된다** — `src/editor/MarkdownEditor.tsx:74-81`:
+
+```
+useEffect(() => {
+  filePathRef.current = filePath;
+  const view = viewRef.current;
+  if (view) view.dispatch({ effects: setDocPath.of(filePath) });
+}, [filePath]);
+```
+
+따라서 D1의 의무는 **"새 effect를 추가한다"가 아니라 "이미 있는 `[filePath]` effect 안에서 등록한다"** 다. 그 안에서 위 클로저 형태로 등록하면 클로저가 매번 새 경로를 담고, 정리 함수가 이전 경로를 해제한다. **구현 비용이 아티팩트가 시사한 것보다 낮고, 잘못 구현될 여지도 작다.**
+
+> **`:166`을 등록 지점으로 오해하면 D1을 정확히 재현한다.** 그 줄은 `[]`-deps 마운트 effect 안의 마운트 시점 시드이고 `:165` 주석이 스스로 그렇다고 적는다. 따라가면 마운트 시점 경로가 클로저에 갇힌다.
 
 이 배치가 F6의 근거와 정합한다: `:162` 주석의 "조정 계층은 경로를 아예 받지 않는다 — 그 자체가 확장자 독립의 증거다"는 **코어를 두고 한 말**이고, 그 위에 라우팅 계층을 얹는 것은 그 증거를 약화시키지 않는다. 오히려 라우팅이 위에 있어야 코어가 계속 경로 무지일 수 있다.
 
@@ -683,7 +700,7 @@ e2e는 macOS 전용이다. 패널 레이아웃은 CSS·flex 계산이므로 플�
 
 ## 10. 참조
 
-- `spec.md` — 요구사항 50개 (REQ-PANEL-070~073 + 001~064)
+- `spec.md` — 요구사항 **61개** (REQ-PANEL-070~073 + 070a·070b·071a + 001~065)
 - `plan.md` — §A 확정 결정 + **미해결 결정**, §C 마일스톤, §D 위험
 - `acceptance.md` — 수용 기준
 - `research.md` — 8개 영역 조사 + 멀티패널 위험 목록 + 미검증 항목

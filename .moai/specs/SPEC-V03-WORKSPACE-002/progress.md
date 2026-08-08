@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "진행 기록 — v0.3 멀티패널 셸"
-version: "0.3.1"
+version: "0.3.2"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -30,9 +30,9 @@ plan_status: audit-ready
 plan_complete_at: 2026-08-08
 tier: L
 artifacts:
-  - spec.md         # 요구사항 59개 (REQ-PANEL-070~073 + 070a + 001~065)
+  - spec.md         # 요구사항 61개 (REQ-PANEL-070~073 + 070a·070b·071a + 001~065)
   - plan.md         # 확정 결정 + 미해결 결정 9건(OQ-1~OQ-9) + 마일스톤 M0~M8
-  - acceptance.md   # Given/When/Then AC 92개 (AC-PANEL-001~095)
+  - acceptance.md   # Given/When/Then AC 95개 (AC-PANEL-001~095)
   - design.md       # 설계 결정 + 기각된 대안 (Tier L)
   - research.md     # 코드베이스 조사 8영역 + 위험 목록 (Tier L)
   - progress.md     # 이 문서
@@ -43,6 +43,8 @@ plan_artifact_commits:
   - 6545480  # 판 0.2.1 — OQ-8 기계 재현 반영 + progress.md 신설
   - 91a0e1f  # 판 0.3.0 — OQ-1·2·5·6 확정, 논거 5건 정정
   - fdd6b66  # 판 0.3.1 — Plan Audit FAIL 대응 (Blocking 4 + Medium/Low 11)
+  - 2541727  # progress.md 커밋 SHA 백필
+  - (판 0.3.2 커밋 SHA는 이 판의 커밋 직후 backfill)
 blocking_decisions:
   total: 9
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
@@ -66,8 +68,8 @@ reproduction_first_milestone: M0
 
 | 항목 | 값 |
 |---|---|
-| 요구사항 | **59개** (`REQ-PANEL-070~073` + `070a` = 출하 중인 결함, `001~065` = 기능) |
-| 수용 기준 | **92개** (`AC-PANEL-001~095`) |
+| 요구사항 | **61개** (`REQ-PANEL-070~073` + `070a`·`070b`·`071a` = 출하 중인 결함, `001~065` = 기능) |
+| 수용 기준 | **95개** (`AC-PANEL-001~095`; 항목 수와 최대 번호의 일치는 우연) |
 | 마일스톤 | **M0**(출하 중인 결함 재현 우선) → M1~M8 |
 | 결정 | **확정 4건**(OQ-1·2·5·6) / 미해결 5건(OQ-3·4·7·8·9) — `plan.md` §A.2 |
 | 제약 | 13건 (`spec.md` §C C-1~C-13) |
@@ -99,6 +101,8 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 | 판 | 결과 | 조치 |
 |---|---|---|
 | 0.3.0 | **FAIL, 총계 0.75** (Tier L 임계 0.85). Clarity 0.78 / Completeness 0.72 / Testability 0.72 / Traceability 0.78. must-pass 7항목 전부 통과 — 실패는 총계이며 Blocking-M0 4건이 원인 | 0.3.1에서 4건 + Medium/Low 11건을 아티팩트 편집으로 해소. **새 결정은 필요하지 않았다** |
+| 0.3.1 | **FAIL, 총계 0.85 — 임계 도달** (Clarity 0.84 / Completeness 0.84 / Testability 0.82 / Traceability 0.90), must-pass 7항목 전부 통과, 15건 중 11건 완전 해소. **실패 사유는 점수가 아니라 Retry Loop Contract의 회귀 규칙** — iteration-1 D7이 모든 아티팩트에서 미기재 | 0.3.2에서 D7 실질 해소(REQ-PANEL-006 `shall not` + AC-PANEL-006c + OQ-9 후보 무관 조건) + F1~F14 해소. 감사 판정: **"M0 실질은 견고하다"** |
+| 0.3.2 | (재감사 대기 — 델타 범위 요청) | — |
 
 **Blocking-M0 4건과 그 해소**:
 
@@ -111,7 +115,11 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 
 **D3·D4는 감사가 기계 재현했다** — 증거 `.moai/state/verify/goal-spec12345/d3d4-repro.log`, `…/d3d4-repro-source.ts.txt`. `research.md` §10.0 등급 표에서 두 항목을 코드 직독 → **기계 재현**으로 승격했고, **그 둘만 올렸다**(나머지 코드 직독 항목은 그대로).
 
-**Medium/Low 11건**: D5(§6.2b의 "이미 계산된 boolean" 오진술 + OR 억제 의무) / D6(REQ-PANEL-036c 미커버 → AC-PANEL-036d 신설) / D8(OoS 개수 7→9) / D9(요구 수 자기모순 + 커밋 누락) / D10(REQ-PANEL-072 근거 과장) / D11(AC-PANEL-082 예외 철회) / D12(⟨OQ-8⟩ 표시 범위 축소) / D13(AC-PANEL-080d를 쓰기 채널 값 단언으로) / D14(선언 순서) / D15(REQ-PANEL-043b 오인용).
+**Medium/Low 11건**: D5(§6.2b의 "이미 계산된 boolean" 오진술 + OR 억제 의무) / D6(REQ-PANEL-036c 미커버 → AC-PANEL-036d 신설) / **D7**(REQ-PANEL-006이 OQ-9의 D-6/C-4 조건을 담지 않음 — 아래 참조) / D8(OoS 개수 7→9) / D9(요구 수 자기모순 + 커밋 누락) / D10(REQ-PANEL-072 근거 과장) / D11(AC-PANEL-082 예외 철회) / D12(⟨OQ-8⟩ 표시 범위 축소) / D13(AC-PANEL-080d를 쓰기 채널 값 단언으로) / D14(선언 순서) / D15(REQ-PANEL-043b 오인용).
+
+**D7 기록 누락에 대한 정직한 고지 (판 0.3.2에서 해소)**: 판 0.3.1은 "Medium/Low 11건"이라 적고 **10건만 열거했다** — 빈 슬롯이 D7이었다. iteration-1 보고서가 디스크에 보존되지 않아 그 항목을 복원할 수 없었고, 재감사는 그것을 실질 실패로 단정하지 않고 **UNVERIFIED로 표시**했다. 오케스트레이터가 원문을 제공해 판 0.3.2에서 해소했다.
+
+**D7의 실질 내용과 해소**: `plan.md` §A.2 OQ-9은 "`panels` 경로를 `pathGuard` 신뢰 소스로 쓰지 않는다는 것을 **함께 확정해야 한다**"고 적었으나 **REQ-PANEL-006에 그 금지가 없었다.** 이것은 OQ-5와 **같은 공격 형태**다 — persist된 패널 경로가 신뢰 판정의 입력이 되면 손상된 렌더러가 `prefs:set`으로 임의 경로를 심어 스스로 신뢰를 넓힌다. 게다가 `prefs:set` 가드는 `workspaceFolders`/`recentFiles`/`recentFolders` **세 필드만** 검사하므로(`electron/pathGuard.ts:188`) 신규 `panels` 필드는 **기본적으로 검사 밖이다.** → REQ-PANEL-006에 `shall not` 조항 추가(C-4 · SPEC-1 D-6 인용) + AC-PANEL-006c 신설 + OQ-9 후보 표에 "어떤 prefs 슬롯이든 신뢰 판정에서 **구조적으로 제외**되어야 한다"는 조건 명시.
 
 **감사가 확인해 준 것 (유지)**: 라우팅 키의 `src/store/` 배치는 옳다(주입된 setter가 승인된 메커니즘) · SPEC-1 D-2/D-3/D-6과 `EPIC:34`에 모순 없음 · 4개 사용자 결정이 모두 요구로 표현됨 · 검증 등급 기록이 "대체로 매우 정직" · **어떤 미해결 결정도 M0을 막지 않는다**(막은 것은 M0 자신의 명세 결함이었다) · `↔ C-` 6건 카운트는 정확했다(감사 초기 7건 지적은 철회됨).
 
