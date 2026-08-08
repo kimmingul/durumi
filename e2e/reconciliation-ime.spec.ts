@@ -73,6 +73,33 @@ async function withOpenDoc(initial: string, fn: (f: Fixture) => Promise<void>): 
 const bufferText = (page: Page): Promise<string> => page.locator('.cm-content').innerText();
 
 /**
+ * 편집 표면(`.cm-content`)에서 직접 조합 경계를 센다.
+ *
+ * `startComposition`의 카운터는 `document`에 capture로 달려 있어, 조합이
+ * 편집 표면까지 닿지 않아도 증가한다. IME 게이트는 `view.contentDOM`에
+ * 붙으므로 **그 요소가 실제로 이벤트를 받았는지**가 게이트 동작의 전제다.
+ * 이 계측이 없으면 "게이트가 막았다"와 "게이트가 애초에 안 걸렸다"를
+ * 구분할 수 없다.
+ */
+async function installSurfaceCounter(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const cm = document.querySelector('.cm-content');
+    if (!cm) throw new Error('.cm-content not found');
+    const w = window as unknown as Record<string, number>;
+    w.__cmCompositionStarts = 0;
+    w.__cmCompositionEnds = 0;
+    cm.addEventListener('compositionstart', () => { w.__cmCompositionStarts += 1; });
+    cm.addEventListener('compositionend', () => { w.__cmCompositionEnds += 1; });
+  });
+}
+
+const surfaceCounts = (page: Page): Promise<{ starts: number; ends: number }> =>
+  page.evaluate(() => {
+    const w = window as unknown as Record<string, number>;
+    return { starts: w.__cmCompositionStarts ?? 0, ends: w.__cmCompositionEnds ?? 0 };
+  });
+
+/**
  * 채널이 살아 있음을 확인한다. 이 함수가 실패하면 아래 AC들의 "버퍼 불변"
  * 단언은 아무것도 증명하지 못한다 — 공허한 통과를 막는 관문이다.
  */
@@ -91,9 +118,18 @@ async function proveChannelLive(f: Fixture): Promise<void> {
 test('AC-WS-019: 조합 중에는 조정이 적용되지 않는다', async () => {
   await withOpenDoc('원래 내용\n', async (f) => {
     await proveChannelLive(f);
+    await installSurfaceCounter(f.page);
     const before = await bufferText(f.page);
 
     const handle = await startComposition(f.page, '한');
+
+    // 게이트가 붙은 요소가 실제로 조합을 받았는가. 0이면 아래 단언은
+    // "게이트가 막았다"가 아니라 "조합이 편집 표면에 닿지 않았다"를 뜻한다.
+    expect(
+      (await surfaceCounts(f.page)).starts,
+      '편집 표면에 compositionstart가 도달하지 않았다 — IME 게이트가 걸릴 수 없다',
+    ).toBeGreaterThanOrEqual(1);
+
     fs.writeFileSync(f.filePath, '조합 중에 바뀐 내용\n', 'utf8');
     await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
 
