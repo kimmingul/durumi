@@ -133,6 +133,20 @@ test('AC-WS-019: 조합 중에는 조정이 적용되지 않는다', async () =>
     fs.writeFileSync(f.filePath, '조합 중에 바뀐 내용\n', 'utf8');
     await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
 
+    // 조합이 편집 표면에서 아직 열려 있는가. 여기서 끝나 있으면 게이트의
+    // 지연 드레인이 이미 돌아 버퍼가 바뀐 것이고, 원인은 게이트가 아니라
+    // 조합이 조기 종료된 데 있다.
+    expect(
+      (await surfaceCounts(f.page)).ends,
+      '편집 표면에서 조합이 조기 종료됐다 — 게이트가 아니라 조합 수명이 원인',
+    ).toBe(0);
+
+    // 조정 계층이 보류 상태에 들어갔는가. 프로덕션 표면이 그대로 증거다.
+    expect(
+      await f.page.locator('[data-reconcile-status]').getAttribute('data-reconcile-status').catch(() => null),
+      '조정 계층이 보류 상태로 진입하지 않았다 — 게이트가 걸리지 않았다',
+    ).toBe('held-composition');
+
     expect(await bufferText(f.page), '조합 중 버퍼가 교체됐다').toBe(before);
     expect(await observeCompositionEnd(handle), '조정이 조합을 조기 종료시켰다').toBe(0);
 
