@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "코드베이스 조사 — 멀티패널 셸"
-version: "0.2.1"
+version: "0.3.0"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -597,7 +597,67 @@ ipcMain.handle('pandoc:setCustomPath', async (_e, customPath: string) => {
 
 ---
 
+## 9.8 외부 검토 결과 — **2인 수렴** (3인이 아니다)
+
+codex와 grok이 독립적으로 read-only 검토했다. **gemini는 참여하지 못했다** — `IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals`(Antigravity로 리디렉트되며 CLI 없음). **3인 수렴으로 과장하지 않는다.**
+
+### 9.8a 독립 확증된 것
+
+| 항목 | 확증 내용 |
+|---|---|
+| 결함 A 사슬 형태 | 검토자 2인이 **독립적으로 소스에서 확인**했다 — `electron/ipc/project.ts:40-44` → `src/store/externalChangeChannel.ts:28-50` → `shared/reconciliation.ts:192-197` |
+| **M0 순서** | 2인 모두 **라우팅 수정이 멀티패널이 그 도달 범위를 곱하기 전에 착륙해야 한다**고 진술. §7.3a의 M0 우선 배치가 독립 확증되었다 |
+| dual-open 위험 | 2인 모두 `design.md:57`의 "1개 문서를 N개 뷰가 공유"가 CM6가 하지 않는 일이며, 오늘의 전파가 **문서 전체 교체**(`src/editor/MarkdownEditor.tsx:177-182`)이므로 동기화 프로토콜 없는 dual-open보다 **금지가 더 안전**하다고 결론 |
+| 동의 배너 기각 | 2인 모두 렌더러 배너 경유 승격은 "자동 편입에 라벨을 붙인 것"이라고 같은 논거로 기각 |
+| revision 파생 dirty | 2인 모두 또 하나의 가변 boolean 대신 `currentRevision !== savedRevision` 파생을 권고 |
+| 읽기/쓰기 신뢰 축 분리 | 2인 모두 원리적으로 옳은 장기 모델이라고 진술 (SPEC-2 범위 밖 확정) |
+
+### 9.8b 검토가 **내 논거를 정정**한 것 (결론은 유지, 근거 교체)
+
+| 내 초판 주장 | 정정 | 반영 |
+|---|---|---|
+| "통합 그리드가 폭 SSOT를 스토어에서 CSS로 새어 나가게 한다" | **틀렸다.** grid track도 `WIDTH_BOUNDS` 파생 인라인 폭을 받을 수 있어 스토어 계약이 보존된다 | `design.md` §3.1 철회 표 + §3.3 표에 취소선 |
+| "사이드바 테스트 841줄이 깨지므로 (1)이 옳다" | 위 잘못된 전제에서 파생된 수치이며 **아키텍처 논거가 아니다.** 테스트 개수는 설계 근거가 될 수 없다 | `design.md` §3.1 — 논거를 **소유권 분리**로 교체. C-10에 "회귀 검사이며 논거가 아니다" 명시 |
+| "채널 분리만으로 오용이 표현 불가능해진다" | **틀렸다.** preload가 두 채널을 노출하는 동안 렌더러 버그가 잘못된 채널을 호출할 수 있다. 성질은 (분리 + main 검증 + import 부재) **3겹**이 만든다 | `design.md` §7.2, REQ-PANEL-044, AC-PANEL-044b |
+| "(B)/(C)는 문서 좌표 접기 전제를 건드려 SPEC-1이 닫은 조정 AC를 재검증 대상으로 만든다" | **과장이었다.** `applyExternalChange.ts:51-52` 주석이 이미 이 모델을 기술하고, `tests/editor/reconcileIntegrity.test.ts:90-97`이 CRLF 호환성을 **이미 green으로** 증명한다 | `design.md` §7.2b, REQ-PANEL-048 |
+| 후보 2(동의 배너)를 "기존 승격 경로 재사용"으로 판단 | **틀렸다.** 재사용되는 것은 승격의 *결과*이고 *트리거*는 렌더러가 통제하는 클릭이다 | `design.md` §8.3, REQ-PANEL-036b |
+
+### 9.8c 검토가 **과소 산정을 지적**한 것
+
+| 지적 | 내용 | 반영 |
+|---|---|---|
+| OQ-1의 실제 비용 | CSS가 아니라 **사이드바 데이터 재배선**이며 (1) 아래에서 **필수**다 — `Sidebar`/`RightSidebar`의 스칼라 `content`/`view`(`src/App.tsx:124-127`, `:163-166`), 목차·인용·검색 히트(`:129-142`) | REQ-PANEL-065, AC-PANEL-065, `plan.md` M2, `design.md` §3.1a |
+| `RightSidebar` 귀속 (codex) | **"활성 원고 패널"이며 "가장 왼쪽 패널"이 아니다** — 레이아웃 순서가 데이터 소유권을 결정하면 재배치 시 서지·메모가 조용히 다른 원고를 가리킨다 | AC-PANEL-065가 패널 순서와 귀속을 **의도적으로 어긋나게** 배치해 판정 |
+| 저장 경로 누락 3곳 | `file:saveAs`도 동일 migrate(`electron/ipc/files.ts:78-112`), Save As 마크다운 필터 하드코딩(`:92-97`), 닫기 시 저장 라우팅(`src/hooks/useAppCloseGuard.ts:26-33`) | REQ-PANEL-044a, AC-PANEL-044c, `plan.md` M6 |
+
+### 9.8d 검토가 **발견한 신규 위험** (코드 직독 등급)
+
+**저장의 await 창 — 낡은 내용 저장 + 무조건 clean 표시** (codex 발견, 오케스트레이터·내가 소스 확인):
+
+| 진입점 | 형태 |
+|---|---|
+| `src/hooks/useFileMenuCommands.ts:51-64` | 클로저 `content` 캡처 → `await window.api.fileSave(...)` → `await useMemoSidecarStore…saveIfDirty()` → **무조건** `markClean()` |
+| `src/hooks/useAppCloseGuard.ts:24-33` | `state.content` 캡처 → `await window.api.fileSave(...)` → `markClean()` |
+
+**내가 소스를 읽어 추가로 확인한 것**: 진입점이 **둘**이다(codex는 첫 번째를 지적). 두 번째는 §9.7의 저장 채널 라우팅 대상과 **같은 함수**이므로 M6과 M1이 같은 함수를 손댄다 — 조율이 필요하다.
+
+**검증 등급**: 코드 직독 확인이며 **재현하지 않았다.** 결함 A(기계 재현)와 등급이 다르고 조합 플래그(§7.3b)와 같은 등급이다. §10의 등급 표 참조.
+
+**해소**: REQ-PANEL-015의 revision 파생 dirty가 **무료로 닫는다** — `markClean()`이라는 명령형 선언 자체가 사라지기 때문이다. 별개 SPEC으로 넘기지 않는다(`design.md` §2.3).
+
+---
+
 ## 10. 미검증 항목 (정직한 공백)
+
+### 10.0 검증 등급 표 — 세 등급을 혼동하지 않는다
+
+| 등급 | 의미 | 이 SPEC의 해당 항목 |
+|---|---|---|
+| **기계 재현** | 실제 모듈을 구동해 결함을 관측했다 | 결함 A(§7.3a-1) — 크로스-문서 버퍼 오적용 + `idle` 정착 |
+| **코드 직독** | 소스를 읽어 형태를 확인했고 실행하지 않았다 | 조합 플래그 공유(§7.3b), 저장 await 창(§9.8d), 사이드카 재바인딩 플러시(§9.7), pandoc 신뢰 우회(§9.6) |
+| **정적 소스 사실** | 코드에 그렇게 쓰여 있다는 것만 확인했고 그 결과를 관측하지 않았다 | `getAllWindows()` 브로드캐스트가 미등록 창에 전달(§7.3a-2 main 절반) |
+
+AC 본문이 각 결함의 등급을 명시하며(`acceptance.md` 표기 규약), **등급을 올려 적지 않는다.**
 
 1. **테스트 스위트 재실행을 하지 않았다.** 오케스트레이터가 제시한 baseline(199 파일 / 2191 테스트 전부 통과, typecheck·lint exit 0)을 그대로 전제했다. 파일 수 199와 e2e spec 33은 실측했으나 통과 여부·테스트 개수는 실행하지 않았다.
 2. ~~**§7.3의 크로스-윈도 버퍼 오적용은 소스 근거 기반 가설이며 실행 재현하지 않았다.**~~ **정정 2 (2026-08-08, 기계 재현)**: 렌더러 절반이 **실제 모듈로 실행 재현되었다** — §7.3a-1의 관측 출력과 증거 경로 2개 참조. 이 항목은 더 이상 미검증 공백이 아니다. **여전히 남는 공백은 정확히 하나**: main 절반(`broadcast()`가 미등록 창에도 전달)의 실행 관측. 이것은 `getAllWindows()`라는 정적 소스 사실로만 확정되어 있고 엔드투엔드 다중 창 실행은 수행되지 않았다(§7.3a-2). `plan.md` OQ-8이 그 공백을 소스 단언(AC-PANEL-084)으로 갈음할 것을 권고하며, 근거는 재현이 **창 하나로** 결함을 실증해 창 축이 원인이 아님을 보였다는 점이다.

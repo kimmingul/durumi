@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "진행 기록 — v0.3 멀티패널 셸"
-version: "0.2.1"
+version: "0.3.0"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -41,10 +41,21 @@ plan_artifact_commits:
   - 637398d  # AC 항목 수 정정
   - 88baf2d  # 판 0.2.0 — 출하 중인 결함 2건을 M0으로 승격
 blocking_decisions:
-  count: 9
+  total: 9
+  confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
+  open: [OQ-3, OQ-4, OQ-7, OQ-8, OQ-9]
   m0_blocked_by: none          # M0은 결정 무의존 — 즉시 착수 가능
-  m1_blocked_by: [OQ-1, OQ-2]
-  external_review_in_flight: [OQ-1, OQ-2, OQ-5, OQ-6]
+  m1_blocked_by: none          # OQ-1·OQ-2 확정으로 해제
+  m2_blocked_by: [OQ-7]        # 탭 축이 레이아웃 형태를 규정
+  m3_blocked_by: [OQ-8]        # 창 축 AC 범위 (핵 결함은 M0이 닫음)
+  m4_blocked_by: [OQ-3, OQ-4]
+  m5_blocked_by: none          # OQ-6 확정으로 해제
+  m6_blocked_by: none          # OQ-6 확정으로 해제
+  m7_blocked_by: none          # OQ-5 확정으로 해제
+  m8_blocked_by: [OQ-9]
+external_review:
+  reviewers: [codex, grok]     # 2인 수렴 — 3인이 아니다
+  gemini: ineligible           # IneligibleTierError, Antigravity 리디렉트(CLI 없음)
 reproduction_first_milestone: M0
 ```
 
@@ -52,10 +63,10 @@ reproduction_first_milestone: M0
 
 | 항목 | 값 |
 |---|---|
-| 요구사항 | 50개 (`REQ-PANEL-070~073` = 출하 중인 결함, `001~064` = 기능) |
-| 수용 기준 | 78개 (`AC-PANEL-001~095`; 기본 57 + 분할 21) |
+| 요구사항 | 58개 (`REQ-PANEL-070~073` = 출하 중인 결함, `001~065` = 기능) |
+| 수용 기준 | 89개 (`AC-PANEL-001~095`; 기본 59 + 분할 30) |
 | 마일스톤 | **M0**(출하 중인 결함 재현 우선) → M1~M8 |
-| 미해결 결정 | 9건 (`plan.md` §A.2 OQ-1~OQ-9) |
+| 결정 | **확정 4건**(OQ-1·2·5·6) / 미해결 5건(OQ-3·4·7·8·9) — `plan.md` §A.2 |
 | 제약 | 13건 (`spec.md` §C C-1~C-13) |
 
 ### §E.1b M0을 최우선에 둔 근거 (plan 단계 확정 사항)
@@ -66,6 +77,17 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 |---|---|---|
 | 무성 버퍼 덮어쓰기 — 경로 미대조로 열지도 않은 파일의 내용이 깨끗한 버퍼에 적용되고 조정 상태가 `idle`로 정착 | REQ-PANEL-070 | **렌더러 절반 기계적 재현 완료.** 증거: `.moai/state/verify/goal-spec12345/oq8-repro.log`, `…/oq8-repro-source.ts.txt`. main 절반(`getAllWindows()` 브로드캐스트)은 정적 소스 사실이며 **실행하지 않았다** |
 | 전역 조합 플래그 공유 — 다른 표면의 `compositionend`가 진행 중인 조합의 보류를 해제 | REQ-PANEL-071 | **코드 직독 확정, 실행 재현 미수행.** M0의 RED 단계(AC-PANEL-081)가 처음 재현하게 된다 |
+
+### §E.1b-1 확정된 4개 결정 (2026-08-08)
+
+| 결정 | 확정 내용 | 논거 상태 |
+|---|---|---|
+| OQ-1 | 중앙 영역 분할 (사이드바 보존) | **논거 교체** — 소유권 분리(전역 저작 표면 vs 문서 국소). 초판의 "폭 SSOT 유출"·"테스트 841줄" 논거 철회 |
+| OQ-2 | 축 분리 유지 + **v0.3 dual-open 금지**(v0.4 연기) + revision 파생 dirty | 검토 반론을 우회가 아니라 **해소**. `design.md:57` 정정, §2.5에 v0.4 5개 의무 기록 |
+| OQ-5 | 트리를 신뢰 범위로 좁혀 표시 · **동의 배너 기각** | 내 잠정 권고(후보 2) 기각됨. main 다이얼로그를 통과하지 않는 동의는 자동 승격 |
+| OQ-6 | (i) 채널 분리 **3겹**(분리+main 검증+import 부재) · (ii) **(B′)** 보조 파일 EOL 복원 | (i) "분리만으로 표현 불가능" 주장 정정. (ii) 내 Residual-risk 과장 — 기존 코드·테스트가 이미 이 모델을 문서화·증명 |
+
+**신규 요구 5건이 확정에서 파생되었다**: REQ-PANEL-011a(별칭 한계), 015(revision 파생 dirty), 036b/036c(트리 신뢰 범위 + 읽기 표면 구속), 044a(세 쓰기 진입점), 048/048a(EOL + 탐지 정책), 065(사이드바 재배선).
 
 라우팅 계층의 **위치는 선택 사항이 아니다**: `tests/electron/extensionIndependence.test.ts:34-65`(조정 코어 5파일의 확장자 판독 수단 부재) + `:171-174`(`applyExternalChange` arity 2)가 강제하므로 라우팅 키는 `src/store/` 계층에 산다 — REQ-PANEL-072 / C-12 / `design.md` §6.2a.
 

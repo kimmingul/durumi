@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "v0.3 멀티패널 셸 — 패널 레이아웃·모드·커맨드 라우팅·비마크다운 편집 표면"
-version: "0.2.1"
+version: "0.3.0"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -24,6 +24,7 @@ tags: "multipanel, layout, editmode, focus, menurouting, nonmarkdown, language, 
 | 2026-08-08 | 0.1.0 | 최초 작성 — `EPIC-V03-WORKSPACE`의 2번 SPEC. SPEC-1(`status: completed`, 커밋 `3a51f72`)의 D-1~D-7을 승계하고 D-5가 비워 둔 비마크다운 편집 표면을 채운다 |
 | 2026-08-08 | 0.2.0 | **오케스트레이터가 코드 직독으로 확인한 출하 중인 결함 2건을 §B.0으로 승격.** ① 크로스-윈도 무성 버퍼 덮어쓰기(REQ-PANEL-070) — 확정 이벤트가 모든 창에 브로드캐스트되고 렌더러가 `path`를 대조하지 않아 깨끗한 버퍼가 다른 파일 내용으로 덮어써지고 저장 시 데이터 손실. ② 전역 조합 플래그 공유(REQ-PANEL-071) — 다른 표면의 `compositionend`가 진행 중인 조합의 보류를 해제. 두 건 모두 `plan.md` §C **M0**이 재현 우선(REQ-PANEL-073)으로 닫는다. **라우팅 계층의 위치를 하드 제약으로 고정**(REQ-PANEL-072 / C-12): `tests/electron/extensionIndependence.test.ts:34-65, 171-174`가 조정 코어 5파일의 확장자 독립과 `applyExternalChange` arity 2를 강제하므로 라우팅 키는 `src/store/` 계층에 산다(`design.md` §6.2a). C-13(`.cm-content` 이중 스타일링 + e2e 34파일 셀렉터 이관) 신설, REQ-PANEL-055에 언마운트 무장 해제 경로 추가, REQ-PANEL-062에 사이드카 재바인딩 플러시 위험 추가. `plan.md`에 OQ-9(패널 배치 persist 슬롯 부재) 신설 |
 | 2026-08-08 | 0.2.1 | **OQ-8이 기계적으로 재현되어 확정 결함이 되었다.** 오케스트레이터가 실제 모듈 3개(`attachExternalChangeChannel`/`useReconciliationStore`/`registerReconciliationExecutor`) + 실제 `EditorState`로 구동해 관측: 열지도 감시 등록하지도 않은 경로의 확정 변경이 깨끗한 버퍼를 교체하고 **조정 상태가 `idle`로 정착**하며, dirty 선행 시에만 보호된다. 증거 `.moai/state/verify/goal-spec12345/oq8-repro.log` + `…/oq8-repro-source.ts.txt`. REQ-PANEL-070에 **미등록 경로 폐기 조항과 `idle` 정착 금지 조항**을 추가하고, AC를 4건으로 분할(080 깨끗한 버퍼 / 080b `idle` 정착 금지 / 080c dirty 보호 회귀 / 080d 디스크 전파 금지). **검증 범위 분할을 정직하게 기록**: 렌더러 절반은 실행 관측, main 절반(`getAllWindows()` 브로드캐스트)은 정적 소스 사실이며 엔드투엔드 다중 창 실행은 수행되지 않았다 — AC-PANEL-084가 소스 스캔에서 멈춘다. 결함이 창 축 문제보다 넓다는 정정(창 하나로 재현됨). OQ-8 잠정 권고를 후보 1(유닛 재현 + main 소스 단언)로 유지·강화. **`progress.md` 신설** — `§E.1` 채움 + `§E.2`/`§E.3`/`§E.4` 자리표시자 + `sync_commit_sha` + `§F` 예약 |
+| 2026-08-08 | 0.3.0 | **외부 검토(codex + grok, 2인 수렴 — gemini는 `IneligibleTierError`로 불참) + 사용자 결정으로 OQ-1·2·5·6 확정.** ① **OQ-1** 중앙 영역 분할 — **논거 교체**: 소유권 분리(사이드바=전역 저작 표면 / 패널=문서 국소). 초판의 "폭 SSOT 유출"·"테스트 841줄" 논거는 잘못된 전제에서 파생되어 **철회**. 실제 비용은 **사이드바 데이터 재배선**(REQ-PANEL-065)이며 `RightSidebar`는 활성 원고 패널에 귀속된다(가장 왼쪽 패널 아님). ② **OQ-2** 축 분리 유지 + **v0.3 dual-open 금지**(v0.4 연기) — `design.md:57`의 "1문서 N뷰 공유" 정정(CM6가 하지 않는 일이며 오늘 전파는 문서 전체 교체), §2.5에 v0.4 5개 의무 기록, 별칭 탐지 한계 명시(REQ-PANEL-011a), **revision 파생 dirty**로 sticky(issue #12)와 저장 await 창 결함을 함께 해소(REQ-PANEL-015). ③ **OQ-5** 트리를 신뢰 범위로 좁혀 표시 — **동의 배너 기각**(내 잠정 권고 철회): main 다이얼로그를 통과하지 않는 동의는 자동 승격이다. 신뢰 확대가 asset 읽기 표면도 확대함을 기록(REQ-PANEL-036c). ④ **OQ-6** (i) 채널 분리 **3겹**(분리 + main 대상 검증 + import 부재) — "분리만으로 표현 불가능" 주장 정정, 세 쓰기 진입점 전부(REQ-PANEL-044a); (ii) **(B′)** 보조 파일 EOL 복원 — 내 Residual-risk 과장 정정(`applyExternalChange.ts:51-52` 주석과 `reconcileIntegrity.test.ts:90-97`이 이미 이 모델을 문서화·증명), 혼합 줄 끝 보존은 범위 밖 명시(REQ-PANEL-048a). REQ 50 → 58, AC 79 → 89 |
 
 ---
 
@@ -180,17 +181,68 @@ REQ-PANEL-070·071의 수정은 **결함을 실증하는 실패 테스트를 먼
 | 캐럿·선택·스크롤 위치, 실행 취소 이력, 표시 모드 | **패널** | 사용자가 한 문서의 서로 다른 부분을 나란히 보는 것이 분할의 목적이다 |
 | 조정 상태(status·pending·조합 여부) | **문서** | 확정 이벤트는 경로 단위로 온다(REQ-PANEL-051) |
 
-**REQ-PANEL-011** (Event-driven)
-**When** 이미 다른 패널이 열고 있는 파일을 어떤 패널이 열면, 두 패널은 **같은 문서를 참조해야 한다(shall)** — 버퍼가 복제되지 **않는다(shall not)**. 한 패널의 편집은 즉시 다른 패널에 반영**되며(shall)**, 각 패널의 캐럿·스크롤은 그 변경을 통해 매핑**된다(shall)**.
+**REQ-PANEL-011** (Event-driven) — **v0.3에서 dual-open은 금지된다** (사용자 결정, OQ-2)
+**When** 이미 다른 패널이 열고 있는 파일을 어떤 패널이 열려 하면, 셸은 **새 뷰를 만들지 않고(shall not)** 그 파일을 이미 열고 있는 패널을 **활성화해야 한다(shall)**. 사용자에게는 오류가 아니라 그 패널로의 이동으로 제시**된다(shall)**.
+
+**왜 금지인가 — 구조적 근거**: 오늘의 문서→뷰 전파는 **문서 전체 교체**다. `src/editor/MarkdownEditor.tsx:177-182`가 `value` prop 변화에 `changes: {from: 0, to: doc.length, insert: value}`를 dispatch한다. 그 경로 위에서 같은 파일을 두 뷰가 참조하면 **패널 A의 키 입력 하나가 패널 B에서 문서 전체 교체가 되어** B의 선택 매핑을 파괴하고 거대한 undo 항목 하나를 남긴다. 문서↔뷰 트랜잭션 동기화 프로토콜(§B.2a) 없이 dual-open을 출하하는 것은 **공유된 것처럼 보이면서 조용히 발산하는 두 에디터**를 출하하는 것이다.
+
+**축은 붕괴시키지 않는다(shall not)**: 이 금지는 v0.3의 동작 제약이며 **상태 모델의 축을 합칠 근거가 아니다.** 문서 축과 패널 축은 v0.3에서 1:1로만 쓰이되 구조로는 1:N을 표현할 수 있게 남**아야 한다(shall)** — 축을 합치면 v0.4의 dual-open이 재작성이 된다.
+
+**REQ-PANEL-011a** (Ubiquitous) — 중복 판정의 보장 범위와 한계
+중복 열기 판정은 **경로 동일성**으로 수행**된다(shall)**. 판정은 다음을 보장**한다(shall)**: 정규화 후 동일한 절대 경로는 같은 문서로 인식된다.
+
+판정은 다음을 보장하지 **않는다(shall not)**: 같은 파일을 가리키는 **심볼릭 링크·하드 링크 별칭**은 서로 다른 경로로 인식된다. `electron/pathGuard.ts:55-60`이 `fs.realpath`를 **의도적으로 호출하지 않기** 때문이며(모든 guarded 호출에 비동기 디스크 접근을 추가하지 않기 위한 기록된 수용 위험), 이 SPEC은 그 결정을 완화하지 **않는다(shall not)**.
+
+즉 앱은 **바이트 수준 파일 동일성 탐지를 주장하지 않는다(shall not)**. 별칭 경로로 같은 파일이 두 패널에 열리면 REQ-PANEL-011의 금지를 우회하며, 그 경우의 동작은 정의되지 않은 상태로 **기록된다(shall)** — v0.4의 동기화 프로토콜이 그 경로까지 덮는다.
 
 **REQ-PANEL-012** (Ubiquitous)
-저장은 **문서 단위**로 수행**되어야 한다(shall)**. 같은 문서를 참조하는 패널이 여럿일 때 저장 1회로 모든 참조 패널의 미저장 표시가 해제**된다(shall)**.
+저장은 **문서 단위**로 수행**되어야 한다(shall)**. v0.3에서는 문서:패널이 1:1이므로 이 요구는 자명하게 성립하지만, **저장을 패널 상태에 매지 않는다(shall not)**는 구조 제약으로서 유효하다 — 패널에 매면 v0.4의 dual-open에서 어느 패널이 저장 권한을 갖는지 재정의해야 한다.
 
 **REQ-PANEL-013** (Event-driven)
-**When** 사용자가 미저장 편집이 있는 문서의 **마지막 참조 패널**을 닫으려 하면, 셸은 기존 폐기 확인 흐름(`confirmDiscard`)을 거쳐**야 한다(shall)**. 그 문서를 참조하는 다른 패널이 남아 있으면 확인을 요구하지 **않는다(shall not)** — 편집이 소실되지 않기 때문이다.
+**When** 사용자가 미저장 편집이 있는 문서를 표시하는 패널을 닫으려 하면, 셸은 기존 폐기 확인 흐름(`confirmDiscard`)을 거쳐**야 한다(shall)**.
+
+**v0.4 확장 지점**: 그 문서를 참조하는 다른 패널이 남아 있으면 확인을 요구하지 **않는다(shall not)** — 편집이 소실되지 않기 때문이다. v0.3에서는 1:1이므로 이 분기가 도달 불가하나, 판정을 "**마지막 참조 패널인가**"로 표현**해야 한다(shall)** — "패널을 닫는가"로 표현하면 v0.4에서 재작성된다.
 
 **REQ-PANEL-014** (Unwanted)
 셸은 사용자 확인 없이 어떤 패널의 미저장 편집도 폐기해서는 **안 된다(shall not)**. 이는 SPEC-1 REQ-WS-028의 패널 축 확장이며 동일하게 **타협 불가다**.
+
+**REQ-PANEL-015** (Ubiquitous) — dirty는 파생값이**어야 한다(shall)**, 가변 플래그가 아니다
+문서의 미저장 여부는 **`currentRevision !== savedRevision`으로 파생**되어야 하며(shall), 별도의 가변 boolean으로 보관되지 **않아야 한다(shall not)**.
+
+**근거 1 — sticky 결함을 복제하지 않는다**: `src/store/appStore.ts:54`의 `isDirty: s.content !== content || s.isDirty`는 sticky다(issue #12). 이 형태를 문서 축으로 베끼면 **문서마다 결함이 복제된다.** 파생값은 sticky일 수 없다.
+
+**근거 2 — await 창 결함을 구조적으로 닫는다 (외부 검토 발견)**: 오늘 두 저장 진입점이 **낡은 내용을 저장하고 무조건 clean으로 표시하는** 형태를 갖는다:
+
+| 진입점 | 형태 |
+|---|---|
+| `src/hooks/useFileMenuCommands.ts:51-64` | 클로저에서 `content` 캡처 → `await window.api.fileSave(...)` → `await useMemoSidecarStore…saveIfDirty()` → **무조건** `markClean()` |
+| `src/hooks/useAppCloseGuard.ts:24-33` | `state.content` 캡처 → `await window.api.fileSave(...)` → `markClean()` |
+
+두 await를 건너는 동안 타이핑된 편집이 **clean으로 표시된다.** 이는 단일 패널 앱에 오늘 이미 존재하며 패널화가 만드는 것이 아니지만, 문서 축 `isDirty`가 이것을 더 중대하게 만든다.
+
+`markClean()`이라는 "지금을 clean으로 선언하는" **명령형 연산 자체가 결함의 형태**다. revision 파생으로 바꾸면 저장은 `savedRevision = <저장을 시작한 시점의 revision>` 대입이 되고, await 창 안의 편집은 `currentRevision`을 올려 부등식이 참으로 남는다 — **결함이 무료로 닫힌다.** 따라서 이 요구는 별개 SPEC으로 넘기지 않고 SPEC-2가 (부수 효과로) 해소**한다(shall)**.
+
+**검증 등급 (정직한 구분)**: 이 결함은 **코드 직독으로 확인되었고 재현하지 않았다.** 결함 A(REQ-PANEL-070, 기계 재현)와 등급이 다르며, 조합 플래그 결함(REQ-PANEL-071)과 같은 등급이다.
+
+---
+
+### §B.2a v0.4로 연기된 문서↔뷰 동기화 프로토콜 (범위 밖 — 의무만 기록)
+
+> REQ-PANEL-011이 v0.3에서 dual-open을 금지하므로 이 프로토콜은 **이 SPEC의 범위 밖이다.** 그러나 "문제가 없다"가 아니라 "**연기되었다**"이므로, v0.4가 재발견하지 않도록 다섯 의무를 이름 붙여 남긴다.
+
+dual-open이 성립하려면 다음 다섯 가지가 **모두** 필요하다:
+
+| # | 의무 |
+|---|---|
+| 1 | 패널의 트랜잭션이 **정본 문서 revision**을 갱신한다 |
+| 2 | 정확한 변경(exact changes)이 형제 뷰로 **origin annotation과 함께** 미러링되고, 그 뷰들의 **undo에서는 제외**된다 |
+| 3 | 각 패널의 자기 undo 항목이 **이후의 형제 변경을 통해 매핑**된다 |
+| 4 | undo가 사적으로 발산하지 않고 **정본 문서 트랜잭션을 방출**한다 |
+| 5 | 저장이 정본 revision을 **한 번** clean으로 표시하고, 참조하는 모든 패널이 **같은 전이를 관측**한다 |
+
+**dual-open은 전용 interleaving 테스트 없이 출하되어서는 안 된다(shall not)** — 위 다섯 의무는 순서 의존적이며, 단일 시나리오 테스트로는 A 편집 → B 편집 → A undo 같은 교차 순서에서의 발산을 잡지 못한다.
+
+REQ-PANEL-011의 금지, REQ-PANEL-011a의 별칭 한계, REQ-PANEL-012/013의 "문서 단위"·"마지막 참조 패널" 표현이 이 프로토콜의 **확장 지점을 열어 둔 채** v0.3을 닫는 형태다.
 
 ---
 
@@ -236,6 +288,20 @@ REQ-PANEL-070·071의 수정은 **결함을 실증하는 실패 테스트를 먼
 **REQ-PANEL-036** (Ubiquitous)
 셸은 수동 새로고침(SPEC-1 REQ-WS-047)의 **시각적 어포던스**를 제공**해야 한다(shall)** — SPEC-1 REQ-WS-047a가 이 SPEC에 명시적으로 넘긴 소유권이다. 어포던스는 프로젝트 트리 표면에 배치**되며(shall)**, 프로젝트 없음 상태에서는 표시되지 **않는다(shall not)**(재열거 대상이 없다).
 
+**REQ-PANEL-036b** (Ubiquitous) — **확정: 프로젝트 트리는 신뢰 범위로 좁혀 표시한다** (OQ-5)
+프로젝트 트리 표면은 **실제로 열 수 있는 경로만 제시해야 한다(shall)** — 클릭했을 때 `PathNotAllowedError`가 나는 대상을 제시하지 **않아야 한다(shall not)**.
+
+신뢰 모델은 **손대지 않는다(shall not)**: 신뢰 IPC를 추가하지 않고, 동의 배너를 도입하지 않으며, 다이얼로그 유도 힌트도 두지 **않는다(shall not)**. SPEC-1 D-6은 쓰인 그대로 유지**된다(shall)**.
+
+**왜 동의 배너가 기각되었는가 (외부 검토 2인 수렴, 내 잠정 권고 철회)**: 렌더러 배너가 클릭 시 신뢰 승격 IPC를 호출한다면 그것은 **자동 편입에 클릭 가능한 라벨을 붙인 것**이다 — 손상된 렌더러는 이미 모든 클릭과 모든 preload API를 통제하며, 권한 대상은 여전히 매니페스트가 공급한다. 오늘 새 신뢰가 들어오는 경로는 **main이 소유한 OS 다이얼로그 하나뿐**이다(`electron/ipc/shell.ts:122-125` `dialog:openFolder` → `allowSessionPath`). **main 프로세스 다이얼로그를 통과하지 않는 동의는 D-6 보존이 아니라 UX를 입힌 자동 승격이다.**
+
+**마찰은 수용된 비용이며 문서화된 사용자 경로다(shall)**: `X/scripts/`에 도달하려면 기존 폴더 열기 다이얼로그로 그 폴더(또는 프로젝트 루트)를 등록한다. 이것은 결함이 아니라 정의된 경로**다(shall)**.
+
+**REQ-PANEL-036c** (Ubiquitous) — 신뢰 확대는 읽기 표면도 확대한다 (향후 제안에 대한 구속)
+향후 어떤 신뢰 승격 제안도 **파일 열기만이 아니라 렌더러 읽기 표면을 함께 논증해야 한다(shall)**. `electron/assetProtocol.ts:124`가 `durumi-asset://`를 **같은 `isAllowedPath` boolean**으로 게이트하고, 통과하면 `fs.readFile(absPath)` 후 확장자 기반 MIME 추측으로 바이트를 **크기 제한 없이** 응답한다(`:128-130`). 즉 신뢰 트리가 넓어지면 렌더러가 그 트리의 임의 파일 바이트를 프로토콜로 읽어낼 수 있다.
+
+읽기/쓰기 신뢰 축 분리는 **원리적으로 옳은 장기 모델이나** `isAllowedPath`가 단일 boolean을 반환하므로(`electron/pathGuard.ts:132`) 모든 `assertAllowedPath` 호출부 + 위 asset 게이트를 바꾼다. **별개의 향후 보안 SPEC이며 이 SPEC의 범위 밖이다**(§D).
+
 ---
 
 ### §B.5 비마크다운 편집 표면 (SPEC-1 D-5가 비워 둔 공백)
@@ -254,8 +320,52 @@ REQ-PANEL-070·071의 수정은 **결함을 실증하는 실패 테스트를 먼
 
 **편집하지 않고 열었다 닫으면 파일 바이트가 변하지 않아야 한다(shall)** — 이것이 이 요구의 최소 관측 형태다.
 
-**REQ-PANEL-044** (Unwanted)
+**REQ-PANEL-044** (Unwanted) — **확정: 채널 분리 + main 측 검증 + import 부재** (OQ-6(i))
 마크다운 문법을 인식하는 저장 시 변환은 비마크다운 문서에 적용되어서는 **안 된다(shall not)**. 오늘의 저장 경로는 파일 종류와 무관하게 마크다운 이미지 링크 정규식 재작성을 거친다(`electron/ipc/files.ts:64` → `electron/pendingAssets.ts:157, 175-176`). 실제 치환이 pending 경로 조건(`pendingAssets.ts:162`)에 걸려 드물게 일어난다는 사실은 이 요구를 면제하지 **않는다(shall not)** — 구조적으로 적용 가능한 경로가 남아 있으면 언젠가 적용된다.
+
+이 요구는 **세 겹으로** 충족**되어야 한다(shall)**. 채널 분리 하나만으로는 부족하다 — preload가 두 채널을 모두 노출하는 동안 렌더러 버그가 `.py`에 대해 마크다운 채널을 호출할 수 있다:
+
+| # | 겹 | 검증 형태 |
+|---|---|---|
+| 1 | 마크다운 쓰기 경로와 raw 쓰기 경로가 **별개 채널**이다 | IPC 계약 선언 |
+| 2 | **main이 마이그레이션 채널의 대상이 마크다운임을 검증**하고, 아니면 거부**한다(shall)** | 런타임 거부 단언 |
+| 3 | **raw 채널에는 마이그레이션 import가 아예 없다** | 소스 스캔 단언 |
+
+초판이 "채널 분리만으로 표현 불가능성을 얻는다"고 쓴 것은 **과장이었다**(외부 검토 지적, 수용). 표현 불가능성은 위 세 겹이 함께 만든다.
+
+**REQ-PANEL-044a** (Ubiquitous) — 두 쓰기 경로 모두와 닫기 라우팅
+분리는 **모든 쓰기 진입점**에 적용**되어야 한다(shall)**. 오케스트레이터가 확인한 세 곳:
+
+| 지점 | 사실 |
+|---|---|
+| `electron/ipc/files.ts:78-112` `file:saveAs` | 같은 위치에서 `migratePendingInContent(content, dirname(result.filePath))`를 호출한다 — `file:save`만 분리하면 이 경로로 새어 나간다 |
+| `electron/ipc/files.ts:92-97` Save As 필터 | `filters: [{ name: 'Markdown', extensions: ['md'] }]` 하드코딩. `.py` 패널에서 "다른 이름으로 저장" 시 `.md`만 제시된다 — **보조 파일에 맞는 필터가 이 요구의 일부다(shall)** |
+| `src/hooks/useAppCloseGuard.ts:26-33` | 닫기 시 저장을 라우팅한다. 갱신하지 않으면 **가장 나쁜 시점에** 보조 파일 내용을 마크다운 경로로 보낸다 |
+
+**REQ-PANEL-048** (Ubiquitous) — **확정: (B′) 문서에 EOL 저장, 직렬화 시 복원** (OQ-6(ii))
+**Where** 문서가 보조 파일인 경우, 앱은 열기 시 그 파일의 **지배적 줄 끝(EOL)** 을 탐지해 **문서 상태에 보관해야 하며(shall)**, raw 저장 시 버퍼의 LF를 그 EOL로 **복원해야 한다(shall)**.
+
+| 단계 | 동작 |
+|---|---|
+| 열기 (보조 파일만) | 지배적 EOL 탐지 → 문서 상태에 `eol: '\n' \| '\r\n' \| '\r'` 보관 |
+| 버퍼 | **내부적으로 LF 유지** — 오늘의 CodeMirror 현실 그대로 |
+| raw 저장 | LF를 보관된 EOL로 복원 |
+| 조정 계층 | **손대지 않는다(shall not)** — 문서 좌표 접기(`toDocumentSpace`)와 `lineSeparator` 미설정 상태를 그대로 둔다 |
+
+**이것이 기존 코드가 이미 문서화한 설계다**: `src/editor/applyExternalChange.ts:51-52`의 주석이 `구분자는 출력 시 직렬화에만 쓰인다`고 적는다. 그리고 `tests/editor/reconcileIntegrity.test.ts:90-97`이 CRLF 에디터에서 조정이 좌표를 어긋내지 않음을 **이미 green으로 증명한다.** 새 전제를 도입하지 않는다.
+
+**결정적 근거**: `EPIC-V03-WORKSPACE.md:34`가 `.py`/`.bib`/`.csv`/`.json`의 바이트 무결성을 **end-state 요구**로 못박는다. 첫 저장에서 모든 줄 끝을 다시 쓰는 보조 편집 표면은 각주가 아니라 **Epic 위반이다.** "편집 없이 열었다 닫으면 바이트 보존"(REQ-PANEL-043b)은 참이지만 불충분하다 — **저장이 에디터의 목적이다.**
+
+**REQ-PANEL-048a** (Ubiquitous) — 탐지 정책과 명시적 한계
+지배적 EOL 탐지는 다음을 따라**야 한다(shall)**:
+
+- `\r\n` / `\n` / `\r` 각각의 출현 수를 세어 **가장 많은 것**을 택한다.
+- **동수 처리**: `\r\n`과 `\n`이 같은 수면 **`\r\n`을 택한다(shall)**. 근거는 비대칭이다 — `\r\n`을 포함한 파일에서 LF를 택하면 **모든** CRLF 줄이 손상되는 반면, LF 파일에서 CRLF를 택하는 오판은 혼합 파일에서만 발생한다.
+- 줄 끝이 하나도 없으면(단일 줄 파일) 플랫폼 기본이 아니라 **LF를 택한다(shall)** — 줄 끝이 없으므로 복원 대상도 없고, 사용자가 줄을 추가할 때 LF가 보수적이다.
+
+**명시적 범위 밖 — 혼합 줄 끝**: 파일당 EOL 하나로는 **혼합 줄 끝을 담은 파일을 바이트 보존할 수 없다.** 이 SPEC은 혼합 파일의 바이트 보존을 약속하지 **않으며(shall not)**, 혼합 파일에서 저장은 모든 줄 끝을 지배적 EOL로 정규화**한다(shall)**. 이것은 메커니즘의 한계이며 **AC가 제공할 수 없는 것을 약속하지 않게** 명시한다.
+
+**EOL 목적상 보조로 세는 확장자**: REQ-PANEL-040의 마크다운 집합(`md` / `markdown` / `txt`)에 **속하지 않는** 모든 확장자**다(shall)**. **마크다운은 의도적으로 오늘 동작을 유지한다** — issue #11(마크다운 전 구간 CRLF 보존)은 이 SPEC의 범위 밖이며 `spec.md` §D.2가 그대로 유효하다.
 
 **REQ-PANEL-045** (Where)
 **Where** 문서 종류에 대응하는 문법 정의가 없는 경우, 보조 패널은 그 문서를 **평문(plain text)** 으로 열어**야 한다(shall)** — 열기를 거부하지 **않는다(shall not)**. 알 수 없는 확장자는 오류가 아니**다(shall)**.
@@ -339,13 +449,26 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 1. 조정의 `open-diff` effect(`shared/reconciliation.ts:70`)는 오늘 방출되지만 소비되지 않는다(`src/editor/applyExternalChange.ts:128`). 이 SPEC은 그 effect가 **어느 패널의 문서에 대한 요청인지 식별 가능하게** 해야 하며(shall), diff 표시 UI 자체는 SPEC-4 소관으로 남긴다(shall).
 2. `BibliographyResolution.fallback`(SPEC-1 REQ-WS-056)의 사용자 표시. 반환값에는 이미 실려 있으므로 표시 표면만 필요**하다(shall)**. 표시는 활성 원고 패널 종속**이다(shall)**(REQ-PANEL-060과 같은 이유 — 원고마다 서지가 다를 수 있다).
 
+
+**REQ-PANEL-065** (Ubiquitous) — 사이드바 데이터 재배선은 명시적 작업**이다(shall)** (OQ-1 확정의 귀결)
+좌/우 사이드바와 그 하위 표면은 **활성 원고 패널의 문서·뷰를 대상으로 재배선되어야 한다(shall)**. 이는 패널화의 부수 결과가 아니라 **필수 작업이며 전용 수용 기준을 갖는다(shall)**.
+
+오늘 이들은 전역 에디터 하나를 겨냥한다:
+
+| 표면 | 오늘의 형태 |
+|---|---|
+| `Sidebar` | 스칼라 `content` / `view` prop — `src/App.tsx:124-127` |
+| `RightSidebar` | 동일 — `src/App.tsx:163-166` |
+| 목차 / 인용 / "검색 히트 → 줄 이동" | `editorViewRef.current` + 50ms `setTimeout` 후 dispatch — `src/App.tsx:129-142` |
+
+**`RightSidebar`의 귀속은 "활성 원고 패널"이며 "가장 왼쪽 패널"이 아니다(shall not)** — 레이아웃 순서가 데이터 소유권을 결정하면 사용자가 패널을 재배치할 때 서지·메모가 조용히 다른 원고를 가리킨다. REQ-PANEL-060~063의 활성 원고 패널 축과 일치**시킨다(shall)**.
 ---
 
 ## §C 제약
 
 | # | 제약 | 근거 |
 |---|---|---|
-| C-1 | 다음 요구는 **프로젝트 없음 상태에서도 완전히 동작해야 한다**: REQ-PANEL-001, 003~007, 010~014, 020~024, 030~035, 040~047, 050~056, 058, 060~064. 본질적으로 프로젝트 조건부인 것은 REQ-PANEL-036(수동 새로고침 어포던스), REQ-PANEL-057(규약 폴더 제외)뿐이며, 그 상태에서 올바른 동작은 "적용되지 않음"이다 | `EPIC-V03-WORKSPACE.md` §2.2 — 단일 파일 열기 보존, 프로젝트 없음은 1급 상태 |
+| C-1 | 다음 요구는 **프로젝트 없음 상태에서도 완전히 동작해야 한다**: REQ-PANEL-001, 003~007, 010~015, 020~024, 030~035, 040~048a, 050~056, 058, 060~065, 070~073. 본질적으로 프로젝트 조건부인 것은 REQ-PANEL-036/036b/036c(수동 새로고침 어포던스 + 트리 신뢰 범위 표시), REQ-PANEL-057(규약 폴더 제외)뿐이며, 그 상태에서 올바른 동작은 "적용되지 않음"이다 | `EPIC-V03-WORKSPACE.md` §2.2 — 단일 파일 열기 보존, 프로젝트 없음은 1급 상태 |
 | C-2 | 3-프로세스 경계를 변경하지 않는다. 패널 레이아웃·패널 상태는 `src/`에만 존재하며, 파일시스템·감시는 main, 타입·순수 함수는 `shared/` | `.moai/project/structure.md` §2, `EPIC-V03-WORKSPACE.md` §6 |
 | C-3 | 렌더러는 Node API를 갖지 않는다(`sandbox: true`, `contextIsolation: true`). 신규 IPC 채널은 `shared/ipc-contract.ts`에 선언되어야 하며 구독형 API는 구독 해제 클로저를 반환한다 | `EPIC-V03-WORKSPACE.md` §6, SPEC-1 C-3 |
 | C-4 | `pathGuard` 4-tier 신뢰 모델을 **완화하지 않는다**. 새 신뢰 승격 경로를 만들지 않으며 기존 Tier 1~4와 `allowSessionPath` 동작에 의존한다. 프로젝트 발견이나 패널 열기가 그 자체로 새 경로를 신뢰시켜서는 안 된다 | SPEC-1 D-6/REQ-WS-012, `electron/pathGuard.ts:183-215` `assertPrefsPatchAllowed` |
@@ -354,7 +477,7 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 | C-7 | macOS와 Windows 모두 출하 대상. Windows e2e CI가 없으므로 플랫폼 차이는 유닛 계층에서 검증 가능한 형태로 설계해야 한다 | `.moai/project/tech.md` §9, §13.1, SPEC-1 C-6 |
 | C-8 | IME 조합에 닿는 코드 변경은 SPEC-1이 구축한 조합 유지형 CDP e2e 프리미티브 기반 검증이 의무이며, 릴리스 전 수동 한글 스모크를 대체하지 않는다 | `docs/DOCUMENT_MODE_PRINCIPLES.md` §2, SPEC-1 C-7, `docs/v0.3-signoff.md` §3 |
 | C-9 | `docs/DOCUMENT_MODE_PRINCIPLES.md`를 수정하지 않는다 (SPEC-1 AC-WS-037 불변식) | `docs/v0.3-signoff.md` §5 |
-| C-10 | 기존 테스트 baseline(199 테스트 파일, 33 e2e spec)을 근거 없이 깨뜨리지 않는다. 사이드바 스토어·탭 구조 테스트(`tests/store/{sidebarStore,rightSidebarStore}.test.ts`, `tests/sidebar/*.test.tsx`)를 깨는 설계는 REQ-PANEL-002 위반으로 간주한다. 반대로 조정·감시 계층 테스트(`tests/hooks/useExternalChangeWiring.test.tsx`, `tests/components/reconciliationBanner.test.tsx`, `e2e/reconciliation-ime.spec.ts`)는 문서 축 도입에 따라 **의도적으로 재작성된다** | `research.md` §8 |
+| C-10 | 기존 테스트 baseline(199 테스트 파일, 33 e2e spec)을 근거 없이 깨뜨리지 않는다. 사이드바 스토어·탭 구조 테스트(`tests/store/{sidebarStore,rightSidebarStore}.test.ts`, `tests/sidebar/*.test.tsx`)를 깨는 설계는 REQ-PANEL-002 위반으로 간주한다. **이 제약은 회귀 검사이며 레이아웃 선택의 논거가 아니다** — OQ-1 확정 논거는 테스트 개수가 아니라 사이드바(전역)와 패널(문서 국소)의 소유권 분리다. 반대로 조정·감시 계층 테스트(`tests/hooks/useExternalChangeWiring.test.tsx`, `tests/components/reconciliationBanner.test.tsx`, `e2e/reconciliation-ime.spec.ts`)는 문서 축 도입에 따라 **의도적으로 재작성된다** | `research.md` §8 |
 | C-11 | 새 런타임 의존성을 추가하지 않는다. 언어 문법은 이미 의존성인 `@codemirror/language-data`에서 조달한다 | REQ-PANEL-041, `package.json:39` |
 | C-12 | **조정 코어 5파일의 확장자 독립을 깨뜨리지 않는다.** `electron/changeConfirmation.ts`, `electron/watchScope.ts`, `shared/reconciliation.ts`, `src/editor/minimalDiff.ts`, `src/editor/applyExternalChange.ts` 에 확장자 판독 수단을 넣지 않으며 `applyExternalChange`의 arity를 2로 유지한다. `tests/electron/extensionIndependence.test.ts`는 무변경 통과해야 한다 | REQ-PANEL-072, 해당 테스트 `:34-65`(구조적 단언) + `:171-174`(arity 단언) |
 | C-13 | `.cm-content`는 전역 CSS(`src/styles/global.css:32`)와 뷰별 테마(`src/editor/theme.ts:10-15`) 양쪽에서 스타일링되며 전역 규칙이 문서 전체에 걸린다. 패널별로 다른 측정폭이 필요하면 **전역 규칙을 패널 스코프로 좁혀야 하고**, 그 변경은 `.cm-content`를 유일 요소로 가정하는 e2e 34개 파일의 셀렉터 이관을 수반한다 — 부수 효과가 아니라 명시적 작업이다 | REQ-PANEL-042, `plan.md` §C M4 + §B.8, `acceptance.md` AC-PANEL-095 |
@@ -375,7 +498,7 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 - CodeMirror 6 교체 검토 재개 (`EPIC-V03-WORKSPACE.md` §2.1에서 기각 확정)
 - 3-모드(Document/Live/Source) 모델 재설계 — 이 SPEC은 모드의 **적용 범위(패널별)** 만 정하고 모드 자체를 바꾸지 않는다
 - `RenderedSpan` 양방향 소스맵 계약 (`DOCUMENT_MODE_PRINCIPLES.md` §7) — 별개 v0.3 로드맵 항목
-- **CRLF 전 구간 보존(issue #11)** — CodeMirror 문서 좌표계가 줄바꿈을 항상 1 위치로 계산하는 구조적 제약이며, 해소에는 파일별 줄바꿈 감지 + 동적 `lineSeparator` + 저장 시 재직렬화가 필요하다. 비마크다운 파일에서 더 심각해질 가능성은 `plan.md` §A의 미해결 결정으로 올리되, **해소 자체는 이 SPEC 범위가 아니다**
+- **마크다운 파일의 CRLF 전 구간 보존(issue #11)** — CodeMirror 문서 좌표계가 줄바꿈을 항상 1 위치로 계산하는 구조적 제약이며, 마크다운 경로는 **의도적으로 오늘 동작(열기 시 LF 접기)을 유지한다**. **정정 (판 0.3.0)**: 초판은 CRLF를 전면 범위 밖으로 두었으나, OQ-6(ii) 확정으로 **보조 파일의 EOL 복원은 범위 안**이다(REQ-PANEL-048) — `EPIC-V03-WORKSPACE.md:34`가 `.py`/`.bib`/`.csv`/`.json` 바이트 무결성을 end-state 요구로 못박기 때문이다. 범위 밖으로 남는 것은 (a) 마크다운 경로, (b) **혼합 줄 끝 파일의 바이트 보존**(REQ-PANEL-048a가 명시), (c) CM `lineSeparator` 도입
 - **sticky dirty 플래그(issue #12)** — `appStore.isDirty`가 `|| s.isDirty`로 latch되는 기존 결함. REQ-PANEL-010이 dirty를 문서에 매면서 이 결함이 문서 축으로 복제되지 않도록 주의해야 하나, 결함 해소는 별개다
 
 ### Out of Scope — 원칙 문서와 문서화
@@ -387,7 +510,18 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 
 - **다중 창(BrowserWindow) 간의 조정 조율.** 창 축은 오늘 이미 존재하며(`electron/main.ts:46, 103`), 확정 이벤트가 모든 창에 브로드캐스트된다(`electron/ipc/project.ts:40-44`). 이 SPEC은 **창 안의 패널 축**을 정의하고, REQ-PANEL-051의 경로 대조가 부수적으로 창 간 오적용도 막지만, 창 간 소유권 모델(어느 창이 어느 파일의 감시를 소유하는가)은 별개 작업이다
 - 창별 패널 배치의 창 간 동기화
-- 탭(tab) UI로서의 문서 목록 관리 — 이 SPEC은 패널 분할을 정의하며, 패널 하나 안에 여러 문서를 탭으로 쌓는 모델은 `plan.md` §A의 미해결 결정에서 다루고 채택 여부는 사용자 결정이다
+- 탭(tab) UI로서의 문서 목록 관리 — 이 SPEC은 패널 분할을 정의하며, 패널 하나 안에 여러 문서를 탭으로 쌓는 모델은 `plan.md` §A.2 OQ-7의 미해결 결정이다
+
+### Out of Scope — dual-open과 문서↔뷰 동기화 (v0.4)
+
+- **같은 파일을 두 패널에 여는 것(dual-open)** — 사용자 결정으로 v0.3에서 금지되고 v0.4로 연기되었다(OQ-2). REQ-PANEL-011이 금지를, §B.2a가 v0.4의 다섯 의무를 기록한다
+- 문서↔뷰 트랜잭션 동기화 프로토콜 (§B.2a의 5개 의무)
+- 심볼릭·하드 링크 별칭의 동일 파일 탐지 — REQ-PANEL-011a가 한계를 명시하며, 해소에는 `fs.realpath`가 필요하고 `electron/pathGuard.ts:55-60`이 그것을 의도적으로 회피한다
+
+### Out of Scope — 신뢰 모델의 읽기/쓰기 축 분리
+
+- `isAllowedPath`를 단일 boolean에서 읽기/쓰기 축으로 분리하는 작업 — 원리적으로 옳은 장기 모델이나(외부 검토 2인 동의) 모든 `assertAllowedPath` 호출부 + `electron/assetProtocol.ts:124`의 asset 게이트를 바꾼다. **별개의 향후 보안 SPEC이며 이 SPEC의 범위 밖이다**(REQ-PANEL-036c가 향후 제안에 대한 구속만 남긴다)
+- 프로젝트 루트의 자동 신뢰 편입, 동의 배너 경유 승격 — OQ-5에서 기각됨
 
 ### Out of Scope — 실시간 협업과 원격
 
@@ -413,7 +547,8 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 
 ## §E 성공 기준
 
-- §B의 요구사항(REQ-PANEL-070~073, 001~007, 010~014, 020~024, 030~036, 040~047, 050~058, 060~064 — 총 50개)이 모두 관측 가능한 수용 기준으로 매핑된다(`acceptance.md`, 모든 AC가 REQ ID 또는 제약 ID를 인용)
+- §B의 요구사항(REQ-PANEL-070~073, 001~007, 010~015, 020~024, 030~036c, 040~048a, 050~058, 060~065 — 총 58개)이 모두 관측 가능한 수용 기준으로 매핑된다(`acceptance.md`, 모든 AC가 REQ ID 또는 제약 ID를 인용)
+- **확정된 4개 결정(OQ-1·2·5·6)의 귀결이 요구사항으로 표현된다**: dual-open 금지(011/011a) + revision 파생 dirty(015) + 트리 신뢰 범위 표시(036b/036c) + 저장 채널 3겹(044/044a) + 보조 파일 EOL 복원(048/048a) + 사이드바 재배선(065)
 - **§B.0의 출하 중인 결함 두 건이 재현 우선으로 해소된다** — 실패 테스트 선행, 수정, 통과 확인. 이것이 M0이며 기능 마일스톤보다 앞선다
 - `tests/electron/extensionIndependence.test.ts`가 무변경 통과한다 (C-12)
 - C-1이 지정한 범위에 대해 프로젝트 있음/없음 두 상태가 검증된다
