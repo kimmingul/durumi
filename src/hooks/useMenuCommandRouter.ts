@@ -96,6 +96,14 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
   useEffect(() => {
     return window.api.onMenuCommand(async (cmd: MenuCommand) => {
       const view = editorViewRef.current;
+      // SPEC-V03-WORKSPACE-001 REQ-WS-047a: 수동 새로고침의 **호출 가능한**
+      // 진입점. 시각적 어포던스(버튼 위치·단축키)는 SPEC-2 소유이므로
+      // 여기서는 메뉴 커맨드로만 노출한다.
+      if (cmd === 'refreshProjectTree') {
+        const path = useAppStore.getState().filePath;
+        if (path) await window.api.projectRefresh(path);
+        return;
+      }
       if (cmd === 'new') { await fileCommands.doNew(); return; }
       if (cmd === 'open') { await fileCommands.doOpen(); return; }
       if (cmd === 'save') { await fileCommands.doSave(); return; }

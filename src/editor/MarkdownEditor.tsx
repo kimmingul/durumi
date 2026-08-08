@@ -16,6 +16,9 @@ import { CommentsExtension } from './markdownExt/comments';
 import { CriticMarkupExtension } from './markdownExt/criticMarkup';
 import { liveDecorations } from './decorations';
 import { spellcheckExclusion } from './spellcheckExclusion';
+import { attachReconciliationCompositionGate } from './compositionGate';
+import { registerReconciliationExecutor } from './applyExternalChange';
+import { useReconciliationStore } from '../store/reconciliationStore';
 import { markdownKeymap } from './keymap';
 import { buildMacroKeymap } from './keymap/macros';
 import { autoPair } from './keymap/autoPair';
@@ -146,12 +149,25 @@ export function MarkdownEditor({
 
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    // SPEC-V03-WORKSPACE-001 REQ-WS-020: 조합이 열려 있는 동안 외부 변경
+    // 조정이 문서를 건드리지 못하게 막는다. 게이트 자체의 계약은
+    // `src/editor/compositionGate.ts`와 그 테스트가 고정한다.
+    const compositionGate = attachReconciliationCompositionGate(view.contentDOM);
+    // SPEC-V03-WORKSPACE-001 REQ-WS-025: M2가 방출해 온 apply-to-buffer effect의
+    // 실행자를 붙인다. 여기까지가 렌더러 안쪽이며, 확정 이벤트를 main에서
+    // 나르는 IPC 채널은 M8 소관이다.
+    const detachExecutor = registerReconciliationExecutor(
+      view,
+      useReconciliationStore.getState().setEffectHandler,
+    );
     // Seed the docPath field with the prop value so widgets created on
     // the first paint (e.g. an image already in the initial document)
     // resolve correctly. Subsequent changes go through the filePath effect.
     if (filePath !== null) view.dispatch({ effects: setDocPath.of(filePath) });
     onReady?.(view);
     return () => {
+      detachExecutor();
+      compositionGate.detach();
       view.destroy();
       viewRef.current = null;
     };

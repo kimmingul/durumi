@@ -1,0 +1,57 @@
+/* 외부 변경 조정 알림 — 편집 흐름을 가리지 않는 인라인 스트립.
+ *
+ * position: fixed / absolute 를 쓰지 않는 것이 의도다. 떠 있는 오버레이는
+ * 편집 표면을 덮고 클릭을 가로채 사실상 모달처럼 동작하기 시작한다.
+ * 이 표면은 문서 흐름 안에 자리를 차지하고, 포커스를 요구하지 않는다
+ * (REQ-WS-049).
+ */
+.reconcile-surface {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-top: 1px solid var(--border, #d0d0d0);
+  background: var(--surface-alt, #f6f6f6);
+  color: var(--fg, #222);
+}
+
+/* 조합 중 보류·사라짐 표시는 동작이 없는 조용한 알림이다. */
+.reconcile-surface--status {
+  opacity: 0.85;
+}
+
+.reconcile-surface__message {
+  flex: 1;
+  min-width: 0;
+}
+
+.reconcile-surface__detail {
+  font-family: var(--mono, ui-monospace, monospace);
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.reconcile-surface__actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.reconcile-surface__actions button {
+  font: inherit;
+  padding: 2px 8px;
+  border: 1px solid var(--border, #d0d0d0);
+  border-radius: 4px;
+  background: var(--surface, #fff);
+  color: inherit;
+  cursor: pointer;
+}
+
+.reconcile-surface__actions button:hover {
+  background: var(--surface-hover, #ececec);
+}
