@@ -2,7 +2,7 @@
 id: SPEC-V03-WORKSPACE-001
 title: "v0.3 워크스페이스 골격 — 프로젝트 매니페스트·외부 변경 조정·메타데이터 모델"
 version: "0.2.5"
-status: in-progress
+status: completed
 created: 2026-08-06
 updated: 2026-08-08
 author: manager-spec

@@ -1,5 +1,63 @@
 # Durumi — Progress
 
+## v0.3.0 워크스페이스 골격 (SPEC-V03-WORKSPACE-001, sync 완료 2026-08-08)
+
+`EPIC-V03-WORKSPACE.md`가 정의하는 5개 SPEC 중 첫 번째. Durumi를 "마크다운
+파일 하나를 여는 에디터"에서 **원고 워크스페이스**로 확장하는 골격 계층을
+출하했다 — 프로젝트 매니페스트, 외부 변경 감시·조정, IME 안전, 파일 종류
+무관 무결성, 메타데이터 3계층. 전체 사인오프는
+[docs/v0.3-signoff.md](v0.3-signoff.md), 릴리스 게이트(AC-WS-024 수동 IME
+스모크) 절차는 [docs/v0.3-smoke-test.md](v0.3-smoke-test.md).
+
+### 결정된 아키텍처 — CodeMirror 6 유지
+
+ProseMirror/Lexical/Slate로의 교체를 검토하고 기각했다
+(`EPIC-V03-WORKSPACE.md` §2.1). 근거는 4가지 요구: (a) 바이트 정확 보존 —
+CodeMirror 버퍼가 곧 파일 바이트, (b) 외부 변경 흡수 — 텍스트 diff를 그대로
+dispatch 가능, (c) 통합 diff 적용·표시 — 라인/오프셋 단위가 diff 단위와
+일치, (d) 비마크다운 파일 편집 — `@codemirror/language-data`로 즉시 지원.
+문서모델 에디터는 네 가지 모두에서 재구성·재매핑 비용을 지불해야 한다.
+CLI 에이전트가 사용자와 같은 파일을 쓴다는 이 Epic의 전제에서 (a)는 타협
+불가하다.
+
+### front matter 정본화 (D-4)
+
+메타데이터(저자·감사의 글·등록번호)의 정본을 **원고 YAML front matter**로
+확정했다 — 매니페스트는 원고가 미기입일 때만 적용되는 프로젝트 기본값이다.
+한 연구가 본문·보충자료·리뷰어 응답서 등 저자 목록이 다른 여러 원고를 갖는
+경우가 흔하기 때문이다. 억제 판정은 **값 기반**(키 존재가 아니라 실제
+값)이다 — 출하 템플릿이 모든 원고에 `author: `를 발행하므로 키 존재
+기준이었다면 매니페스트 기본값 계층이 정상 생성 경로에서 죽었을 것이다.
+
+### 주요 모듈
+
+- 매니페스트·discovery: [shared/workspaceManifest.ts](../shared/workspaceManifest.ts), [electron/projectDiscovery.ts](../electron/projectDiscovery.ts), [shared/projectFolders.ts](../shared/projectFolders.ts)
+- 감시·변경 확정: [electron/fs.ts](../electron/fs.ts), [electron/changeConfirmation.ts](../electron/changeConfirmation.ts), [electron/watchScope.ts](../electron/watchScope.ts)
+- IME 게이트·조합 프리미티브: [src/editor/compositionGate.ts](../src/editor/compositionGate.ts), [e2e/reconciliation-ime.spec.ts](../e2e/reconciliation-ime.spec.ts)
+- 조정: [src/editor/applyExternalChange.ts](../src/editor/applyExternalChange.ts), [src/editor/minimalDiff.ts](../src/editor/minimalDiff.ts), [shared/reconciliation.ts](../shared/reconciliation.ts)
+- IPC 배선: [electron/externalWatch.ts](../electron/externalWatch.ts), [electron/ipc/project.ts](../electron/ipc/project.ts), [shared/ipc-contract.ts](../shared/ipc-contract.ts)
+- 메타데이터: [shared/manuscriptMetadata.ts](../shared/manuscriptMetadata.ts)
+
+### 검증 게이트
+
+`pnpm test` → 199 files / 2191 tests passed. `pnpm typecheck` → exit 0.
+`pnpm lint` → exit 0. AC 83항목 중 82 PASS(1건 부분 PASS — AC-WS-035 전 구간
+CRLF 보존, 편집기 구조상 한계), 1건은 사용자 결정으로 릴리스 사인오프
+게이트로 이관(AC-WS-024 — 실제 macOS 한글 IME 수동 스모크, 자동화 대체
+불가). 전체 판정표는 `.moai/specs/SPEC-V03-WORKSPACE-001/progress.md`
+§E.2b.
+
+### 남은 것
+
+- AC-WS-024 수동 IME 스모크 — v0.3/v0.4 릴리스 사인오프 시 수행
+  ([docs/v0.3-smoke-test.md](v0.3-smoke-test.md))
+- 전 구간 CRLF 보존 (issue #11) — 파일별 줄바꿈 감지 + CodeMirror
+  `Compartment` + 저장 재직렬화 필요, 편집기 로딩·저장 경로의 구조 변경
+- `docs/DOCUMENT_MODE_PRINCIPLES.md`가 비마크다운 파일(`.py`/`.csv`/`.bib`/`.json`)
+  의 바이트 무결성을 아직 다루지 않는 원칙 문서 공백 (기록만, 별도 SPEC 범위)
+- SPEC-2(멀티패널 셸, v0.3) ~ SPEC-5(Python 샌드박스, v0.4)가 이 골격 위에서
+  진행
+
 ## v0.2.24 → v0.2.28 (current) — Atomic inline-mark rollout (Bold / Italic / Strike / Highlight / Subscript)
 
 The v0.2.23 widget-atomicity contract (`EditorView.atomicRanges` +

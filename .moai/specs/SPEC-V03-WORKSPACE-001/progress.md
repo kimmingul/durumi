@@ -2,7 +2,7 @@
 id: SPEC-V03-WORKSPACE-001
 title: "진행 기록 — v0.3 워크스페이스 골격"
 version: "0.2.5"
-status: in-progress
+status: completed
 created: 2026-08-06
 updated: 2026-08-08
 tier: L
@@ -755,13 +755,36 @@ AC-WS-020b의 전제("버퍼가 여전히 clean")가 이 앱에서 성립하지 
 
 ## §E.3 Run-phase Audit-Ready Signal
 
+### 정정 이력 (sync-phase, 2026-08-08)
+
+아래 YAML은 M8 완료 이후 갱신되지 않아 §E.2b(83항목 통합 표, 커밋 `b737721`)와
+모순된 상태였다. 다음 필드를 커밋 SHA에 귀속해 정정한다 — 추측은 배제하고
+`git log --oneline b737721 -20`으로 확인한 것만 반영한다:
+
+| 필드 | 이전 | 이후 | 근거 커밋 |
+|---|---|---|---|
+| `run_status` | `in-progress` (M8만 남음) | `complete` | `ede3b00`(M8 IPC 배선) ~ `b737721`(83항목 통합 표) |
+| `milestones_complete` | M8 누락, M5 미포함 | M1~M8 전부 + 인라인 정정(M1a/M3a/M4a/M5a/M8a) 포함 | `ede3b00`, `47d4f3d`, `43fa2db` |
+| `milestones_partial` | `[M5]` | `[]` | M5가 막혀 있던 이유(AC-WS-019~022의 M8 IPC 의존)가 `ede3b00`으로 해소됨 |
+| `run_commit_sha` | `3a06812` (M7) | `b737721` (최신 run-phase 커밋) | `git rev-parse HEAD` |
+| `ac_pass_count` / `ac_blocked` | `75` / `4` | `82` / `0` | §E.2b 통합 표 (AC-WS-019~022 전부 e2e PASS로 판정) |
+| `blockers` | M8 IPC 부재 1건 | 없음 | `ede3b00`으로 해소, 이후 `f801ee9`/`4732270`/`43fa2db`가 M8이 드러낸 REQ-WS-028 모순도 사용자 결정(판 0.2.4/0.2.5)으로 해소 |
+| `stubbed_producers` | M8 소관 2건 포함 | M8 소관 2건 제거(완료), SPEC-2/4 소관만 잔존 | `ede3b00` 이후 §E.2b AC-WS-058b/019/022 PASS |
+| `total_run_phase_files` | `45` (M7 시점) | `60` | `git diff --name-only 5b55216^..b737721 -- . ':!.moai/specs/SPEC-V03-WORKSPACE-001/*' ':!docs/*' \| sort -u \| wc -l` |
+
+확인하지 못한 것(Gaps): M8 이후 커밋들의 커버리지 수치(`coverage_touched_modules`)는
+M7 시점 값을 그대로 유지한다 — sync-phase에서 커버리지 명령을 M8 대상 파일 기준으로
+재실행하지 않았으므로 갱신하지 않고 그대로 둔다(추측 금지).
+
 ```yaml
-run_status: in-progress            # M1~M7 구현, M8만 남음
-milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a, M6, M7]
-milestones_partial: [M5]           # 프리미티브 CI 검증 완료, AC-WS-019~022는 M8 차단
-run_commit_sha: 3a06812
-ac_pass_count: 75                  # + M7 5 (034, 035부분, 036, 070, 031b)
-ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재
+run_status: complete               # M1~M8 전부 구현 완료, sync-phase 진입
+milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a, M5, M5a, M6, M7, M8, M8a]
+milestones_partial: []             # M5를 막았던 M8 IPC 의존이 ede3b00으로 해소됨
+run_commit_sha: b737721
+ac_pass_count: 82                  # §E.2b 통합 표 기준 (AC-WS-035는 부분 PASS로 포함)
+ac_partial: 1                      # AC-WS-035 — 전 구간 CRLF 보존은 구조상 불가, 조정 계층 책임 범위만 PASS
+ac_deferred_release_gate: 1        # AC-WS-024 — 수동 한글 IME 스모크, 사용자 결정으로 릴리스 게이트 이관
+ac_blocked: 0                      # M8 IPC 배선(ede3b00)으로 전부 해제
 ac_fail_count: 0
 requirements_pass:
   m1: 20
@@ -773,10 +796,11 @@ requirements_pass:
   m5: 1
   m6: 2
   m7: 3                            # REQ-WS-032, 033, 056
+  m8: 5                            # REQ-WS-047a, 020, 021, 022, 028 (M8 §E.2 표 기준)
 new_warnings_or_lints_introduced: 0
 typecheck: "tsc --build && tsc --noEmit -p tsconfig.test.json → exit 0"
 lint: "eslint . --ext .ts,.tsx → exit 0"
-test: "vitest run → 194 files / 2136 tests passed"
+test: "vitest run → 194 files / 2136 tests passed"   # M7 시점 측정치, sync-phase 재측정은 §E.4 참조
 coverage_command: "pnpm test:coverage"
 coverage_gate: "statements/lines 85%, perFile → exit 0"
 coverage_touched_modules:
@@ -789,23 +813,82 @@ legacy_debt_files: 97
 m7_defects_found:
   - "Linux 폴링이 listDirectory 재사용으로 마크다운만 감시 — REQ-WS-032 위반, pollEntries로 분리해 수정"
   - "조정이 CRLF 입력에서 \r\r\n 생성 — M6의 doc.toString() 비교가 원인, 문서 좌표로 접어 수정"
+m8_defects_found:
+  - "경계 누수 — assertAllowed에 실패한 경로의 이벤트도 읽혀 내용이 렌더러로 올라감. 소유 목록으로 차단"
+  - "js-yaml 파서 오류 메시지가 손상된 매니페스트의 소스 줄을 그대로 노출 — 첫 줄만 남기도록 정리"
+  - "REQ-WS-028 위반(가장 심각) — appStore.isDirty가 조정 스토어로 전달되지 않아 미저장 편집이 확인 없이 사라짐. 3단계 계측으로 원인을 배선 누락으로 좁힘"
 spec_tension_ac_ws_035: >
   전 구간 CRLF 보존은 이 편집기에서 달성 불가. CodeMirror 문서 좌표는 줄바꿈을
   언제나 1 위치로 세고(lineSeparator 설정과 무관, 실측), 앱은 lineSeparator를
   설정하지 않아 CRLF가 열기 시점에 LF로 접힌다. 파일별 줄바꿈 감지 +
   compartment + 저장 재직렬화가 필요하며 편집기 구조 변경이다. 조정 계층이
-  책임질 수 있는 범위만 PASS로 기록하고 나머지는 특성화 검사로 남겼다.
-blockers:
-  - "AC-WS-019~022: external-change IPC 부재(M8). 실행하면 공허 통과하므로 test.skip 유지"
+  책임질 수 있는 범위만 PASS로 기록하고 나머지는 특성화 검사로 남겼다. (issue #11)
+spec_tension_ac_ws_020_021_resolution: >
+  M8이 드러낸 REQ-WS-028 ↔ AC-WS-020 모순(판 0.2.4)은 사용자 결정으로
+  REQ-WS-028을 우선해 해소했다 — 조합 종료는 자동 반영이 아니라 정책 라우터로의
+  라우팅 재개다. AC-WS-020/021을 배너 라우팅 검증으로 재작성했고, AC-WS-020b는
+  판 0.2.5에서 hold-and-forget 검사로 재작성했다(`43fa2db`). REQ-WS-028/§D
+  불변식은 약화하지 않았다.
+blockers: []                       # ede3b00(M8 IPC)로 해소, 이후 REQ-WS-028 모순도 판 0.2.4/0.2.5로 해소
 newly_required_not_yet_met: []     # AC-WS-070·031b 해소됨
 stubbed_producers:
-  - "IPC·메뉴 진입점(REQ-WS-047a / AC-WS-058b)은 M8 소관"
-  - "main→렌더러 확정 이벤트 전달은 M8 소관"
   - "open-diff effect의 표면은 SPEC-4 소관"
-  - "BibliographyResolution.fallback의 사용자 표시는 M8/SPEC-2 소관 — 사실은 반환값에 실려 있다"
-total_run_phase_files: 45
+  - "BibliographyResolution.fallback의 사용자 표시는 SPEC-2 소관 — 사실은 반환값에 실려 있다 (M8과 무관, 애초부터 SPEC-2 소관)"
+release_gate_deferred:
+  - "AC-WS-024 — 실제 macOS 한글 2벌식 IME 다단계 조합 중 외부 파일 변경 수동 검증. acceptance.md:283-287 + product.md §8 게이트 3에 따라 자동화 대체 불가. v0.3/v0.4 릴리스 사인오프 게이트 항목으로 이관 (사용자 결정)"
+total_run_phase_files: 60          # git diff --name-only 5b55216^..b737721 (SPEC 문서·docs/ 제외)
 ```
 
 ## §E.4 Sync-phase Audit-Ready Signal
 
-_<pending sync-phase>_
+sync-phase 실측 게이트 결과, AC 최종 집계, 이월 항목, SPEC-2~5로 넘기는 계약
+표면을 기록한다. 명령 출력은 `.moai/state/verify/spec1-sync/`에 원문으로 보존했다.
+
+```yaml
+sync_status: audit-ready
+sync_complete_at: "2026-08-08"
+sync_commit_sha: pending-backfill-sync   # 커밋은 자기 SHA를 미리 알 수 없다 — 후속 커밋으로 백필
+gate_results:
+  test: "pnpm test → exit 0 — Test Files 199 passed (199) / Tests 2191 passed (2191)"
+  typecheck: "pnpm typecheck → exit 0 — tsc --build && tsc --noEmit -p tsconfig.test.json"
+  lint: "pnpm lint → exit 0 — eslint . --ext .ts,.tsx"
+  evidence_paths:
+    - ".moai/state/verify/spec1-sync/test.log"
+    - ".moai/state/verify/spec1-sync/typecheck.log"
+    - ".moai/state/verify/spec1-sync/lint.log"
+ac_final_tally:
+  total: 83
+  pass: 82                          # AC-WS-035 포함 (부분 PASS)
+  pass_partial: 1                   # AC-WS-035 — 전 구간 CRLF 보존은 편집기 구조상 불가
+  deferred_release_gate: 1          # AC-WS-024 — 수동 한글 IME 스모크
+  fail: 0
+  blocked: 0
+document_mode_invariant_check:
+  command: "git diff --quiet -- docs/DOCUMENT_MODE_PRINCIPLES.md; echo exit=$?"
+  result: "exit=0 — AC-WS-037 불변식 유지, 원칙 문서 미수정"
+carry_over:
+  - id: AC-WS-024
+    disposition: release_gate
+    rationale: "acceptance.md:283-287 + product.md §8 게이트 3 — 실제 macOS 한글 IME 수동 검증은 자동화로 대체 불가"
+    tracked_in: "docs/v0.3-signoff.md §릴리스 게이트, docs/v0.3-smoke-test.md"
+  - id: AC-WS-035
+    disposition: accepted_limitation
+    rationale: "CodeMirror 문서 좌표가 줄바꿈을 항상 1 위치로 계산 — 전 구간 CRLF 보존은 편집기 구조 변경 필요"
+    tracked_in: "docs/v0.3-signoff.md §수용된 한계, issue #11"
+  - id: document_mode_principles_gap
+    disposition: recorded_not_authored
+    rationale: "DOCUMENT_MODE_PRINCIPLES.md는 문서모드 마크다운에만 범위가 걸려 있어 .py/.csv/.bib/.json 바이트 무결성은 아직 원칙 문서가 덮지 않음. AC-WS-037이 이 문서의 비수정을 요구하므로 SPEC-1은 공백만 기록하고 재작성하지 않음"
+    tracked_in: "docs/v0.3-signoff.md §원칙 문서 공백, EPIC-V03-WORKSPACE.md §6"
+contract_surface_to_spec_2_5:
+  - "SPEC-2(멀티패널 셸): open-diff effect의 표면 미구현 — stubbed_producers 참조"
+  - "SPEC-2/SPEC-4: BibliographyResolution.fallback의 사용자 표시 미구현 (반환값에는 이미 실림)"
+  - "shared/ipc-contract.ts가 신규 IPC 채널의 SSOT — SPEC-3/5의 에이전트·샌드박스 채널도 여기 추가"
+  - "pathGuard 4-tier 신뢰 모델은 완화되지 않음 — SPEC-3/5가 요구하는 확장은 각 SPEC에서 명시적으로 다룸"
+frontmatter_status_transitions:
+  spec_md: "in-progress → completed"
+  plan_md: "in-progress → completed"
+  acceptance_md: "in-progress → completed"
+  design_md: "in-progress → completed"
+  research_md: "in-progress → completed"
+  progress_md: "in-progress → completed"
+```
