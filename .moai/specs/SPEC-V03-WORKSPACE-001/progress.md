@@ -587,6 +587,53 @@ AC-WS-020이 요구하는 "둘 다 반영"은 3-way 병합인데 spec.md §D가 
 초록으로 만들려면 어느 한쪽 요구를 조용히 약화시켜야 하고, 그것이 이 SPEC이
 여덟 마일스톤 동안 막아 온 실패 방식이다.
 
+### M8a — 판 0.2.4 반영 (옵션 a: REQ-WS-028 우선)
+
+| AC | 상태 (CI `4732270`) |
+|---|---|
+| AC-WS-019 | **PASS** |
+| AC-WS-020 | **PASS** — 조합 텍스트 유지 + 디스크 미적용 + held-notify + 2동작 |
+| AC-WS-021 | **PASS** — 3건 합류 후 배너, v1·v2·v3 모두 미적용 |
+| AC-WS-022 | **PASS** |
+| AC-WS-023c | **PASS** — 무성 소실 없음 |
+| AC-WS-020b | **FAIL** — 아래 |
+| AC-WS-058b | PASS (유닛) |
+
+**REQ-WS-023 인계는 구현이 이미 만족했다 — 코드 변경 없음**
+
+M2 상태 기계의 `composition-end`는 세 정책 분기(clean/auto, dirty/auto, banner)
+모두에서 후속 표면 또는 버퍼 변경 중 하나를 산출한다. 무성 소실 경로가
+구조적으로 없다. 유닛 테스트 2건이 기존 코드에 대해 첫 실행에 통과했다:
+ - 세 분기 전부에서 `(후속 표면 ∨ 버퍼 변경)` 참
+ - 게이트 경유 결과 == 게이트 미경유 결과 (dirty별로 동일) — 불변식 고정
+
+**AC-WS-020b 실패의 원인 — appStore의 sticky dirty 플래그 (미해결, 판단 필요)**
+
+`src/store/appStore.ts:54`:
+
+```ts
+setContent: (content) => set((s) => ({ content, isDirty: s.content !== content || s.isDirty })),
+```
+
+`|| s.isDirty` 때문에 **isDirty는 한 번 서면 내려오지 않는다**. 조합이 열리면
+CodeMirror가 조합 글자를 문서에 넣고 `setContent`가 호출되어 dirty가 된다.
+조합을 취소해 내용이 원래대로 돌아와도 플래그는 true로 남는다. 따라서
+정책은 dirty로 판단해 배너를 택하고, AC-WS-020b가 기대하는 자동 반영이
+일어나지 않는다.
+
+AC-WS-020b의 전제("버퍼가 여전히 clean")가 이 앱에서 성립하지 않는다.
+두 갈래이며 **임의로 정하지 않는다**:
+
+ (a) `isDirty`를 마지막 저장 내용과의 비교로 바꾼다 — 내용이 돌아오면 clean.
+     올바른 방향이지만 close guard·저장 프롬프트·제목 표시 등 **출하 중인
+     dirty 추적 전반**의 동작을 바꾼다. 이 SPEC 범위 밖의 blast radius다.
+ (b) AC-WS-020b를 이 앱의 dirty 의미에 맞게 재작성한다.
+
+**미확인 사항 (정직하게 기록)**: 실패 원인이 sticky 플래그인지, 아니면
+`cancelComposition`이 조합 글자를 실제로 제거하지 못해 내용 자체가 달라진
+것인지 **CI 1회로 가르지 못했다**. 소스상 sticky 플래그만으로도 충분히
+설명되지만, 두 원인이 겹쳐 있을 수 있다. 결정 전에 계측 1회가 필요하다.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
