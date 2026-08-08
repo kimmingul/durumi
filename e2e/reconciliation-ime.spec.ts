@@ -85,18 +85,18 @@ async function installSurfaceCounter(page: Page): Promise<void> {
   await page.evaluate(() => {
     const cm = document.querySelector('.cm-content');
     if (!cm) throw new Error('.cm-content not found');
-    const w = window as unknown as Record<string, number>;
-    w.__cmCompositionStarts = 0;
-    w.__cmCompositionEnds = 0;
-    cm.addEventListener('compositionstart', () => { w.__cmCompositionStarts += 1; });
-    cm.addEventListener('compositionend', () => { w.__cmCompositionEnds += 1; });
+    const w = window as unknown as { __cmCounts?: { starts: number; ends: number } };
+    const counts = { starts: 0, ends: 0 };
+    w.__cmCounts = counts;
+    cm.addEventListener('compositionstart', () => { counts.starts += 1; });
+    cm.addEventListener('compositionend', () => { counts.ends += 1; });
   });
 }
 
 const surfaceCounts = (page: Page): Promise<{ starts: number; ends: number }> =>
   page.evaluate(() => {
-    const w = window as unknown as Record<string, number>;
-    return { starts: w.__cmCompositionStarts ?? 0, ends: w.__cmCompositionEnds ?? 0 };
+    const w = window as unknown as { __cmCounts?: { starts: number; ends: number } };
+    return w.__cmCounts ?? { starts: 0, ends: 0 };
   });
 
 /**
