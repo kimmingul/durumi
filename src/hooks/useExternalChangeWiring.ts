@@ -13,7 +13,11 @@ import { useReconciliationStore } from '../store/reconciliationStore';
  * 저장·재로드로 버퍼 기준이 바뀌면 main에 알린다. 그러지 않으면 2단계 내용
  * 대조가 낡은 기준과 비교해 자기 저장을 외부 변경으로 오인한다.
  */
-export function useExternalChangeWiring(filePath: string | null, content: string): void {
+export function useExternalChangeWiring(
+  filePath: string | null,
+  content: string,
+  isDirty: boolean,
+): void {
   const lastSynced = useRef<string | null>(null);
 
   useEffect(() => {
@@ -36,6 +40,15 @@ export function useExternalChangeWiring(filePath: string | null, content: string
     // content는 등록 시점 스냅샷으로만 쓴다 — 변경마다 재등록하지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath]);
+
+  // 미저장 편집 여부를 조정 계층에 전달한다.
+  //
+  // 이것이 없으면 정책이 언제나 "깨끗한 버퍼"로 판단해 자동 반영하고,
+  // 사용자의 미저장 편집이 확인 없이 사라진다 — REQ-WS-028이 타협 불가라고
+  // 못박은 바로 그 결과다. CI의 AC-WS-019/022 실패가 이 누락을 드러냈다.
+  useEffect(() => {
+    useReconciliationStore.getState().dispatch({ type: 'dirty-changed', isDirty });
+  }, [isDirty]);
 
   useEffect(() => {
     if (!filePath) return;

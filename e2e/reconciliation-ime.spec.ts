@@ -147,7 +147,11 @@ test('AC-WS-019: 조합 중에는 조정이 적용되지 않는다', async () =>
       '조정 계층이 보류 상태로 진입하지 않았다 — 게이트가 걸리지 않았다',
     ).toBe('held-composition');
 
-    expect(await bufferText(f.page), '조합 중 버퍼가 교체됐다').toBe(before);
+    // 조합 중인 글자는 정당하게 버퍼에 나타난다 — `before`와의 전체 비교는
+    // 그것까지 결함으로 센다. 단언 대상은 **외부 내용이 들어왔는가**다.
+    const after = await bufferText(f.page);
+    expect(after, '조합 중 외부 내용이 버퍼에 반영됐다').not.toContain('조합 중에 바뀐 내용');
+    expect(after, '조합 이전 내용이 사라졌다').toContain('CHANNEL-LIVE-PROBE');
     expect(await observeCompositionEnd(handle), '조정이 조합을 조기 종료시켰다').toBe(0);
 
     await endComposition(handle);

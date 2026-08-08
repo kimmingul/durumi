@@ -35,17 +35,25 @@ function installFakeApi(): void {
   };
 }
 
-function Probe({ filePath, content }: { filePath: string | null; content: string }) {
-  useExternalChangeWiring(filePath, content);
+function Probe({
+  filePath,
+  content,
+  isDirty = false,
+}: {
+  filePath: string | null;
+  content: string;
+  isDirty?: boolean;
+}) {
+  useExternalChangeWiring(filePath, content, isDirty);
   return null;
 }
 
 let host: HTMLDivElement;
 let root: Root;
 
-const render = (filePath: string | null, content: string): void => {
+const render = (filePath: string | null, content: string, isDirty = false): void => {
   act(() => {
-    root.render(<Probe filePath={filePath} content={content} />);
+    root.render(<Probe filePath={filePath} content={content} isDirty={isDirty} />);
   });
 };
 
@@ -104,6 +112,30 @@ describe('버퍼 기준 동기화', () => {
   it('등록 시점 내용은 중복 통지하지 않는다', () => {
     render('/w/a.md', 'v1\n');
     expect(calls.note).toEqual([]);
+  });
+});
+
+describe('미저장 편집 전달 — REQ-WS-028', () => {
+  it('dirty 상태가 조정 계층에 전달된다', () => {
+    render('/w/a.md', 'a\n', true);
+    expect(useReconciliationStore.getState().state.isDirty).toBe(true);
+  });
+
+  it('dirty일 때 외부 변경이 버퍼를 교체하지 않는다', () => {
+    // 이 배선이 없으면 정책이 언제나 깨끗한 버퍼로 판단해 자동 반영하고
+    // 사용자의 미저장 편집이 확인 없이 사라진다.
+    const applied: string[] = [];
+    render('/w/a.md', 'a\n', true);
+    useReconciliationStore.getState().setEffectHandler((e) => {
+      if (e.kind === 'apply-to-buffer') applied.push(e.content);
+    });
+    act(() => {
+      for (const s of calls.subscribers) {
+        s({ path: '/w/a.md', kind: 'changed', content: 'disk\n', decodeError: null, size: 5, mtimeMs: 1 });
+      }
+    });
+    expect(applied, '미저장 편집이 있는데 버퍼가 교체됐다').toEqual([]);
+    expect(useReconciliationStore.getState().state.status).toBe('held-notify');
   });
 });
 

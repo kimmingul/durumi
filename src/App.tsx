@@ -73,6 +73,7 @@ export function App() {
   }, []);
   const filePath = useAppStore((s) => s.filePath);
   const content = useAppStore((s) => s.content);
+  const isDirty = useAppStore((s) => s.isDirty);
   const setContent = useAppStore((s) => s.setContent);
   const editMode = useAppStore((s) => s.editMode);
   const [macros, setMacros] = useState<Macro[]>([]);
@@ -89,7 +90,7 @@ export function App() {
   // Memo sidecar / bibliography binding / memo DOM events.
   useMemoEvents(filePath, content);
   // SPEC-V03-WORKSPACE-001 M8: 외부 변경 채널 배선.
-  useExternalChangeWiring(filePath, content);
+  useExternalChangeWiring(filePath, content, isDirty);
   // OS-close intercept that prompts on dirty buffers.
   useAppCloseGuard();
   // Auto-focus the matching card when the caret lands on a memo's line.
