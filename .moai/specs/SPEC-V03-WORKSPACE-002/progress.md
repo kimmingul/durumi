@@ -42,7 +42,7 @@ plan_artifact_commits:
   - 88baf2d  # 판 0.2.0 — 출하 중인 결함 2건을 M0으로 승격
   - 6545480  # 판 0.2.1 — OQ-8 기계 재현 반영 + progress.md 신설
   - 91a0e1f  # 판 0.3.0 — OQ-1·2·5·6 확정, 논거 5건 정정
-  - (판 0.3.1 커밋 SHA는 이 판의 커밋 직후 backfill)
+  - fdd6b66  # 판 0.3.1 — Plan Audit FAIL 대응 (Blocking 4 + Medium/Low 11)
 blocking_decisions:
   total: 9
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
