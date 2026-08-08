@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "v0.3 멀티패널 셸 — 패널 레이아웃·모드·커맨드 라우팅·비마크다운 편집 표면"
-version: "0.1.0"
+version: "0.2.0"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -22,6 +22,7 @@ tags: "multipanel, layout, editmode, focus, menurouting, nonmarkdown, language, 
 | 일자 | 버전 | 변경 |
 |---|---|---|
 | 2026-08-08 | 0.1.0 | 최초 작성 — `EPIC-V03-WORKSPACE`의 2번 SPEC. SPEC-1(`status: completed`, 커밋 `3a51f72`)의 D-1~D-7을 승계하고 D-5가 비워 둔 비마크다운 편집 표면을 채운다 |
+| 2026-08-08 | 0.2.0 | **오케스트레이터가 코드 직독으로 확인한 출하 중인 결함 2건을 §B.0으로 승격.** ① 크로스-윈도 무성 버퍼 덮어쓰기(REQ-PANEL-070) — 확정 이벤트가 모든 창에 브로드캐스트되고 렌더러가 `path`를 대조하지 않아 깨끗한 버퍼가 다른 파일 내용으로 덮어써지고 저장 시 데이터 손실. ② 전역 조합 플래그 공유(REQ-PANEL-071) — 다른 표면의 `compositionend`가 진행 중인 조합의 보류를 해제. 두 건 모두 `plan.md` §C **M0**이 재현 우선(REQ-PANEL-073)으로 닫는다. **라우팅 계층의 위치를 하드 제약으로 고정**(REQ-PANEL-072 / C-12): `tests/electron/extensionIndependence.test.ts:34-65, 171-174`가 조정 코어 5파일의 확장자 독립과 `applyExternalChange` arity 2를 강제하므로 라우팅 키는 `src/store/` 계층에 산다(`design.md` §6.2a). C-13(`.cm-content` 이중 스타일링 + e2e 34파일 셀렉터 이관) 신설, REQ-PANEL-055에 언마운트 무장 해제 경로 추가, REQ-PANEL-062에 사이드카 재바인딩 플러시 위험 추가. `plan.md`에 OQ-9(패널 배치 persist 슬롯 부재) 신설 |
 
 ---
 
@@ -51,6 +52,8 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 
 따라서 패널을 늘리기만 하면 **외부 변경이 엉뚱한 버퍼에 적용되는 경로가 생긴다.** SPEC-1의 D-2가 "패널당 배너"를 요구하는 것은 UX 취향이 아니라 이 구조적 결함을 막는 요구다. REQ-PANEL-051~055가 이에 대한 직접 대응이다.
 
+**그리고 이 결함은 미래형이 아니다.** 다중 창은 v0.2.31에 이미 출하되어 있으므로(`electron/main.ts:103`, `shared/ipc-contract.ts:310`) 위 사슬은 **오늘 성립한다** — 창 B의 깨끗한 버퍼가 창 A 파일의 내용으로 덮어써지고, 저장하면 A가 B를 지운다. 조합 플래그(`shared/reconciliation.ts:57`)도 같은 형태로 창 전역 단일이다. 두 결함은 §B.0이 REQ-PANEL-070~073으로 다루며 `plan.md` §C의 **M0**가 재현 우선으로 소유한다. 즉 이 SPEC은 기능 추가 전에 **출하 중인 데이터 손실 경로를 먼저 닫는다.**
+
 ### 승계하는 SPEC-1 결정 (재론하지 않는다)
 
 | SPEC-1 결정 | 이 SPEC에서의 귀결 |
@@ -72,10 +75,52 @@ SPEC-1은 감시·확정을 **경로별로** 만들었다(`electron/ipc/project.
 | 문서(document) | 디스크 경로 하나와 그 버퍼 내용·미저장 여부. 패널과 1:N 관계가 될 수 있다(REQ-PANEL-011) |
 | 단일 패널 축퇴(single-panel degeneracy) | 패널이 정확히 1개인 상태. 오늘의 동작과 관측상 구분되지 않아야 한다(REQ-PANEL-003) |
 | 프로젝트 없음(no-project) | SPEC-1과 동일 정의. **예외가 아니라 1급 상태** |
+| 라우팅 키(routing key) | 확정 이벤트를 어느 문서·어느 표면에 보낼지 결정하는 값. **조정 코어 밖에** 산다(REQ-PANEL-072의 구조 제약) |
 
 ---
 
 ## §B 요구사항 (GEARS)
+
+### §B.0 출하 중인 결함의 해소 — 최우선
+
+> 이 절은 v0.2.31에 **이미 출하된** 두 결함을 다룬다. 멀티패널이 만드는 결함이 아니라, 멀티패널이 곱하는 기존 결함이며 오케스트레이터가 코드 직독으로 확인했다. `plan.md` §C의 M0가 이 절을 소유하고 **재현 우선(reproduction-first)** 으로 진행한다.
+>
+> 두 결함은 같은 뿌리를 갖는다: **확정 이벤트의 라우팅 계층이 존재하지 않는다.** SPEC-1은 조정 코어를 의도적으로 경로 무지(path-blind)로 설계하고 라우팅을 위 계층에 남겼는데, 그 계층이 아직 만들어지지 않았다.
+
+**REQ-PANEL-070** (Event-driven — 출하 중인 결함) — 확정 이벤트는 대상 문서를 벗어나 적용되지 **않는다**
+**When** 확정된 외부 변경이 렌더러에 도달하면, 앱은 그 변경을 **그 경로에 해당하는 문서에만** 적용**해야 하며(shall)**, 다른 문서의 버퍼에 적용하지 **않아야 한다(shall not)**.
+
+**검증된 결함 사슬** (v0.2.31 출하본, 다중 창은 이미 지원됨 — `electron/main.ts:103` `onNewWindow`, `shared/ipc-contract.ts:310` `MenuCommand 'newWindow'`):
+
+| # | 지점 | 사실 |
+|---|---|---|
+| 1 | `electron/ipc/project.ts:40-44` | `broadcast()`가 `project:externalFileChange`를 `BrowserWindow.getAllWindows()` — **모든 창**에 보낸다 |
+| 2 | `src/store/externalChangeChannel.ts:28-50` | 그 변경을 창 전역 조정 스토어로 dispatch하며 **`change.path`를 현재 문서와 대조하지 않는다** |
+| 3 | `src/store/reconciliationStore.ts:39` | 기본 정책이 `autoApplyPolicy` |
+| 4 | `shared/reconciliation.ts:192-197` | `decision.kind === 'apply' && !state.isDirty` → `effects: [{kind:'apply-to-buffer', content: change.content}]`. **경로 검사 없이** 내용이 버퍼로 직행한다 |
+
+**귀결**: 창 A가 `a.md`를, 창 B가 `b.md`를 열고 있고 창 B의 버퍼가 깨끗할 때, `a.md`에 외부 쓰기가 들어오면 **`a.md`의 내용이 창 B의 `b.md` 버퍼에 적용된다.** 이때 `appStore.filePath`는 여전히 `b.md`이므로, 사용자가 저장하면 **A의 내용이 B의 파일을 덮어쓴다 — 데이터 손실이다.**
+
+미저장 편집이 있는 버퍼는 보호된다 — `!state.isDirty`가 배너로 강등하기 때문이다(`shared/reconciliation.ts:193`). 따라서 **영향 범위는 깨끗한 문서이며, 그것은 파일을 막 열었을 때의 상태다.** 보호 조건이 "더러운 버퍼"라는 것이 이 결함을 특히 위험하게 만든다: 사용자가 아무것도 하지 않은 문서가 가장 취약하다.
+
+**REQ-PANEL-071** (State-driven — 출하 중인 결함) — 조합 플래그는 표면을 벗어나 공유되지 **않는다**
+**While** 어떤 편집 표면에서 IME 조합이 진행 중인 동안, 다른 편집 표면의 `compositionend`가 그 조합의 보류 상태를 해제**해서는 안 된다(shall not)**.
+
+**검증된 결함**: `shared/reconciliation.ts:57`의 `composing`은 **창 전역 단일 boolean**이고, 어느 뷰의 게이트든 그것을 쓴다(`src/editor/compositionGate.ts:109, 112` ← `src/editor/MarkdownEditor.tsx:155`). 패널이 둘이면 패널 B의 `compositionend`가 패널 A가 아직 조합 중인 동안 플래그를 지운다.
+
+이것은 **`src/editor/compositionGate.ts:9-25`가 막기 위해 작성된 실패 계열을 한 계층 위에서 재도입하는 것이다.** 그 파일의 주석은 `compositionend` 직후 확정 `input` 이벤트가 별도 태스크로 오므로 그 사이에 문서를 바꾸면 IME의 composing-range 추적이 어긋난다고 기록하고, 연속 조합의 틈을 막기 위해 드레인을 예약·취소하는 구조를 만들었다. 플래그가 공유되면 그 정교한 방어가 **다른 패널에 의해** 무효화된다. 최우선 요구다 — `docs/DOCUMENT_MODE_PRINCIPLES.md` §0의 우선순위(소스 무결성 > IME 안전)와 SPEC-1 REQ-WS-020~022의 계열이다.
+
+**REQ-PANEL-072** (Unwanted) — 라우팅 계층은 조정 코어의 확장자 독립을 깨뜨리지 **않는다**
+REQ-PANEL-070·071을 해소하는 라우팅 계층은 다음 다섯 파일에 **경로 매개변수를 추가하거나 확장자 판독 수단을 도입해서는 안 된다(shall not)**: `electron/changeConfirmation.ts`, `electron/watchScope.ts`, `shared/reconciliation.ts`, `src/editor/minimalDiff.ts`, `src/editor/applyExternalChange.ts`.
+
+**근거 — 이것은 취향이 아니라 SPEC-1이 고정한 계약이다.** `tests/electron/extensionIndependence.test.ts`가 두 층으로 강제한다:
+- `:34-40` 위 다섯 파일을 `LAYER_FILES`로 열거하고, `:42-65`가 각 파일에서 확장자 판독 수단 6종(`extname` 호출 / `endsWith('.'` / 확장자 정규식 / `split('.')` / `isMarkdownFile` / 확장자 리터럴 비교)의 부재를 단언한다.
+- `:171-174` `expect(applyExternalChange.length).toBe(2)` — 적용 API의 arity를 `(target, nextContent)` 둘로 고정한다. `:162` 주석이 근거를 적는다: **"조정 계층은 경로를 아예 받지 않는다 — 그 자체가 확장자 독립의 증거다."**
+
+즉 조정 코어의 경로 무지는 **의도된 설계**이고, 경로 기반 라우팅은 **위 계층의 책임으로 남겨진 것**이다. 그 계층이 없는 것이 REQ-PANEL-070의 결함이다. 라우팅 키가 어디 사는지는 `design.md` §6.2a가 확정한다.
+
+**REQ-PANEL-073** (Ubiquitous) — 해소는 재현 우선으로 진행**한다(shall)**
+REQ-PANEL-070·071의 수정은 **결함을 실증하는 실패 테스트를 먼저 작성하고 그 실패를 확인한 뒤** 수행**되어야 한다(shall)**. 수정 후 그 테스트가 통과함이 해소의 증거**다(shall)**. 결함을 재현하지 않은 채 수정하면 무엇을 고쳤는지 알 수 없고, 두 결함 모두 조용히 재발할 수 있는 형태다(경로 미대조·플래그 공유는 컴파일 오류를 내지 않는다).
 
 ### §B.1 레이아웃과 패널 셸
 
@@ -229,7 +274,14 @@ N개 패널이 동시에 알림 상태일 때:
 IME 조합 게이트는 **패널별로 독립**이어야 한다(shall). 패널 A의 조합이 패널 B 문서의 조정을 보류시켜서는 **안 되고(shall not)**, 반대로 패널 B의 조정이 패널 A의 조합 중에 그 문서를 건드려서도 **안 된다(shall not)**. 조합 중 보류는 SPEC-1 REQ-WS-020~023의 규칙을 **각 패널에 대해 그대로** 따른다(shall).
 
 **REQ-PANEL-055** (Unwanted)
-조정 결과를 버퍼에 적용하는 실행자는 **창 전역 싱글턴이어서는 안 된다(shall not)**. 실행자는 패널(또는 문서)별로 해소**되어야 하며(shall)**, 두 번째 패널의 마운트가 첫 번째의 실행자를 무효화해서는 **안 된다(shall not)**. 오늘의 모듈 수준 `effectHandler`(`src/store/reconciliationStore.ts:35`)가 정확히 이 형태의 결함이다.
+조정 결과를 버퍼에 적용하는 실행자는 **창 전역 싱글턴이어서는 안 된다(shall not)**. 실행자는 패널(또는 문서)별로 해소**되어야 하며(shall)**, 다음 두 경우 모두에서 어떤 패널의 실행자도 무효화되지 **않아야 한다(shall not)**:
+
+| 경우 | 오늘의 동작 |
+|---|---|
+| **마운트 탈취** | 두 번째 `MarkdownEditor`의 `registerReconciliationExecutor`(`MarkdownEditor.tsx:159-162`)가 모듈 수준 단일 슬롯 `effectHandler`(`src/store/reconciliationStore.ts:35`)를 조용히 가져간다 — 첫 번째 패널은 조정을 잃는다 |
+| **언마운트 무장 해제** | 어느 패널이든 언마운트되면 정리 클로저가 `setEffectHandler(null)`(`src/editor/applyExternalChange.ts:131`)을 호출해 **그 시점에 슬롯을 쥐고 있던 패널**의 조정을 끈다 — 자기 것이 아니어도 끈다 |
+
+두 경우 모두 컴파일 오류를 내지 않고 조용히 실패하므로 전용 AC가 필요하다.
 
 **REQ-PANEL-056** (Ubiquitous)
 SPEC-1 REQ-WS-029의 **교체 가능한 조정 정책 주입 지점**은 보존**되어야 한다(shall)** — 문서별 라우팅을 도입하면서 정책 주입이 불가능해지면 SPEC-4(Diff 승인 UI)가 조정 계층을 재작성해야 한다. 정책은 최소한 창 단위로 주입 가능**해야 하며(shall)**, 주입된 정책이 모든 문서에 적용**된다(shall)**.
@@ -254,6 +306,8 @@ SPEC-1 REQ-WS-029의 **교체 가능한 조정 정책 주입 지점**은 보존*
 
 **REQ-PANEL-062** (Ubiquitous)
 문서에 결속된 보조 상태 — 메모 사이드카, 서지(`.bib`) 해석 — 는 **활성 원고 패널의 문서**를 따라**야 한다(shall)**. 활성 원고 패널이 바뀌면 이 상태들도 그 문서 기준으로 다시 해석**된다(shall)**. 어떤 경우에도 한 문서의 메모가 다른 문서 옆에 저장되어서는 **안 된다(shall not)**.
+
+**재바인딩이 조용한 플러시를 유발하지 않아야 한다(shall not)**: `useMemoSidecarStore.loadFor`(`src/store/memoSidecarStore.ts:70-84`)는 한 번에 `docPath` 하나만 붙들고, 재바인딩 시 이전 문서의 dirty 사이드카를 `await window.api.memoSidecarWrite(prev.docPath, prev.sidecar)`로 **먼저 플러시한다**. 패널 전환마다 이 경로가 돌면 사용자가 활성 패널을 오갈 때마다 사이드카 쓰기가 발생하고, 그 쓰기는 SPEC-1의 감시 계층에 외부 변경 이벤트로 되돌아온다. 활성 패널 전환은 사이드카 디스크 쓰기를 유발하지 **않아야 하며(shall not)**, 패널별 사이드카 상태를 동시에 보유하거나 전환이 아닌 실제 편집 시점에만 쓰기가 일어**나야 한다(shall)**.
 
 **REQ-PANEL-063** (Ubiquitous)
 목차와 검색 히트는 **어느 패널에 작용하는지 결정 가능해야 한다(shall)**. 목차는 활성 원고 패널의 문서 구조를 표시하고 그 패널로 이동**시키며(shall)**, 검색 히트 열기는 활성 패널에 문서를 열거나 이미 그 문서를 연 패널로 이동**한다(shall)** — 새 패널을 사용자 요청 없이 만들지 **않는다(shall not)**.
@@ -280,6 +334,8 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 | C-9 | `docs/DOCUMENT_MODE_PRINCIPLES.md`를 수정하지 않는다 (SPEC-1 AC-WS-037 불변식) | `docs/v0.3-signoff.md` §5 |
 | C-10 | 기존 테스트 baseline(199 테스트 파일, 33 e2e spec)을 근거 없이 깨뜨리지 않는다. 사이드바 스토어·탭 구조 테스트(`tests/store/{sidebarStore,rightSidebarStore}.test.ts`, `tests/sidebar/*.test.tsx`)를 깨는 설계는 REQ-PANEL-002 위반으로 간주한다. 반대로 조정·감시 계층 테스트(`tests/hooks/useExternalChangeWiring.test.tsx`, `tests/components/reconciliationBanner.test.tsx`, `e2e/reconciliation-ime.spec.ts`)는 문서 축 도입에 따라 **의도적으로 재작성된다** | `research.md` §8 |
 | C-11 | 새 런타임 의존성을 추가하지 않는다. 언어 문법은 이미 의존성인 `@codemirror/language-data`에서 조달한다 | REQ-PANEL-041, `package.json:39` |
+| C-12 | **조정 코어 5파일의 확장자 독립을 깨뜨리지 않는다.** `electron/changeConfirmation.ts`, `electron/watchScope.ts`, `shared/reconciliation.ts`, `src/editor/minimalDiff.ts`, `src/editor/applyExternalChange.ts` 에 확장자 판독 수단을 넣지 않으며 `applyExternalChange`의 arity를 2로 유지한다. `tests/electron/extensionIndependence.test.ts`는 무변경 통과해야 한다 | REQ-PANEL-072, 해당 테스트 `:34-65`(구조적 단언) + `:171-174`(arity 단언) |
+| C-13 | `.cm-content`는 전역 CSS(`src/styles/global.css:32`)와 뷰별 테마(`src/editor/theme.ts:10-15`) 양쪽에서 스타일링되며 전역 규칙이 문서 전체에 걸린다. 패널별로 다른 측정폭이 필요하면 **전역 규칙을 패널 스코프로 좁혀야 하고**, 그 변경은 `.cm-content`를 유일 요소로 가정하는 e2e 34개 파일의 셀렉터 이관을 수반한다 — 부수 효과가 아니라 명시적 작업이다 | REQ-PANEL-042, `plan.md` §C M4 + §B.8, `acceptance.md` AC-PANEL-095 |
 
 ---
 
@@ -335,7 +391,9 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 
 ## §E 성공 기준
 
-- §B의 요구사항(REQ-PANEL-001~007, 010~014, 020~024, 030~036, 040~047, 050~058, 060~064 — 총 46개)이 모두 관측 가능한 수용 기준으로 매핑된다(`acceptance.md`, 모든 AC가 REQ ID 또는 제약 ID를 인용)
+- §B의 요구사항(REQ-PANEL-070~073, 001~007, 010~014, 020~024, 030~036, 040~047, 050~058, 060~064 — 총 50개)이 모두 관측 가능한 수용 기준으로 매핑된다(`acceptance.md`, 모든 AC가 REQ ID 또는 제약 ID를 인용)
+- **§B.0의 출하 중인 결함 두 건이 재현 우선으로 해소된다** — 실패 테스트 선행, 수정, 통과 확인. 이것이 M0이며 기능 마일스톤보다 앞선다
+- `tests/electron/extensionIndependence.test.ts`가 무변경 통과한다 (C-12)
 - C-1이 지정한 범위에 대해 프로젝트 있음/없음 두 상태가 검증된다
 - **단일 패널 축퇴가 오늘의 동작과 관측상 구분되지 않는다** — 이것이 회귀 방어의 1차 방어선이다
 - 조정·감시 계층이 N개 문서에 대해 동작함이 유닛 계층에서 검증된다(문서 축 도입)
@@ -357,4 +415,5 @@ SPEC-1이 남긴 미구현 표면 두 가지의 **소유권은 이 SPEC에 있�
 - `docs/DOCUMENT_MODE_PRINCIPLES.md` §0(범위 선언), §1(소스 무결성), §2(IME 안전)
 - `research.md` (동일 디렉터리) — 8개 영역 조사 + 멀티패널 위험 목록
 - `design.md` (동일 디렉터리) — 레이아웃·상태·라우팅·extension 조립 설계와 기각된 대안
-- 코드: `src/editor/MarkdownEditor.tsx:86-175`(유일한 마운트·조립 지점), `src/App.tsx:122-190`(레이아웃), `src/store/{appStore,reconciliationStore,sidebarStore,rightSidebarStore}.ts`, `src/hooks/useMenuCommandRouter.ts`, `src/hooks/useExternalChangeWiring.ts`, `shared/reconciliation.ts`, `electron/ipc/{project,files}.ts`, `electron/pathGuard.ts`, `electron/pendingAssets.ts:150-181`
+- `tests/electron/extensionIndependence.test.ts` `:34-65`(조정 5파일 확장자 독립 구조 단언), `:171-174`(`applyExternalChange` arity 2 단언) — C-12·REQ-PANEL-072의 하드 제약 출처
+- 코드: `src/editor/MarkdownEditor.tsx:86-175`(유일한 마운트·조립 지점), `src/editor/decorations/index.ts:32-76`(`liveDecorations` 43항목 평면 배열), `src/App.tsx:122-190`(레이아웃), `src/store/{appStore,reconciliationStore,sidebarStore,rightSidebarStore,memoSidecarStore}.ts`, `src/hooks/useMenuCommandRouter.ts`, `src/hooks/useExternalChangeWiring.ts`, `src/editor/compositionGate.ts:9-25, 109-112`, `shared/reconciliation.ts:57, 192-197`, `electron/ipc/{project,files}.ts`, `electron/pathGuard.ts`, `electron/pendingAssets.ts:150-181`, `src/styles/global.css:32` + `src/editor/theme.ts:10-15`(`.cm-content` 이중 스타일링)

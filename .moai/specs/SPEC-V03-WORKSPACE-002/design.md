@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.1.0"
+version: "0.2.0"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -23,9 +23,9 @@ tags: "design, multipanel, layout, state-ownership, routing, extension-assembly"
 
 ---
 
-## 1. 이 설계를 강제하는 다섯 가지 사실
+## 1. 이 설계를 강제하는 여덟 가지 사실
 
-설계 자유도는 취향이 아니라 코드에서 나온다. `research.md`가 확인한 다섯 사실이 선택지를 좁힌다.
+설계 자유도는 취향이 아니라 코드에서 나온다. `research.md`가 확인한 여덟 사실이 선택지를 좁힌다. F1~F5는 초판, **F6~F8은 오케스트레이터의 독립 조사에서 확인되어 추가**되었다 (`research.md` §9.7).
 
 | # | 사실 | 근거 | 설계에 미치는 강제 |
 |---|---|---|---|
@@ -34,6 +34,9 @@ tags: "design, multipanel, layout, state-ownership, routing, extension-assembly"
 | F3 | 렌더러의 조정 계층은 **문서 축이 아예 없다** | `shared/reconciliation.ts:54-62`(state에 path 없음), `:209-268`(path 미비교), `src/store/reconciliationStore.ts:35`(모듈 싱글턴 핸들러) | 문서 축 도입은 선택이 아니라 **정확성 요구**다(REQ-PANEL-051~055) |
 | F4 | 편집 모드는 이미 **뷰별 StateField**를 갖고 있고 값만 전역에서 흘러온다 | `src/editor/editMode.ts:26-38` vs `src/store/appStore.ts:19` → `src/App.tsx:78` → prop | 데코레이션 11개 모듈(`research.md` §3.2)은 **손대지 않아도** 패널별 모드가 성립한다. 고칠 곳은 값의 출처 4곳뿐 |
 | F5 | 레이아웃은 1차원 flex row 하나이며 사이드바 CSS가 `flex-shrink:0` + 인라인 width를 전제한다 | `src/App.tsx:123-188`, `src/styles/global.css:345-354, 1047+` | 중앙 자식 안에서 분할하면 사이드바 CSS 무변경. 통합 그리드는 그 전제를 전부 다시 써야 한다 |
+| F6 | **조정 코어 5파일의 경로 무지는 테스트로 고정된 의도된 설계다** | `tests/electron/extensionIndependence.test.ts:34-40`(`LAYER_FILES`), `:42-65`(확장자 판독 수단 6종 부재 단언), `:171-174`(`applyExternalChange.length === 2`), `:162` 주석 | 라우팅 키를 **그 5파일 안에 넣을 수 없다.** 경로 라우팅은 반드시 위 계층에 산다 — §6.2a가 위치를 확정한다 |
+| F7 | 모드→extension 매핑은 6줄 함수 하나이고 `liveDecorations`는 43항목 평면 배열이다 | `src/editor/MarkdownEditor.tsx:51-57` (`mode === 'markdown' ? [] : liveDecorations`), `src/editor/decorations/index.ts:32-76` | 파일 종류→extension 매핑의 **자연스러운 확장 지점이 이미 있다.** 새 아키텍처를 발명할 필요가 없다 |
+| F8 | `.cm-content`가 전역 CSS와 뷰별 테마 양쪽에서 스타일링되고 전역이 문서 전체에 걸린다 | `src/styles/global.css:32`, `src/editor/theme.ts:10-15` (양쪽 `padding:32px 64px; max-width:800px; margin:0 auto`) | 좁은 보조 패널이 원고의 800px 중앙 정렬 측정폭을 상속한다. 고치려면 전역 규칙을 패널 스코프로 좁혀야 하고, 그것이 e2e 34파일의 셀렉터 이관을 부른다 |
 
 ---
 
@@ -63,6 +66,20 @@ tags: "design, multipanel, layout, state-ownership, routing, extension-assembly"
 ├─ 표시 모드 (원고 패널만)
 └─ 조정 배너 표면 (자기 문서의 조정 상태를 렌더)
 ```
+
+### 2.1a 이미 패널 준비가 된 것 — 보존하고 재작성하지 않는다
+
+CodeMirror의 `StateField`는 `EditorState`마다 하나이므로, 뷰를 늘리면 **그 필드들은 공짜로 패널별이 된다.** 다음은 손댈 필요가 없고 손대면 안 된다:
+
+| 상태 | 위치 | 패널별인 이유 |
+|---|---|---|
+| 편집 모드 | `src/editor/editMode.ts:28` `editModeField` | `StateField` |
+| 문서 경로 | `src/editor/docPath.ts:17` `docPathField` | `StateField` |
+| 포커스 모드 / 타이프라이터 모드 | `src/editor/viewModes.ts:21, 33` | `StateField` 2개 |
+| 실행 취소 이력 | `src/editor/MarkdownEditor.tsx:89` `history()` | extension이 `EditorState`에 붙는다 — 별개 undo 스택이 공짜 |
+| 캐럿·선택·스크롤 | `EditorState.selection`, `view.scrollDOM` | 구조상 |
+
+**설계 귀결**: 패널화 작업의 실제 표면은 이보다 훨씬 좁다. 고쳐야 하는 것은 **뷰 밖에 있는 것들** — zustand 스토어(문서 상태·조정 상태·메모·서지), 모듈 수준 싱글턴, 창 전역 이벤트 버스, 커맨드 라우터 — 이며 CodeMirror 내부는 이미 맞다. `design.md` §1 F4가 편집 모드에 대해 말한 것이 이 표 전체로 일반화된다.
 
 ### 2.2 실행 취소 이력이 패널별인 것은 결정이 아니라 CodeMirror의 성질이다
 
@@ -97,6 +114,21 @@ REQ-PANEL-002가 요구하는 것은 관측 동작 보존이며, 그 최소 형�
 ### 3.2 확정: persist 소유자를 옮기지 않는다
 
 persist는 오늘 컴포넌트가 소유한다(`src/components/Sidebar.tsx:41-52`, 500ms 디바운스). 패널 배치 persist(REQ-PANEL-006)는 **별개 prefs 키**로 추가하며, 사이드바 persist 경로를 건드리지 않는다. 두 축을 한 저장 경로로 합치면 패널 배치 변경이 사이드바 폭을 다시 쓰게 되어 REQ-PANEL-007을 위반할 여지가 생긴다.
+
+### 3.2a `.cm-content` 이중 스타일링 — 좁은 보조 패널의 측정폭 문제 (F8)
+
+`.cm-content`는 두 곳에서 스타일링된다:
+
+```
+src/styles/global.css:32   .cm-content { padding: 32px 64px; max-width: 800px; margin: 0 auto; … }
+src/editor/theme.ts:10-15  '.cm-content': { caretColor: …, padding: '32px 64px', maxWidth: '800px', margin: '0 auto' }
+```
+
+전역 규칙은 문서 전체에 걸리므로, 폭 300px짜리 보조 패널의 `.cm-content`도 **원고용 800px 중앙 정렬 + 좌우 64px 패딩**을 상속한다. 결과는 코드가 좁은 기둥에 갇히는 것이며, `.py` 편집에 부적합하다.
+
+고치는 방향은 전역 규칙을 **패널(또는 파일 종류) 스코프로 좁히는 것**이고, 그 순간 다음이 따라온다: `.cm-content`를 **유일 요소로 가정하는 e2e 파일이 34개**다(`grep -rl "cm-content" e2e/ | wc -l` → 34). 셀렉터를 패널 지목 형태로 이관해야 하며, 이는 부수 효과가 아니라 **명시적 작업 항목**이다(C-13, `plan.md` §C M4 + §B.8, `acceptance.md` AC-PANEL-095).
+
+**설계 판단**: 이 SPEC이 측정폭을 반드시 바꿔야 하는지는 요구사항이 정하지 않는다 — REQ-PANEL-042는 마크다운 전용 *확장*의 부재만 요구하고 CSS 측정폭은 다루지 않는다. 따라서 두 단계로 나눈다: (i) 34파일 셀렉터 이관은 **패널 지목 수단 도입(M4의 계약 산출물)과 같은 작업**이므로 그때 함께 처리한다. (ii) 측정폭 조정 자체는 그 위에서 저비용이 되며, 하지 않아도 기능은 성립한다(좁은 기둥은 미관 문제이고 바이트 무결성과 무관하다). 순서를 뒤집어 측정폭부터 손대면 34파일 이관이 준비되기 전에 e2e가 깨진다.
 
 ### 3.3 미해결: 패널 컨테이너의 구조
 
@@ -154,9 +186,20 @@ REQ-PANEL-032가 "아무 일도 하지 않는다"를 택한 근거는 대안의 
 
 ## 5. 파일 종류별 extension 조립
 
-### 5.1 확정: 조립 지점은 하나로 유지한다
+### 5.1 확정: 조립 지점은 하나로 유지하고, 이미 있는 확장 지점을 쓴다
 
 F1에 따라 조립은 `MarkdownEditor.tsx:86-148` 한 곳이다. 파일 종류가 늘어도 **조립 지점을 늘리지 않는다** — 두 곳에서 조립하면 공통 항목(`history`, `autoPair`, `viewModes`, `makeTheme`, `highlightActiveLine`, `lineWrapping`, `updateListener`, `docPathStateExtension`)이 드리프트한다. `structure.md` §10이 기록한 `StyleSet` 중복과 같은 함정이다.
+
+**F7 — 확장 지점이 이미 있다.** 모드→extension 매핑 전체가 6줄 함수 하나다:
+
+```
+src/editor/MarkdownEditor.tsx:51-57
+function decorationsForMode(mode: EditMode) {
+  return mode === 'markdown' ? [] : liveDecorations;
+}
+```
+
+그리고 `liveDecorations`(`src/editor/decorations/index.ts:32-76`)는 **43항목 평면 배열**이며 전부 마크다운 특화다. 즉 파일 종류 축은 이 함수의 형제로 들어가면 된다 — 종류를 받아 마크다운층 배열을 주거나 빈 배열/언어 문법을 주는 같은 형태의 매핑 함수 하나. **새 아키텍처를 발명할 필요가 없고, 43항목을 개별로 분해할 필요도 없다** (평면 배열 하나를 통째로 넣거나 빼는 입도가 REQ-PANEL-042의 요구와 정확히 일치한다).
 
 ### 5.2 조립의 3층 구조
 
@@ -239,6 +282,56 @@ main: 경로별 확정 ──broadcast──► renderer
 1. **상태 키잉** — `ReconciliationState`를 경로별로 보관한다. `reduceReconciliation`은 순수 함수이므로(`shared/reconciliation.ts:209`) 상태 하나에 대한 전이 로직은 **그대로 재사용**할 수 있다. 바뀌는 것은 보관 구조와 라우팅뿐이며, 이는 M2가 상태 기계를 순수 함수로 분리해 둔 설계의 배당금이다.
 2. **실행자 키잉** — 모듈 싱글턴(`reconciliationStore.ts:35`)을 경로별 등록으로 바꾼다. 같은 문서를 두 패널이 참조하면 실행자는 문서당 1개면 충분하다(버퍼가 하나이므로).
 3. **표면 키잉** — `ReconciliationSurface`를 창 전역 1개(`App.tsx:189`)에서 패널별로 옮긴다(REQ-PANEL-053).
+
+### 6.2a 라우팅 키는 어디에 사는가 — F6이 강제하는 위치
+
+**결론: 라우팅 키는 `src/store/` 계층에 산다. 조정 코어 5파일은 전혀 바뀌지 않는다.**
+
+F6이 금지하는 것과 허용하는 것을 정확히 구분해야 한다:
+
+| | 금지 (테스트가 고정) | 허용 |
+|---|---|---|
+`shared/reconciliation.ts` | 확장자 판독 수단 도입(`:42-65`) | **`ConfirmedChange.path`는 이미 존재한다**(`:20`) — 타입은 경로를 나르고 리듀서가 쓰지 않을 뿐이다. 리듀서 시그니처 `reduceReconciliation(state, event, policy)`는 그대로 둔다 |
+`src/editor/applyExternalChange.ts` | arity 변경(`:171-174`가 2로 고정) | **`target`(첫 인자)이 이미 패널 식별자다** — `DispatchTarget`은 그 뷰/버퍼를 가리킨다. 어느 target에 적용할지 고르는 것이 곧 라우팅이며, 그 선택은 호출자의 몫이다 |
+`electron/changeConfirmation.ts`, `electron/watchScope.ts`, `src/editor/minimalDiff.ts` | 확장자 판독 | 무변경 |
+
+즉 **오늘의 API가 이미 라우팅을 지원한다.** 빠진 것은 호출자다:
+
+```
+                           ┌── 여기가 없다 (REQ-PANEL-070의 결함) ──┐
+electron/ipc/project.ts:40 │                                        │
+  broadcast(모든 창) ──────┼─► src/store/externalChangeChannel.ts   │
+                           │     path로 문서 조회                    │
+                           │       ├ 열린 문서 아님 → 폐기           │
+                           │       ▼                                │
+                           │   Map<path, ReconciliationState>       │
+                           │       │                                │
+                           │   reduceReconciliation(state[p], …)  ◄─┼── shared/reconciliation.ts 무변경
+                           │       │                                │
+                           │   Map<path, DispatchTarget>            │
+                           │       ▼                                │
+                           └─► applyExternalChange(target, content) ┘  ◄── arity 2 유지
+```
+
+세 개의 `Map`이 라우팅 키를 담고, 셋 다 `src/store/`에 있다 — `LAYER_FILES`에 포함되지 않는 계층이다. `applyExternalChange`는 여전히 "이 target에 이 내용을 적용하라"만 안다. **경로도 확장자도 모른다.**
+
+이 배치가 F6의 근거와 정합한다: `:162` 주석의 "조정 계층은 경로를 아예 받지 않는다 — 그 자체가 확장자 독립의 증거다"는 **코어를 두고 한 말**이고, 그 위에 라우팅 계층을 얹는 것은 그 증거를 약화시키지 않는다. 오히려 라우팅이 위에 있어야 코어가 계속 경로 무지일 수 있다.
+
+**기각된 대안**
+
+| 대안 | 기각 근거 |
+|---|---|
+`reduceReconciliation`에 `path` 대조 추가 | 확장자 정규식에 걸리지는 않지만 `:162`가 명시한 설계 근거("경로를 아예 받지 않는다")를 무효화한다. 그리고 한번 경로를 받으면 확장자 분기가 **한 줄 거리**가 되어 `:42-65`의 방어가 관례로 전락한다 |
+`applyExternalChange(target, content, path)` | `:171-174`가 arity 2를 단언하므로 **테스트가 즉시 깨진다.** C-12 위반 |
+`ExternalFileChange`를 창별로 필터링해 main에서 보낸다 | main이 어느 창이 어느 파일을 여는지 알아야 하는데 `electron/ipc/project.ts:36`의 `service`는 프로세스 전역 1개이고 `owned` Set이 경로 기준이라 **창 귀속 정보가 없다**. 그 정보를 넣는 것은 창 소유권 모델 도입이며 `spec.md` §D.4가 범위 밖으로 둔 작업이다. 렌더러 측 대조가 최소 변경이고, 브로드캐스트를 유지하면 같은 파일을 두 창이 열었을 때 둘 다 알림을 받는 것이 자연히 성립한다 |
+
+### 6.2b 조합 플래그 — 같은 결함, 같은 해법 위치
+
+`shared/reconciliation.ts:57`의 `composing`은 `ReconciliationState`의 필드다. 상태를 `Map<path, ReconciliationState>`로 키잉하면 **`composing`도 자동으로 문서별이 된다** — 별도 조치가 필요 없다. 필드 정의도, 전이 로직(`:218-228`)도 바뀌지 않는다.
+
+바뀌는 것은 게이트가 어디로 dispatch하는가뿐이다. 오늘은 `compositionGate.ts:109, 112`가 창 전역 스토어의 단일 상태를 쓰므로 패널 B의 `compositionend`가 패널 A의 조합 보류를 해제한다(REQ-PANEL-071의 결함). 문서 키잉 후에는 각 패널의 게이트가 **자기 패널이 참조하는 문서의 상태**로 dispatch한다.
+
+§6.3의 OR 합류는 그 위에 얹힌다: 한 문서를 두 패널이 참조하면 그 문서의 `composing`은 두 게이트의 논리적 OR이어야 한다. 이 합류 계산도 `src/store/` 계층의 몫이다 — `reduceReconciliation`은 이미 계산된 boolean을 받는 이벤트(`composition-start`/`composition-end`)만 본다.
 
 ### 6.3 조합(IME) 축은 패널별, 조정 상태는 문서별 — 두 축이 다르다
 
@@ -362,7 +455,7 @@ e2e는 macOS 전용이다. 패널 레이아웃은 CSS·flex 계산이므로 플�
 
 ## 10. 참조
 
-- `spec.md` — 요구사항 46개 (REQ-PANEL-001~064)
+- `spec.md` — 요구사항 50개 (REQ-PANEL-070~073 + 001~064)
 - `plan.md` — §A 확정 결정 + **미해결 결정**, §C 마일스톤, §D 위험
 - `acceptance.md` — 수용 기준
 - `research.md` — 8개 영역 조사 + 멀티패널 위험 목록 + 미검증 항목

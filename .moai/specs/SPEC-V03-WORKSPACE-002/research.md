@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "코드베이스 조사 — 멀티패널 셸"
-version: "0.1.0"
+version: "0.2.0"
 status: draft
 created: 2026-08-08
 updated: 2026-08-08
@@ -364,7 +364,48 @@ useFileMenuCommands.ts:50-77  doSave → window.api.fileSave(filePath, content) 
 | 정책 주입 지점 (REQ-WS-029) | 창 전역 1개 (`setPolicy`) | `reconciliationStore.ts:29-30, 49` |
 | 조정 실행자 등록 | **모듈 싱글턴** — 마지막 등록만 살아남는다 | `reconciliationStore.ts:35, 51-53`; `applyExternalChange.ts:123-132` |
 
-**소스 읽기로 도출한 결함 가설 (미검증 — §10 참조)**: `ExternalFileChange`가 모든 창으로 브로드캐스트되고(`ipc/project.ts:40-44`) 렌더러가 `path`를 대조하지 않으므로(`externalChangeChannel.ts:28-50`, `reconciliation.ts` 전체), 창 B에서 깨끗한 버퍼를 들고 있을 때 창 A가 연 파일의 변경 이벤트가 도착하면 `autoApplyPolicy`(`reconciliation.ts:97-100`)가 `apply`를 반환해 창 B의 버퍼가 **창 A의 파일 내용으로 덮어써질 수 있다**. 이는 SPEC-2가 만드는 결함이 아니라 오늘의 다중 창 경로에 이미 존재하는 것으로 보이며, 멀티패널은 이 축을 창에서 패널로 곱한다. 실행 재현은 하지 않았다 — **소스 근거 기반 가설**이다.
+### 7.3a 결함 A — 크로스-윈도 무성 버퍼 덮어쓰기 (**확인됨**, v0.2.31 출하 중)
+
+> **판정 이력**: 이 문서 초판은 이 항목을 "소스 근거 기반 미검증 가설"로 표시했다. **오케스트레이터가 코드 직독으로 4단계 사슬을 독립 확인해 확정되었다** (2026-08-08). `verification-claim-integrity` §1.1 surface 3의 요구("결함 주장은 도메인 도구/직독으로 확인될 때까지 가설")를 충족하므로 가설 표시를 해제한다. REQ-PANEL-070이 소유하고 `plan.md` §C의 **M0**이 재현 우선으로 닫는다.
+
+확인된 사슬:
+
+| # | 지점 | 사실 |
+|---|---|---|
+| 1 | `electron/ipc/project.ts:40-44` | `broadcast()`가 `project:externalFileChange`를 `BrowserWindow.getAllWindows()` — **모든 창**에 보낸다 |
+| 2 | `src/store/externalChangeChannel.ts:28-50` | 창 전역 조정 스토어로 dispatch하며 **`change.path`를 현재 문서와 대조하지 않는다** |
+| 3 | `src/store/reconciliationStore.ts:39` | 기본 정책이 `autoApplyPolicy` |
+| 4 | `shared/reconciliation.ts:192-197` | `decision.kind === 'apply' && !state.isDirty` → `effects: [{kind:'apply-to-buffer', content: change.content}]`. **경로 검사 없이** 내용이 버퍼로 직행 |
+
+**전제 충족**: 다중 창은 이미 출하되어 있다 — `electron/main.ts:103` `onNewWindow`, `shared/ipc-contract.ts:310` `MenuCommand 'newWindow'`, `electron/menu.ts:93` 메뉴 항목(`CmdOrCtrl+Shift+N`).
+
+**귀결**: 창 A가 `a.md`, 창 B가 `b.md`를 열고 창 B의 버퍼가 깨끗할 때, `a.md`에 외부 쓰기가 들어오면 `a.md`의 내용이 창 B의 `b.md` 버퍼에 적용된다. `appStore.filePath`는 여전히 `b.md`이므로 저장 시 **A의 내용이 B의 파일을 덮어쓴다 — 데이터 손실이다.**
+
+**영향 범위의 역설**: `!state.isDirty`(`reconciliation.ts:193`)가 dirty 버퍼를 배너로 강등해 보호하므로, **영향을 받는 것은 깨끗한 문서 — 파일을 막 열어 아무것도 하지 않은 상태**다. 편집 중인 문서가 안전하고 손대지 않은 문서가 취약하다는 비대칭이 이 결함을 특히 위험하게 만든다.
+
+### 7.3b 결함 B — 전역 조합 플래그 공유 (**확인됨**, v0.2.31 출하 중)
+
+`shared/reconciliation.ts:57`의 `composing`은 `ReconciliationState`의 **단일 boolean**이고 어느 뷰의 게이트든 그것을 쓴다: `src/editor/compositionGate.ts:109`(`composition-start` dispatch), `:112`(`composition-end` dispatch) ← `src/editor/MarkdownEditor.tsx:155`가 뷰의 `contentDOM`에 부착.
+
+패널이 둘이면 **패널 B의 `compositionend`가 패널 A가 아직 조합 중인 동안 플래그를 지운다.** 그 순간 패널 A 문서의 보류가 풀려 조정이 조합 도중 문서를 건드린다.
+
+이것은 `src/editor/compositionGate.ts:9-25`가 **막기 위해 작성된 실패 계열을 한 계층 위에서 재도입하는 것**이다. 그 주석은 `compositionend` 다음에 확정 텍스트를 담은 `input` 이벤트가 별도 태스크로 오므로 그 사이에 문서를 바꾸면 IME의 composing-range 추적이 어긋난다고 기록하고, 연속 조합의 틈을 막기 위해 드레인을 예약·취소하는 구조(`:66-82`)를 만들었다. 플래그가 공유되면 그 방어가 **다른 패널에 의해** 무효화된다. IME 안전 최우선 항목이다.
+
+REQ-PANEL-071이 소유하고 M0이 닫는다. `design.md` §6.2b가 해법 위치를 확정한다 — 상태를 문서별로 키잉하면 `composing` 필드 정의도 전이 로직도 바뀌지 않는다.
+
+### 7.3c 조정 코어의 경로 무지는 **의도된 설계이며 테스트로 고정되어 있다**
+
+두 결함을 고칠 때 반드시 알아야 할 제약이다. `tests/electron/extensionIndependence.test.ts`:
+
+| 위치 | 단언 |
+|---|---|
+| `:34-40` | `LAYER_FILES` = `electron/changeConfirmation.ts`, `electron/watchScope.ts`, `shared/reconciliation.ts`, `src/editor/minimalDiff.ts`, `src/editor/applyExternalChange.ts` |
+| `:42-65` | 각 파일에서 확장자 판독 수단 6종(`extname` 호출 / `endsWith('.'` / 확장자 정규식 / `split('.')` / `isMarkdownFile` / 확장자 리터럴 비교)의 **부재**를 단언 (주석 줄 제외) |
+| `:67-73` | 감지 정규식 자체의 감지력을 `electron/fs.ts`(실제 확장자 분기가 있는 파일)로 검증 — 정규식이 전부 오타여도 통과하는 것을 막는다 |
+| `:171-174` | `expect(applyExternalChange.length).toBe(2)` — `(target, nextContent)` arity 고정 |
+| `:162` 주석 | **"조정 계층은 경로를 아예 받지 않는다 — 그 자체가 확장자 독립의 증거다"** |
+
+즉 SPEC-1은 코어를 의도적으로 경로 무지로 만들고 **경로 라우팅을 위 계층에 남겼다.** 그 계층이 만들어지지 않은 것이 §7.3a·§7.3b의 결함이다. 따라서 SPEC-2의 수정은 코어에 경로를 넣는 것이 아니라 **없는 계층을 만드는 것**이며, 위치는 `design.md` §6.2a가 확정한다(`src/store/` 계층의 `Map` 3종). 코어 5파일은 무변경이다(C-12).
 
 ### 7.4 SPEC-1이 남긴 미구현 표면
 
@@ -405,7 +446,7 @@ useFileMenuCommands.ts:50-77  doSave → window.api.fileSave(filePath, content) 
 | `tests/editor/applyExternalChange.test.ts` | 최소 diff, 캐럿·스크롤 보존, `isolateHistory:'full'` | 뷰별이므로 안전 ✅ |
 | `e2e/reconciliation-ime.spec.ts` (6 test) | AC-WS-019/020/020b/021/022/023c — 창 전역 배너 표면 + 단일 에디터 | 셀렉터가 단일 에디터/단일 배너 전제 🔴 |
 | `e2e/composition-primitive.spec.ts` | 조합 유지형 프리미티브 자기 검증 | 단일 에디터 전제 ⚠️ |
-| `tests/electron/extensionIndependence.test.ts` | 확장자 무관 확정·조정 | 강화될 뿐 깨지지 않는다 ✅ |
+| `tests/electron/extensionIndependence.test.ts` | 조정 5파일의 확장자 판독 수단 부재(`:42-65`) + `applyExternalChange` arity 2(`:171-174`) | **하드 제약이다** — 라우팅 계층이 이 5파일을 건드리면 즉시 깨진다. 무변경 통과가 C-12의 증거이며 §7.3c가 상세를 담는다 🔒 |
 | `tests/editor/reconcileIntegrity.test.ts` | 후행공백·탭·BOM·NFD·제로폭 보존 | 비마크다운 AC가 이 위에 얹힌다 ✅ |
 
 🔴 = 멀티 인스턴스 도입 시 **재작성이 불가피**, ⚠️ = 설계 선택에 따라 깨질 수 있음, ✅ = 안전 또는 제약으로만 작용.
@@ -462,19 +503,77 @@ useFileMenuCommands.ts:50-77  doSave → window.api.fileSave(filePath, content) 
 | 위치 | 형태 | 위험 |
 |---|---|---|
 | `electron/ipc/project.ts:36` | `let service` — 프로세스 전역 `ExternalWatchService` 1개 | 창이 여러 개면 하나의 서비스가 모든 창의 파일을 소유한다. `owned` Set이 경로 기준이라 **창 귀속 정보가 없다** |
-| `electron/ipc/project.ts:40-44` | 모든 창에 브로드캐스트 | §7.3 결함 가설의 뿌리 |
+| `electron/ipc/project.ts:40-44` | 모든 창에 브로드캐스트 | §7.3a 확인된 결함 A의 1단계. M0은 이 범위를 **바꾸지 않고** 렌더러 측 경로 대조로 닫는다 (`design.md` §6.2a 기각 대안 3) |
 | `electron/pathGuard.ts:63-64` | `sessionAllowed`/`sessionAllowedTrees` 프로세스 전역 Set | 의도된 설계 — 충돌 아님 |
+
+---
+
+## 9.6 SPEC-2 범위 밖 — SPEC-3이 고쳐야 할 신뢰 경계 위험 (기록만)
+
+> 오케스트레이터가 코드 직독으로 확인한 항목이며 **SPEC-2로 범위화하지 않는다.** SPEC-3(CLI 에이전트 어댑터)이 프로세스 실행 경로의 신뢰 경계를 다룰 때 함께 고쳐야 하므로 여기 기록한다.
+
+`electron/ipc/pandoc.ts:38-42` `pandoc:setCustomPath`:
+
+```
+ipcMain.handle('pandoc:setCustomPath', async (_e, customPath: string) => {
+  await setPreferences({ pandocPath: customPath });   // ← prefs:set을 거치지 않는다
+  clearPandocCache();
+  return detectPandoc(customPath);                    // → probe → runProcess → spawn
+});
+```
+
+두 가지가 겹친다:
+
+1. **`assertPrefsPatchAllowed` 우회**: 렌더러가 준 문자열이 `setPreferences`로 **직접** 들어간다. `prefs:set` 채널을 거치지 않으므로 `electron/pathGuard.ts:183-215`의 패치 검증이 적용되지 않는다. 게다가 그 검증은 `workspaceFolders` / `recentFiles` / `recentFolders` **세 필드만** 검사하므로, `pandocPath`는 `prefs:set`을 거쳤더라도 검증 대상이 아니다.
+2. **실행으로 이어진다**: 저장된 경로가 `detectPandoc` → `probe` → `runProcess` → `spawn`으로 흘러 **렌더러가 지정한 임의 바이너리가 실행 가능**해진다.
+
+`EPIC-V03-WORKSPACE.md` §6의 불변식("모든 외부 프로세스 실행은 main에서만")은 지켜지고 있으나, **무엇을 실행할지를 렌더러가 정한다**는 축은 그 불변식이 다루지 않는다. SPEC-3이 에이전트 프로세스 spawn을 도입할 때 같은 계열의 경로를 여럿 만들게 되므로, 그 SPEC에서 (a) 실행 대상 경로의 신뢰 검증, (b) `pandocPath` 같은 실행 대상 prefs 필드를 `assertPrefsPatchAllowed`의 검사 범위에 넣을지, 두 가지를 함께 결정하는 것이 자연스럽다.
+
+**SPEC-2가 이것을 고치지 않는 이유**: 패널 셸은 프로세스를 실행하지 않는다. 이 결함은 멀티패널로 악화되지도 완화되지도 않으므로 SPEC-2의 어느 요구사항에도 걸리지 않는다. 범위에 넣으면 `spec.md` C-4(신뢰 모델 완화 금지)와 무관한 표면을 SPEC-2가 재작성하게 된다.
+
+---
+
+## 9.7 오케스트레이터 확인 사실 — 설계에 직접 반영된 항목
+
+독립 조사에서 확인되어 이 SPEC의 설계·제약에 반영된 항목이다. 재도출하지 않는다.
+
+| 사실 | 근거 | 반영 위치 |
+|---|---|---|
+| 조정 코어 5파일의 경로 무지 + `applyExternalChange` arity 2가 테스트로 고정 | `tests/electron/extensionIndependence.test.ts:34-40, 42-65, 171-174, :162` | `spec.md` C-12 / REQ-PANEL-072, `design.md` §1 F6·§6.2a, `plan.md` §A.5 |
+| 모드→extension 매핑이 6줄 함수 하나 (`mode === 'markdown' ? [] : liveDecorations`) | `src/editor/MarkdownEditor.tsx:51-57` | `design.md` §1 F7·§5.1 — 파일 종류 축의 자연스러운 확장 지점 |
+| `liveDecorations`는 **43항목** 평면 배열 (오케스트레이터 브리핑의 44는 1 초과 — 배열 리터럴 `:32`, 닫는 `];` `:76`, 원소 줄 33~75) | `src/editor/decorations/index.ts:32-76` | `design.md` §5.1 — 통째로 넣거나 빼는 입도가 REQ-PANEL-042와 일치 |
+| `@codemirror/language-data ^6.5.2`가 이미 직접 의존성이며 현재는 펜스 코드블록 중첩 파싱(`MarkdownEditor.tsx:8, 93-106`)과 지연 하이라이트 로딩(`src/editor/decorations/codeHighlight.ts:4, 31`)에만 쓰인다 | `package.json:39` | `spec.md` REQ-PANEL-041 / C-11 — 언어별 패키지 불필요 |
+| `.cm-content`가 전역 CSS(`global.css:32`)와 뷰별 테마(`theme.ts:10-15`) 양쪽에서 스타일링되고 양쪽 모두 `padding:32px 64px; max-width:800px; margin:0 auto`. 전역이 문서 전체에 걸리므로 좁은 보조 패널이 원고 측정폭을 상속한다 | 위 두 위치 | `spec.md` C-13, `design.md` §1 F8·§3.2a |
+| `.cm-content`를 참조하는 e2e 파일 **34개** (`grep -rl "cm-content" e2e/ \| wc -l` → 34) — 유일 요소 가정 | e2e 트리 | `spec.md` C-13, `plan.md` §B.8, `acceptance.md` AC-PANEL-095 — 명시적 작업 항목 |
+| 레이아웃은 순수 flexbox 3형제 1행이고 패널 폭은 인라인 스타일, CSS는 `flex-shrink:0` + chrome만. grid·absolute 없음 | `src/App.tsx:122-188`, `src/components/Sidebar.tsx:83`, `src/components/RightSidebar.tsx:102`, `src/styles/global.css:345-388, 1047-1104` | `design.md` §1 F5·§3.3 — OQ-1 후보 1 권고의 근거 |
+| `Preferences`에 `sidebar`(`:37`) / `rightSidebar`(`:53`) / `memoPanel`(`:65`) geometry 각 1개뿐. 패널 집합·분할 비율·패널별 경로 슬롯 **없음** | `shared/ipc-contract.ts` | `plan.md` §A.2 **OQ-9** (신규 미해결 결정) |
+| `memoSidecarStore.loadFor`가 재바인딩 전에 이전 문서의 dirty 사이드카를 `await memoSidecarWrite(prev.docPath, prev.sidecar)`로 플러시 | `src/store/memoSidecarStore.ts:30, 70-84` | `spec.md` REQ-PANEL-062 후단, `acceptance.md` AC-PANEL-062b, `plan.md` §D |
+| `useMenuCommandRouter.ts:98`의 `const view = editorViewRef.current`가 ~20개 분기의 유일한 에디터 해소 지점. 포커스 질의도 패널 정체성도 없다. `:243`은 `durumi:open-link-dialog`를 `window`에 브로드캐스트 | 해당 라인 | `research.md` §4.3, `plan.md` §A.2 OQ-4 |
+| CodeMirror `StateField` 계열은 이미 패널별: `editModeField`(`editMode.ts:28`), `docPathField`(`docPath.ts:17`), `focusModeField`/`typewriterModeField`(`viewModes.ts:21, 33`), `history()`(`MarkdownEditor.tsx:89`)의 별개 undo 스택 | 각 위치 | `design.md` §2.1a — 보존 대상, `plan.md` §A.5 PRESERVE |
+| `pandoc:setCustomPath`가 `prefs:set`을 우회해 `setPreferences({pandocPath})` 후 spawn까지 흐른다 | `electron/ipc/pandoc.ts:38-42`, `electron/pathGuard.ts:183-215` | **§9.6 — SPEC-3 소관, SPEC-2 범위 밖** |
 
 ---
 
 ## 10. 미검증 항목 (정직한 공백)
 
 1. **테스트 스위트 재실행을 하지 않았다.** 오케스트레이터가 제시한 baseline(199 파일 / 2191 테스트 전부 통과, typecheck·lint exit 0)을 그대로 전제했다. 파일 수 199와 e2e spec 33은 실측했으나 통과 여부·테스트 개수는 실행하지 않았다.
-2. **§7.3의 크로스-윈도 버퍼 오적용은 소스 근거 기반 가설이며 실행 재현하지 않았다.** 확정하려면 창 2개를 띄우고 한쪽 파일을 외부에서 수정하는 재현이 필요하다. plan.md §D에 위험으로 등록하고, 실제 결함이면 SPEC-2가 path 키잉으로 해소하는 것이 자연스럽다.
+2. ~~**§7.3의 크로스-윈도 버퍼 오적용은 소스 근거 기반 가설이며 실행 재현하지 않았다.**~~ **정정 (2026-08-08)**: 오케스트레이터가 코드 직독으로 4단계 사슬을 독립 확인해 **결함으로 확정되었다** — §7.3a 참조. 이 항목은 더 이상 미검증 공백이 아니다. **여전히 남는 공백**: 실행 재현(창 2개를 실제로 띄워 파일을 외부 수정)은 하지 않았다. `plan.md` OQ-8이 유닛 재현(같은 렌더러 문서 2개)으로 갈음할 것을 권고하며, 근거는 결함의 뿌리가 창이 아니라 라우팅 부재라는 점이다. 조합 플래그 공유(§7.3b)도 같은 상태다 — 코드 직독 확정, 실행 재현 미수행.
 3. **`RightSidebar.tsx` 내부 구조는 표면만 읽었다** — 탭 렌더링·persist 패턴이 `Sidebar.tsx`와 동형이라는 주석(`global.css:1043`)과 테스트(`tests/sidebar/rightSidebar.test.tsx`) 근거로 판단했다.
-4. **`@codemirror/language-data`의 지연 로드 동작을 실행 확인하지 않았다.** 카탈로그가 `LanguageDescription[]`을 제공한다는 것은 `MarkdownEditor.tsx:93-95`의 사용 형태에서 추론했다.
+4. **`@codemirror/language-data`의 지연 로드 동작을 실행 확인하지 않았다.** 카탈로그가 `LanguageDescription[]`을 제공한다는 것은 `MarkdownEditor.tsx:93-95`의 사용 형태와 `src/editor/decorations/codeHighlight.ts:4, 31`의 지연 하이라이트 로딩 사용에서 추론했다.
+
+4a. **`.cm-content` 측정폭 상속을 브라우저에서 실측하지 않았다.** 전역 규칙(`global.css:32`)이 뷰별 테마(`theme.ts:10-15`)와 동일 값이라는 것과 전역 셀렉터가 문서 전체에 걸린다는 CSS 규칙에서 추론했다. 두 규칙이 같은 값이므로 오늘은 관측 차이가 없고, 문제는 **패널별로 다른 값을 주려 할 때** 드러난다.
+
+4b. **e2e 34파일의 셀렉터가 실제로 어떤 형태인지 개별 확인하지 않았다.** `grep -rl`로 파일 목록만 얻었고 각 파일이 `.cm-content`를 어떻게 쓰는지(단일 가정 정도)는 열지 않았다. AC-PANEL-095가 "유일 요소 가정 셀렉터 0건"을 요구하므로 그 판정은 run 단계에서 파일별로 이루어진다 — 34는 **상한**이며 실제 이관 대상은 그보다 적을 수 있다.
 5. **CRLF(issue #11)가 비마크다운 파일에서 더 심각해지는지 정량 확인하지 않았다.** `applyExternalChange.ts:54-58, 79-95`의 주석과 `docs/v0.3-signoff.md` §4의 구조 설명을 근거로 plan.md §A 미해결 결정으로 올렸다.
 6. **Windows 경로에서의 패널 동작은 코드 읽기만 했다** — e2e가 macOS 전용이라는 SPEC-1 C-6 제약이 그대로 승계된다.
+
+---
+
+### 8.1 `.cm-content` 셀렉터 — 34파일 이관 (명시적 작업)
+
+`grep -rl "cm-content" e2e/ | wc -l` → **34**. 이 파일들은 `.cm-content`를 **창 안 유일 요소로 가정**한다. 패널이 N개가 되면 그 가정이 깨지고, 전역 CSS 규칙(`src/styles/global.css:32`)을 패널 스코프로 좁히려는 어떤 시도도 이 34파일을 먼저 이관하게 만든다(`design.md` §3.2a의 순서 의존).
+
+`plan.md` §B.8이 이것을 M4의 패널 지목 수단과 **같은 작업**으로 묶고, `acceptance.md` AC-PANEL-095가 "유일 요소 가정 셀렉터 0건"을 판정한다. 34는 파일 수 상한이며 실제 이관 대상은 §10 항목 4b의 이유로 그보다 적을 수 있다.
 
 ---
 
