@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "수용 기준 — v0.3 워크스페이스 골격"
-version: "0.2.4"
+version: "0.2.5"
 status: in-progress
 created: 2026-08-06
-updated: 2026-08-07
+updated: 2026-08-08
 author: manager-spec
 priority: P0
 phase: "v0.3.0 target"
@@ -199,7 +199,8 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 > **선행 조건 — 조합 유지형 프리미티브.** 현행 `composeKorean()`(`e2e/_helpers.ts:241-281`)은 조합 시작과 종료를 한 호출 안에서 원자적으로 수행하고 `finally`에서 CDP 세션을 detach하므로, **조합을 열어둔 채 외부 파일 쓰기를 끼워 넣을 수 없다.** 아래 AC-WS-019~022는 plan.md §B.3이 정의한 `startComposition` / `updateComposition` / `endComposition` 프리미티브 위에서만 유효하다. 현행 헬퍼로 이 AC를 실행하면 조합 중 버퍼를 교체하는 구현도 통과하므로, **프리미티브 도입 전에는 이 절의 AC를 PASS로 기록할 수 없다.**
 
 ### AC-WS-019 `[P+N]` 조합 중에는 조정이 적용되지 않는다 ↔ REQ-WS-020
-- **Given** 문서가 열려 있고 미저장 편집이 없으며, `const h = await startComposition(page, '한')`으로 조합이 **열린 채 유지되는** 상태
+- **Given** 문서를 갓 연 상태(`setFile`이 `isDirty`를 false로 초기화)에서 `const h = await startComposition(page, '한')`으로 조합이 **열린 채 유지되는** 상태
+- **전제 주의**: 조합이 열리는 순간 조합 글리프가 `setContent`를 호출해 `isDirty`가 latch된다(`appStore.ts:54`, sticky). 따라서 "미저장 편집이 없는 상태에서 조합 중"은 이 앱에서 성립하지 않는다. 아래 단언은 dirty 여부에 의존하지 않으므로 영향받지 않는다 — 정확한 전제는 "갓 연 문서에서 조합을 시작했다"이다
 - **When** 외부 프로세스가 그 파일을 바꿔 쓰고 변경이 확정된다 (조합은 아직 종료되지 않음)
 - **Then** 버퍼 내용이 변경되지 않는다
 - **And** `observeCompositionEnd(h)`가 반환하는 `compositionend` 발생 횟수가 **0이다** (조합이 여전히 열려 있음)
@@ -220,11 +221,33 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - **And** 버퍼는 여전히 조합 텍스트를 담고 있고 디스크 내용은 적용되지 않았다 (AC-WS-020과 동일한 배너 결과)
 - **합류 대상은 라우팅이지 적용이 아니다**: 이 AC는 "3건이 1건으로 합쳐졌는가"를 검증한다. 합쳐진 그 1건의 처리 결과는 정책이 결정하며, dirty 버퍼에서는 배너다
 
-### AC-WS-020b `[P+N]` 텍스트를 남기지 않은 조합 취소는 자동 반영으로 돌아간다 ↔ REQ-WS-021, REQ-WS-024
-- **Given** 미저장 편집이 없는 clean 버퍼에서 `startComposition`으로 조합이 열리고, 그 사이 외부 변경이 확정되어 보류된 상태
-- **When** 조합이 **텍스트를 커밋하지 않고 취소**되어 종료된다 (버퍼가 여전히 clean)
-- **Then** 정책 라우터가 자동 반영을 선택해 디스크 내용이 버퍼에 반영된다
-- **게이트 불변식의 확인**: 이 AC와 AC-WS-020의 대비가 REQ-WS-021의 불변식 — "게이트는 라우팅을 지연시킬 뿐 결과를 결정하지 않는다" — 을 고정한다. 같은 게이트를 통과한 두 시나리오가 dirty 여부에 따라 서로 다른 정책 결과로 갈린다
+### AC-WS-020b `[P+N]` 취소된 조합도 보류된 변경을 흘리지 않고 라우팅한다 ↔ REQ-WS-021
+- **Given** `startComposition`으로 조합이 열리고, 그 사이 외부 변경이 확정되어 보류된 상태
+- **When** 조합이 **텍스트를 커밋하지 않고 취소**되어 종료된다 (`cancelComposition`)
+- **Then** 조합 텍스트가 버퍼에서 되돌려진다 (M5 자기검증 `P3c`가 이미 고정한 동작)
+- **And** 보류되었던 변경이 정책 라우터로 **넘어간다** — 취소를 이유로 폐기되지 **않는다**
+- **And** 라우터가 배너를 선택하고, "차이 보기"·"디스크에서 불러오기" 두 동작이 제공된다
+- **이 AC가 잡는 실패 모드**: "조합 취소 시 보류 큐를 비우고 끝낸다"는 hold-and-forget 구현. 그런 구현은 AC-WS-020(커밋된 조합)을 통과하면서 이 AC에서만 실패한다 — 사용자에게는 외부 변경이 조용히 사라진 것으로 보이고, 이후 저장하면 그 변경을 덮어쓴다
+
+#### AC-WS-020b 개정 기록 — 게이트 불변식 대비는 e2e에서 재구성 불가 (issue #12)
+
+이전 판은 "clean 버퍼 + 조합 취소 → 자동 반영"을 요구해 AC-WS-020(dirty → 배너)과의 대비로 REQ-WS-021의 게이트 불변식(*게이트는 라우팅을 지연시킬 뿐 결과를 결정하지 않는다*)을 falsifiable하게 만들려 했다. **그 대비는 이 앱에서 e2e로 재구성할 수 없다.**
+
+근거 — `src/store/appStore.ts:54`:
+
+```ts
+setContent: (content) => set((s) => ({ content, isDirty: s.content !== content || s.isDirty }))
+```
+
+`isDirty`는 **sticky**다: 직전 상태와 비교해 계산되고 `|| s.isDirty`로 누적되며, 마지막 저장 내용과 대조하지 않는다. 조합을 열면 조합 글리프가 삽입되어 `setContent`가 호출되고 플래그가 latch된다. 취소가 내용을 되돌려도(`P3c`가 CI에서 이를 확인) 플래그는 돌아오지 않는다. 플래그를 되돌리는 것은 `markClean()`(저장 시)과 `setFile()`(파일 열기 시)뿐이며, 조합 도중 어느 쪽도 발생하지 않는다.
+
+따라서 **게이트를 통과하면서 clean인 버퍼는 존재할 수 없다** — 게이트 진입 조건이 조합이고, 조합 진입이 곧 dirty이기 때문이다. 우회 경로도 없다.
+
+**대비를 잃은 자리를 무엇이 지키는가**: 불변식 자체는 방치되지 않았다. manager-develop의 유닛 테스트가 **게이트를 경유한 라우팅과 경유하지 않은 라우팅이 dirty 값별로 동일한 status·effect 시퀀스를 산출함**을 기계적으로 고정한다. 유닛 계층은 스토어를 직접 구성할 수 있어 sticky 플래그의 제약을 받지 않는다. 즉 불변식은 유닛에서 검증되고, e2e는 그 아래 층위인 "취소 시 드레인" 만 담당한다.
+
+**약한 e2e를 만들지 않은 이유**: dirty 두 값을 모두 게이트에 통과시킬 수 없는 상태에서 대비처럼 보이는 시나리오(예: 게이트 경유 dirty vs 게이트 미경유 clean)를 쓰면 게이트와 dirty 두 변수가 동시에 바뀌어 게이트를 격리하지 못한다. 커버리지처럼 보이지만 "조합 종료 후 항상 배너"로 하드코딩한 구현을 걸러내지 못한다.
+
+**issue #12 해소 후 복원할 것**: sticky `isDirty`는 이 SPEC 밖의 기존 결함이며(닫기 가드·저장 프롬프트·제목 표시기가 모두 이 플래그를 읽는다) **issue #12**로 등록되었다. 마지막 저장 내용 대비 계산으로 고쳐지면 "clean 버퍼 + 조합 취소 → 자동 반영" 단언을 이 AC에 되살려 e2e에서도 대비를 복원할 수 있다.
 
 ### AC-WS-022 `[P+N]` 조정이 조합 경계와 커밋 텍스트를 훼손하지 않는다 ↔ REQ-WS-022
 - **Given** `startComposition` → `updateComposition` ×2 → 외부 변경 확정 → `endComposition` 순서로 진행할 때
@@ -247,8 +270,9 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 ### AC-WS-023c `[P+N]` 보류 표시는 정책 결과로 인계된다 ↔ REQ-WS-023, REQ-WS-021
 - **Given** 조합 중 외부 변경이 보류되어 보류 표시가 떠 있는 상태
 - **When** 조합이 종료된다
-- **Then** 보류 표시가 사라지고, **같은 턴에** 정책 결과 표면이 나타난다 — dirty 버퍼면 배너(AC-WS-020), clean 버퍼면 반영 완료(AC-WS-020b)
+- **Then** 보류 표시가 사라지고, **같은 턴에** 정책 결과 표면이 나타난다 — 이 앱에서는 조합 진입이 곧 dirty이므로(`appStore.ts:54` sticky, AC-WS-020b 개정 기록) 관측 가능한 결과는 배너(AC-WS-020)다. 조합을 커밋했든 취소했든 동일하다(AC-WS-020b)
 - **금지 상태**: 보류 표시가 사라졌는데 배너도 없고 버퍼도 변하지 않은 상태로 관측되면 FAIL이다. 사용자가 외부 변경이 취소된 것으로 오해하는 무성 소실 경로다
+- **clean 분기 주석**: 정책상 clean 버퍼는 조용한 반영으로 인계되어야 하지만(REQ-WS-023), 그 분기는 조합을 경유해서는 도달할 수 없다 — issue #12 해소 시 이 AC에도 clean 분기를 추가한다
 
 ### AC-WS-060 `[P+N]` 조정 알림이 모달을 사용하지 않는다 ↔ REQ-WS-049
 - **Given** 조정 알림(보류 표시, 외부 변경 배너, 사라진 파일 표시)이 표시된 상태
@@ -548,3 +572,14 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 - [ ] §G 품질 게이트 전부 통과
 - [ ] AC-WS-037로 `docs/DOCUMENT_MODE_PRINCIPLES.md` 미수정 확인
 - [ ] plan.md의 미해결 clarification 마커 잔여 0건 확인
+
+### 파생 이슈 — DoD를 막지 않음 (판 0.2.5)
+
+이 SPEC의 요구를 실행 가능하게 만드는 과정에서 **기존 에디터 결함 2건**이 드러났다. 둘 다 v0.3 이전부터 존재했고 이 SPEC이 만든 것이 아니며, **DoD 서명을 막지 않는다**:
+
+| 이슈 | 내용 | 이 SPEC에 미친 영향 |
+|---|---|---|
+| **#11** | CRLF 무결성 문제 | REQ-WS-033(줄바꿈 정규화 금지)이 노출 |
+| **#12** | `appStore.isDirty` sticky (`appStore.ts:54`) — 마지막 저장 내용이 아니라 직전 상태 대비로 계산하고 `\|\| s.isDirty`로 누적 | AC-WS-020b의 clean 분기 도달 불가 (위 개정 기록). 닫기 가드·저장 프롬프트·제목 표시기가 모두 이 플래그를 읽으므로 영향 범위가 이 SPEC보다 넓다 |
+
+**#12 해소 시 이 SPEC에서 복원할 것**: AC-WS-020b의 "clean 버퍼 + 조합 취소 → 자동 반영" 단언, AC-WS-023c의 clean 분기, AC-WS-019의 원래 전제 문구("미저장 편집이 없으며").

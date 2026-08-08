@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "구현 계획 — v0.3 워크스페이스 골격"
-version: "0.2.4"
+version: "0.2.5"
 status: in-progress
 created: 2026-08-06
-updated: 2026-08-07
+updated: 2026-08-08
 author: manager-spec
 priority: P0
 phase: "v0.3.0 target"

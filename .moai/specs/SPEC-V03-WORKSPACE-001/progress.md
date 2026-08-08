@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-001
 title: "진행 기록 — v0.3 워크스페이스 골격"
-version: "0.2.4"
+version: "0.2.5"
 status: in-progress
 created: 2026-08-06
-updated: 2026-08-07
+updated: 2026-08-08
 tier: L
 author: manager-spec
 priority: P0
@@ -17,6 +17,17 @@ tags: "workspace, manifest, file-watching, reconciliation, ime, metadata"
 # 진행 기록 — SPEC-V03-WORKSPACE-001
 
 ## §E.1 Plan-phase Audit-Ready Signal
+
+### 판 0.2.5 (2026-08-08) — AC-WS-020b를 실제 dirty 의미론에 맞게 재작성 (사용자 결정: 옵션 b)
+
+- **원인 확정**: `src/store/appStore.ts:54`의 `isDirty`가 sticky(`|| s.isDirty`, 마지막 저장 내용이 아니라 직전 상태 대비). 조합 진입 시 글리프 삽입 → `setContent` → 플래그 latch. 취소가 내용을 되돌려도(M5 자기검증 `P3c`가 CI에서 확인) 플래그는 복구되지 않음
+- **결정**: `isDirty`를 지금 고치지 않고 AC를 앱의 실제 의미론에 맞춰 재작성. sticky 플래그는 **issue #12**로 등록(닫기 가드·저장 프롬프트·제목 표시기가 모두 읽으므로 영향 범위가 이 SPEC보다 넓음). CRLF 무결성은 **issue #11**
+- **AC-WS-020b 재작성**: "취소된 조합도 보류된 변경을 흘리지 않고 라우팅한다" — hold-and-forget 구현(취소 시 보류 큐를 비우고 끝냄)을 잡는다. AC-WS-020(커밋된 조합)은 통과하면서 이 AC만 실패하는 실패 모드
+- **게이트 불변식 대비는 e2e에서 재구성 불가 — 명시 기록**: 게이트 진입 조건이 조합이고 조합 진입이 곧 dirty이므로 "게이트 경유 + clean"은 존재할 수 없다. 약한 대체 e2e(게이트 경유 dirty vs 게이트 미경유 clean)는 두 변수가 동시에 바뀌어 게이트를 격리하지 못하므로 만들지 않았다. **불변식은 유닛 계층이 방어한다** — manager-develop의 테스트가 게이트 경유/미경유 라우팅이 dirty 값별로 동일한 status·effect 시퀀스를 산출함을 고정
+- **연쇄 정정 2건**: AC-WS-019 전제 문구("미저장 편집이 없으며" → "갓 연 문서에서 조합 시작", 단언은 dirty 비의존이므로 결과 불변), AC-WS-023c clean 분기 주석
+- **REQ-WS-021 보강**: 취소-후-자동반영 분기가 원리적으로는 유효하나 현재 앱에서 관측 불가임을 issue #12와 함께 명시 — 요구사항이 관측에 의해 반증된 것이 아님을 분명히 함
+- **요구사항 56개** (변동 없음), **수용 기준 83개 항목** (변동 없음 — 재작성만)
+- 상태: `in-progress` (6개 파일 전부)
 
 ### 판 0.2.4 (2026-08-08) — M8이 드러낸 REQ-WS-028 ↔ AC-WS-020 모순 해소 (사용자 결정)
 

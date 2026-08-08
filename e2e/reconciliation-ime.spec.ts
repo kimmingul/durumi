@@ -135,6 +135,10 @@ test('AC-WS-019: 조합 중에는 조정이 적용되지 않는다', async () =>
     await proveChannelLive(f);
     await installSurfaceCounter(f.page);
 
+    // 전제 주의: 조합이 열리는 순간 조합 글리프가 setContent를 호출해
+    // isDirty가 latch된다(appStore.ts:54, sticky). "미저장 편집이 없는 상태에서
+    // 조합 중"은 이 앱에서 성립하지 않는다. 아래 단언은 dirty에 의존하지
+    // 않으므로 영향받지 않는다 — 정확한 전제는 "갓 연 문서에서 조합 시작"이다.
     const handle = await startComposition(f.page, '한');
 
     // 게이트가 붙은 요소가 실제로 조합을 받았는가. 0이면 아래 단언은
@@ -195,27 +199,39 @@ test('AC-WS-020: 조합 종료 시 보류된 변경이 배너로 라우팅된다
   });
 });
 
-test('AC-WS-020b: 텍스트를 남기지 않은 조합 취소는 자동 반영으로 돌아간다', async () => {
-  // AC-WS-020과의 대비가 REQ-WS-021의 불변식을 고정한다 — 같은 게이트를
-  // 통과한 두 시나리오가 dirty 여부로만 갈린다. "조합 후엔 항상 배너"로
-  // 하드코딩한 구현은 이 검사에서 떨어진다.
+test('AC-WS-020b: 취소된 조합도 보류된 변경을 흘리지 않고 라우팅한다', async () => {
+  // 이 AC가 잡는 실패 모드는 **hold-and-forget** — 조합이 취소되면 보류 큐를
+  // 비우고 끝내는 구현이다. 그런 구현은 AC-WS-020(커밋된 조합)을 통과하면서
+  // 여기서만 떨어진다. 사용자에게는 외부 변경이 조용히 사라진 것으로 보이고,
+  // 이후 저장하면 그 변경을 덮어쓴다.
+  //
+  // 게이트 불변식 대비(clean → 자동 반영)는 이 앱에서 e2e로 재구성할 수 없다:
+  // 조합 진입이 곧 dirty이고(appStore.ts:54 sticky, issue #12) 게이트를
+  // 통과하면서 clean인 버퍼가 존재하지 않는다. 불변식은 유닛 계층이 고정한다.
   await withOpenDoc('원래 내용\n', async (f) => {
     await proveChannelLive(f);
 
     const handle = await startComposition(f.page, '한');
-    fs.writeFileSync(f.filePath, '자동 반영 대상\n', 'utf8');
+    fs.writeFileSync(f.filePath, '보류된 외부 변경\n', 'utf8');
     await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
-    await cancelComposition(handle);
+    expect(await reconcileStatus(f.page), '보류 표시가 뜨지 않았다').toBe('held-composition');
 
-    await f.page.waitForFunction(
-      () =>
-        (document.querySelector('.cm-content') as HTMLElement | null)?.innerText.includes(
-          '자동 반영 대상',
-        ) ?? false,
-      undefined,
-      { timeout: 10_000 },
-    );
-    expect(await reconcileStatus(f.page), '자동 반영인데 배너가 남았다').toBeNull();
+    await cancelComposition(handle);
+    await f.page.waitForTimeout(800);
+
+    // (1) 조합 텍스트가 되돌려졌다 (M5 P3c가 이미 고정한 동작)
+    expect(await bufferText(f.page), '취소된 조합 글자가 버퍼에 남았다').not.toContain('한');
+
+    // (2) 보류된 변경이 폐기되지 않고 라우터로 넘어갔다 — hold-and-forget이면
+    //     여기서 null이 나온다.
+    expect(
+      await reconcileStatus(f.page),
+      '취소를 이유로 보류된 변경이 폐기됐다 (hold-and-forget)',
+    ).toBe('held-notify');
+
+    const actions = await bannerActions(f.page);
+    expect(actions).toContain('view-diff');
+    expect(actions).toContain('load-from-disk');
   });
 });
 
@@ -263,6 +279,9 @@ test('AC-WS-023c: 보류 표시는 정책 결과로 인계된다 (무성 소실 
       '보류 표시가 후속 표면 없이 사라졌다 — 사용자는 외부 변경이 취소된 것으로 오해한다',
     ).toBe(true);
     expect(status, '보류 상태가 그대로 멈춰 있다').not.toBe('held-composition');
+    // 이 앱에서 조합 진입은 곧 dirty이므로 관측 가능한 인계 결과는 배너다.
+    // clean 분기(조용한 반영)는 조합을 경유해 도달할 수 없다 — issue #12.
+    expect(status, '인계 결과가 배너가 아니다').toBe('held-notify');
   });
 });
 
