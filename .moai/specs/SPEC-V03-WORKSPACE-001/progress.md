@@ -847,7 +847,7 @@ sync-phase 실측 게이트 결과, AC 최종 집계, 이월 항목, SPEC-2~5로
 ```yaml
 sync_status: audit-ready
 sync_complete_at: "2026-08-08"
-sync_commit_sha: pending-backfill-sync   # 커밋은 자기 SHA를 미리 알 수 없다 — 후속 커밋으로 백필
+sync_commit_sha: 3a51f72
 gate_results:
   test: "pnpm test → exit 0 — Test Files 199 passed (199) / Tests 2191 passed (2191)"
   typecheck: "pnpm typecheck → exit 0 — tsc --build && tsc --noEmit -p tsconfig.test.json"
