@@ -526,7 +526,7 @@ CodeMirror 문서 좌표는 줄바꿈을 언제나 1 위치로 세고, 이 앱�
 run_status: in-progress            # M1~M7 구현, M8만 남음
 milestones_complete: [M1, M1a, M2, M3, M3a, M4, M4a, M6, M7]
 milestones_partial: [M5]           # 프리미티브 CI 검증 완료, AC-WS-019~022는 M8 차단
-run_commit_sha: pending-backfill
+run_commit_sha: 3a06812
 ac_pass_count: 75                  # + M7 5 (034, 035부분, 036, 070, 031b)
 ac_blocked: 4                      # AC-WS-019~022 — M8 IPC 부재
 ac_fail_count: 0
