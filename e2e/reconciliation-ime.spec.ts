@@ -119,7 +119,6 @@ test('AC-WS-019: 조합 중에는 조정이 적용되지 않는다', async () =>
   await withOpenDoc('원래 내용\n', async (f) => {
     await proveChannelLive(f);
     await installSurfaceCounter(f.page);
-    const before = await bufferText(f.page);
 
     const handle = await startComposition(f.page, '한');
 
