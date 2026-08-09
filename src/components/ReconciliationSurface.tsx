@@ -43,7 +43,9 @@ export interface ReconciliationSurfaceProps {
 }
 
 export function ReconciliationSurface({ path }: ReconciliationSurfaceProps): JSX.Element | null {
-  const state = useReconciliationStore((s) => (path === null ? undefined : s.states.get(path)));
+  // `states.get(path)`를 직접 쓰지 않는다 — Map의 키는 경로 문자열이 아니라
+  // 경로 대조 키이고(REQ-PANEL-051), 접는 규칙은 스토어가 소유한다.
+  const state = useReconciliationStore((s) => s.stateFor(path));
   const dispatchFor = useReconciliationStore((s) => s.dispatchFor);
 
   const notice = state ? noticeFor(state) : null;

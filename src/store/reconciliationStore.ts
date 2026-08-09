@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { pathKey } from '@shared/pathIdentity';
 import {
   autoApplyPolicy,
   initialReconciliationState,
@@ -39,6 +40,14 @@ import {
  * 항목도 만들지 않는다(REQ-PANEL-070). 그러지 않으면 열지도 않은 파일의 내용이
  * 현재 버퍼에 적용되고, 조정 상태는 정상 완료로 정착해 사용자가 알 수단이
  * 없다 — v0.2.31에 출하된 무성 데이터 손실 경로다.
+ *
+ * ## 세 Map의 키는 경로 **문자열**이 아니라 경로 **대조 키**다
+ *
+ * main이 보내는 표기와 렌더러가 문서를 연 표기가 언제나 같지는 않다. Windows는
+ * `\`와 `/`를 같게 보고 대소문자를 구분하지 않으므로, 문자열 동일성으로 키잉하면
+ * 같은 파일이 두 항목으로 갈라져 **확정 변경이 열린 문서를 찾지 못하고 조용히
+ * 폐기된다** — 조정이 통째로 죽는데 오류는 나지 않는다. 그래서 진입점마다
+ * `pathKey`로 접는다(REQ-PANEL-051). POSIX에서는 항등이므로 관측이 바뀌지 않는다.
  *
  * effect를 스토어가 직접 수행하지 않는 이유: 버퍼 적용은 최소 diff와 캐럿
  * 보존을 요구하므로 실행자 소관이고, diff 표면은 SPEC-4 소관이다. 여기서는
@@ -103,26 +112,29 @@ interface ReconciliationStore {
 }
 
 export const useReconciliationStore = create<ReconciliationStore>((set, get) => {
+  /** 경로를 대조 키로 접는다. 아래 헬퍼들은 전부 **접힌 키**를 받는다. */
+  const keyOf = (path: string | null): string | null => (path === null ? null : pathKey(path));
+
   /** 열림 등록과 적용 대상 등록 중 하나라도 있으면 그 경로는 열린 문서다. */
-  const isOpen = (path: string): boolean => openDocuments.has(path) || effectHandlers.has(path);
+  const isOpen = (key: string): boolean => openDocuments.has(key) || effectHandlers.has(key);
 
   /** 등록 상태에 맞춰 상태 Map 항목을 세우거나 거둔다. */
-  const syncOpenness = (path: string): void => {
+  const syncOpenness = (key: string): void => {
     const states = get().states;
-    if (isOpen(path)) {
-      if (states.has(path)) return;
-      set({ states: new Map(states).set(path, initialReconciliationState()) });
+    if (isOpen(key)) {
+      if (states.has(key)) return;
+      set({ states: new Map(states).set(key, initialReconciliationState()) });
       return;
     }
-    composingGates.delete(path);
-    if (!states.has(path)) return;
+    composingGates.delete(key);
+    if (!states.has(key)) return;
     const next = new Map(states);
-    next.delete(path);
+    next.delete(key);
     set({ states: next });
   };
 
-  const route = (path: string, event: ReconciliationEvent): ReconciliationEffect[] => {
-    const current = get().states.get(path);
+  const route = (key: string, event: ReconciliationEvent): ReconciliationEffect[] => {
+    const current = get().states.get(key);
     // 열린 문서가 아니면 **폐기**한다 — 리듀서를 호출하지 않고 Map 항목도
     // 만들지 않는다. 폐기가 어떤 전이도 일으키지 않는 것이 REQ-PANEL-070의
     // 세 번째 조항이며, 판정은 상태 값이 아니라 전이 발생으로 이루어진다.
@@ -130,9 +142,9 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
 
     const result = reduceReconciliation(current, event, get().policy);
     if (result.state !== current) {
-      set({ states: new Map(get().states).set(path, result.state) });
+      set({ states: new Map(get().states).set(key, result.state) });
     }
-    const handler = effectHandlers.get(path);
+    const handler = effectHandlers.get(key);
     for (const effect of result.effects) handler?.(effect);
     return result.effects;
   };
@@ -141,52 +153,63 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     states: new Map<string, ReconciliationState>(),
     policy: autoApplyPolicy,
 
-    stateFor: (path) => (path === null ? null : (get().states.get(path) ?? null)),
+    stateFor: (path) => {
+      const key = keyOf(path);
+      return key === null ? null : (get().states.get(key) ?? null);
+    },
     statePaths: () => [...get().states.keys()],
     targetPaths: () => [...effectHandlers.keys()],
 
     openDocument: (path) => {
-      if (path === null) return;
-      openDocuments.add(path);
-      syncOpenness(path);
+      const key = keyOf(path);
+      if (key === null) return;
+      openDocuments.add(key);
+      syncOpenness(key);
     },
 
     closeDocument: (path) => {
-      if (path === null) return;
-      openDocuments.delete(path);
-      syncOpenness(path);
+      const key = keyOf(path);
+      if (key === null) return;
+      openDocuments.delete(key);
+      syncOpenness(key);
     },
 
     setEffectHandlerFor: (path, handler) => {
       // 경로 없는 문서(untitled)는 라우팅 키를 갖지 않는다 — null도 빈 문자열도
       // 키로 쓰지 않는다(REQ-PANEL-070b). 그러지 않으면 서로 다른 untitled
       // 문서가 같은 키를 공유한다.
-      if (path === null) return;
-      if (handler === null) effectHandlers.delete(path);
-      else effectHandlers.set(path, handler);
-      syncOpenness(path);
+      const key = keyOf(path);
+      if (key === null) return;
+      if (handler === null) effectHandlers.delete(key);
+      else effectHandlers.set(key, handler);
+      syncOpenness(key);
     },
 
-    dispatchFor: (path, event) => (path === null ? [] : route(path, event)),
+    dispatchFor: (path, event) => {
+      const key = keyOf(path);
+      return key === null ? [] : route(key, event);
+    },
 
     compositionStart: (path, gate) => {
-      if (path === null || !isOpen(path)) return;
-      const gates = composingGates.get(path) ?? new Set<CompositionGateToken>();
+      const key = keyOf(path);
+      if (key === null || !isOpen(key)) return;
+      const gates = composingGates.get(key) ?? new Set<CompositionGateToken>();
       const wasIdle = gates.size === 0;
       gates.add(gate);
-      composingGates.set(path, gates);
-      if (wasIdle) route(path, { type: 'composition-start' });
+      composingGates.set(key, gates);
+      if (wasIdle) route(key, { type: 'composition-start' });
     },
 
     compositionEnd: (path, gate) => {
-      if (path === null) return;
-      const gates = composingGates.get(path);
+      const key = keyOf(path);
+      if (key === null) return;
+      const gates = composingGates.get(key);
       if (!gates || !gates.delete(gate)) return;
       // 다른 게이트가 아직 조합 중이면 억제한다 — 그러지 않으면 이 표면의
       // 종료가 저 표면의 보류를 푼다(REQ-PANEL-071).
       if (gates.size > 0) return;
-      composingGates.delete(path);
-      route(path, { type: 'composition-end' });
+      composingGates.delete(key);
+      route(key, { type: 'composition-end' });
     },
 
     setPolicy: (policy) => set({ policy }),
