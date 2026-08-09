@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { Macro } from '@shared/ipc-contract';
 import { useAppStore } from '../store/appStore';
+import { isDirty as isDocumentDirty, useActiveDocument } from '../store/workspaceStore';
 import { useSidebarStore } from '../store/sidebarStore';
 import { basenameOf } from '../utils/path';
 
@@ -23,8 +24,8 @@ import { basenameOf } from '../utils/path';
  */
 export function useAppChromeEffects(setMacros: (m: Macro[]) => void): void {
   const theme = useAppStore((s) => s.theme);
-  const filePath = useAppStore((s) => s.filePath);
-  const isDirty = useAppStore((s) => s.isDirty);
+  const filePath = useActiveDocument((d) => d?.path ?? null);
+  const isDirty = useActiveDocument((d) => (d ? isDocumentDirty(d) : false));
   const setSystemTheme = useAppStore((s) => s.setSystemTheme);
   const updateGitStatus = useSidebarStore((s) => s.updateGitStatus);
 

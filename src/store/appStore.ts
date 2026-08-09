@@ -4,10 +4,20 @@ import type { EditMode } from '../editor/editMode';
 export type AppliedTheme = 'light' | 'dark';
 export type ThemePreference = 'system' | 'light' | 'dark';
 
+/**
+ * 창 전역 상태만 남는다.
+ *
+ * 문서 축(경로·내용·미저장 여부·파일 종류)은 `workspaceStore`가 소유한다
+ * (SPEC-V03-WORKSPACE-002 REQ-PANEL-010). 미저장 여부는 그곳에서
+ * `currentRevision !== savedRevision`으로 **파생**되며, 여기 있던 가변
+ * boolean과 `markClean()`은 제거되었다 — 그 명령형 선언이 저장의 await 창
+ * 결함과 issue #12 sticky의 형태였기 때문이다(REQ-PANEL-015).
+ *
+ * 편집 모드는 아직 여기 남아 있다. 모드 값의 출처(패널별 독립 여부,
+ * `defaultMode` 의미론)는 OQ-3이 미해결이고 M4가 다룬다 — 패널 축의
+ * `displayMode` 필드는 이미 `workspaceStore`에 있으나 배선은 그때 이루어진다.
+ */
 interface AppState {
-  filePath: string | null;
-  content: string;
-  isDirty: boolean;
   theme: AppliedTheme;
   themePreference: ThemePreference;
   systemTheme: AppliedTheme;
@@ -26,9 +36,6 @@ interface AppState {
    */
   headingHint: boolean;
   setHeadingHint: (show: boolean) => void;
-  setContent: (content: string) => void;
-  markClean: () => void;
-  setFile: (path: string | null, content: string) => void;
   setThemePreference: (p: ThemePreference) => void;
   setSystemTheme: (t: AppliedTheme) => void;
   setEditMode: (mode: EditMode) => void;
@@ -41,9 +48,6 @@ function resolveTheme(pref: ThemePreference, system: AppliedTheme): AppliedTheme
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  filePath: null,
-  content: '',
-  isDirty: false,
   theme: 'light',
   themePreference: 'system',
   systemTheme: 'light',
@@ -51,9 +55,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastNonMarkdownMode: 'wysiwyg',
   headingHint: false,
   setHeadingHint: (show) => set({ headingHint: show }),
-  setContent: (content) => set((s) => ({ content, isDirty: s.content !== content || s.isDirty })),
-  markClean: () => set({ isDirty: false }),
-  setFile: (path, content) => set({ filePath: path, content, isDirty: false }),
   setThemePreference: (p) => set({
     themePreference: p,
     theme: resolveTheme(p, get().systemTheme),

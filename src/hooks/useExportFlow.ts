@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useAppStore } from '../store/appStore';
+import { useActiveDocument, useWorkspaceStore } from '../store/workspaceStore';
 import { useSidebarStore } from '../store/sidebarStore';
 import { promoteComments, stripComments } from '@shared/comments';
 import { transformCm } from '@shared/criticMarkup';
@@ -42,9 +42,8 @@ export interface ExportFlow {
 export function useExportFlow(deps: {
   maybeDiscard: () => Promise<boolean>;
 }): ExportFlow {
-  const filePath = useAppStore((s) => s.filePath);
-  const content = useAppStore((s) => s.content);
-  const setFile = useAppStore((s) => s.setFile);
+  const filePath = useActiveDocument((d) => d?.path ?? null);
+  const content = useActiveDocument((d) => d?.content ?? '');
 
   // When Pandoc is missing, we surface a guided install dialog and remember
   // the operation that triggered it so the user can retry after installing.
@@ -132,8 +131,8 @@ export function useExportFlow(deps: {
       window.alert(`Import failed: ${r.error}${r.stderr ? `\n\n${r.stderr}` : ''}`);
       return;
     }
-    setFile(null, r.markdown);
-  }, [deps, setFile]);
+    useWorkspaceStore.getState().openInActivePanel(null, r.markdown);
+  }, [deps]);
 
   return { doExport, doPandocExport, doPandocImportDocx, pandocInstallOp, setPandocInstallOp };
 }

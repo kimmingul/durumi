@@ -1,6 +1,6 @@
 import { useCallback, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useFolderTree } from '../../hooks/useFolderTree';
-import { useAppStore } from '../../store/appStore';
+import { useActiveDocument } from '../../store/workspaceStore';
 import { useSidebarStore } from '../../store/sidebarStore';
 import { FileTreeNode } from './FileTreeNode';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -34,7 +34,7 @@ function isMacPlatform(): boolean {
 }
 
 export function WorkspaceRoot({ rootPath, onOpenFile }: WorkspaceRootProps) {
-  const activeFilePath = useAppStore((s) => s.filePath);
+  const activeFilePath = useActiveDocument((d) => d?.path ?? null);
   const removeFolderFromStore = useSidebarStore((s) => s.removeFolder);
   const { rootEntries, childCache, expanded, isLoading, toggleExpand } = useFolderTree(rootPath);
   const statuses = useSidebarStore((s) => s.gitStatus[rootPath]);

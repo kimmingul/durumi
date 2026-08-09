@@ -3,6 +3,7 @@ import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { StatusBar } from '../../src/components/StatusBar';
 import { useAppStore } from '../../src/store/appStore';
+import { useWorkspaceStore } from '../../src/store/workspaceStore';
 
 /**
  * 상태바 안내 배선 테스트. 판정 로직 자체는
@@ -27,7 +28,9 @@ function mount() {
 }
 
 beforeEach(() => {
-  useAppStore.setState({ headingHint: false, content: '', filePath: null });
+  useAppStore.setState({ headingHint: false });
+  // 경로·내용은 문서 축이 소유한다 (SPEC-V03-WORKSPACE-002 REQ-PANEL-010).
+  useWorkspaceStore.getState().reset();
 });
 
 afterEach(() => {

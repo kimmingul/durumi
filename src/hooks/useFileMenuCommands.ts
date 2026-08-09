@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
-import { useAppStore } from '../store/appStore';
 import { useMemoSidecarStore } from '../store/memoSidecarStore';
+import {
+  activeDocument,
+  isDirty as isDocumentDirty,
+  saveDocument,
+  useActiveDocument,
+  useWorkspaceStore,
+} from '../store/workspaceStore';
 import { basenameOf } from '../utils/path';
 
 export interface FileMenuCommands {
@@ -39,44 +45,46 @@ export interface FileMenuCommands {
  * subscriptions but writing back through Zustand setters. The exposed
  * functions are stable across renders within the lifetime of the same
  * `filePath` / `content` snapshot.
+ *
+ * 저장은 **문서 단위**다(SPEC-V03-WORKSPACE-002 REQ-PANEL-012) — `saveDocument`가
+ * 쓰기 전에 revision을 붙잡고 완료 후 그 revision을 `savedRevision`에 대입하므로,
+ * 쓰는 동안 타이핑된 편집이 clean으로 표시되던 창이 구조적으로 닫힌다
+ * (REQ-PANEL-015). 여기 있던 `markClean()` 호출은 그래서 사라졌다.
  */
 export function useFileMenuCommands(): FileMenuCommands {
-  const filePath = useAppStore((s) => s.filePath);
-  const content = useAppStore((s) => s.content);
-  const isDirty = useAppStore((s) => s.isDirty);
-  const setFile = useAppStore((s) => s.setFile);
-  const setContent = useAppStore((s) => s.setContent);
-  const markClean = useAppStore((s) => s.markClean);
+  const filePath = useActiveDocument((d) => d?.path ?? null);
+  const isDirty = useActiveDocument((d) => (d ? isDocumentDirty(d) : false));
 
   const doSave = useCallback(async (): Promise<boolean> => {
-    if (filePath) {
-      const r = await window.api.fileSave(filePath, content);
-      // v0.2.23 — main may have migrated pending-asset image refs into
-      // `<docDir>/assets/` and rewritten the markdown to relative paths.
-      // When that happens, `r.content` is the post-migration text on
-      // disk; sync the buffer so the editor (and store) match.
-      if (r.content !== undefined && r.content !== content) {
-        setContent(r.content);
-      }
-      // Force-flush any pending sidecar edits next to the document so a Cmd+S
-      // never leaves thread/resolved changes in memory only.
-      await useMemoSidecarStore.getState().saveIfDirty();
-      markClean();
-      return true;
+    const doc = activeDocument(useWorkspaceStore.getState());
+    if (!doc) return false;
+
+    if (doc.path !== null) {
+      return saveDocument(doc.id, async (path, text) => {
+        const r = await window.api.fileSave(path, text);
+        // Force-flush any pending sidecar edits next to the document so a Cmd+S
+        // never leaves thread/resolved changes in memory only.
+        await useMemoSidecarStore.getState().saveIfDirty();
+        // v0.2.23 — main may have migrated pending-asset image refs into
+        // `<docDir>/assets/` and rewritten the markdown to relative paths.
+        // 돌려주면 `saveDocument`가 **아무도 타이핑하지 않았을 때만** 버퍼에
+        // 반영한다.
+        return r.content;
+      });
     }
-    const r = await window.api.fileSaveAs(content, 'untitled.md', filePath);
+
+    const r = await window.api.fileSaveAs(doc.content, 'untitled.md', null);
     if (!r) return false;
     // v0.2.23 — same migration-aware sync as the file:save arm. Critical
     // here because the untitled → first save transition is exactly when
     // pending images get a real home.
-    setFile(r.path, r.content ?? content);
+    useWorkspaceStore.getState().setDocumentPath(doc.id, r.path, r.content ?? doc.content);
     // After Save As, re-bind the sidecar to the new path so subsequent edits
     // land alongside the just-saved document.
     await useMemoSidecarStore.getState().loadFor(r.path);
     await useMemoSidecarStore.getState().saveIfDirty();
-    markClean();
     return true;
-  }, [filePath, content, setFile, setContent, markClean]);
+  }, []);
 
   const maybeDiscard = useCallback(async (): Promise<boolean> => {
     if (!isDirty) return true;
@@ -88,42 +96,45 @@ export function useFileMenuCommands(): FileMenuCommands {
 
   const doNew = useCallback(async () => {
     if (!(await maybeDiscard())) return;
-    setFile(null, '');
-  }, [maybeDiscard, setFile]);
+    useWorkspaceStore.getState().openInActivePanel(null, '');
+  }, [maybeDiscard]);
 
   const doOpen = useCallback(async () => {
     if (!(await maybeDiscard())) return;
     const r = await window.api.fileOpen();
-    if (r) setFile(r.path, r.content);
-  }, [maybeDiscard, setFile]);
+    // 이미 그 경로를 열고 있는 패널이 있으면 새 뷰를 만들지 않고 그 패널을
+    // 활성화한다 (REQ-PANEL-011 — v0.3에서 dual-open은 금지된다).
+    if (r) useWorkspaceStore.getState().openInActivePanel(r.path, r.content);
+  }, [maybeDiscard]);
 
   const doSaveAs = useCallback(async () => {
+    const doc = activeDocument(useWorkspaceStore.getState());
+    if (!doc) return;
     // Pass `filePath` so main can seed the dialog with the doc's
     // current folder; without it macOS dumps the user in `~/Downloads`.
-    const r = await window.api.fileSaveAs(content, basenameOf(filePath), filePath);
+    const r = await window.api.fileSaveAs(doc.content, basenameOf(doc.path), doc.path);
     if (r) {
       // v0.2.23 — `r.content` is set when main rewrote pending-asset
       // image refs into the doc's `assets/` dir during the save.
-      setFile(r.path, r.content ?? content);
-      markClean();
+      useWorkspaceStore.getState().setDocumentPath(doc.id, r.path, r.content ?? doc.content);
     }
-  }, [content, filePath, setFile, markClean]);
+  }, []);
 
   const doOpenPath = useCallback(
     async (path: string) => {
       if (!(await maybeDiscard())) return;
       const r = await window.api.fileOpenPath(path);
-      setFile(r.path, r.content);
+      useWorkspaceStore.getState().openInActivePanel(r.path, r.content);
     },
-    [maybeDiscard, setFile],
+    [maybeDiscard],
   );
 
   const loadTemplate = useCallback(
     async (markdown: string) => {
       if (!(await maybeDiscard())) return;
-      setFile(null, markdown);
+      useWorkspaceStore.getState().openInActivePanel(null, markdown);
     },
-    [maybeDiscard, setFile],
+    [maybeDiscard],
   );
 
   return { doSave, maybeDiscard, doNew, doOpen, doSaveAs, doOpenPath, loadTemplate };

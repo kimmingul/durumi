@@ -321,31 +321,130 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 
 ---
 
+### M1 — 문서 축과 패널 축의 분리
+
+**증거 파일**: `.moai/state/verify/m1/` (런타임 상태 — 커밋되지 않는다)
+
+| 로그 | 내용 |
+|---|---|
+| `red-0-awaitwindow-repro.log` | 저장의 await 창 결함 + issue #12 sticky의 **기계 재현** |
+| `red-1-axes-absent.log` | 축 분리 이전 상태 계층의 구조 관측 |
+| `green-1-workspace.log` | 새 축의 AC 통과 출력 |
+| `gate-test.log` / `gate-coverage.log` | 전체 게이트 |
+
+#### 0단계 — 검증 등급 승격: await 창 결함을 재현했다
+
+`spec.md` REQ-PANEL-015와 `design.md` §2.3은 이 결함을 **코드 직독 등급**으로 기록했다(“재현하지 않았다”). 실제 훅 모듈(`useFileMenuCommands`)을 구동해 실행 관측으로 올렸다 — 대체한 것은 preload 브리지(`window.api`)뿐이다.
+
+```
+[AW] 디스크에 쓰인 내용 = "원래 내용\n"
+[AW] 저장 후 버퍼      = "저장 중에 타이핑한 내용\n"
+[AW] 저장 후 isDirty   = false        <- 버퍼와 디스크가 다른데 clean
+[STICKY] 원복 후 isDirty = true        <- issue #12
+```
+
+**등급 갱신 제안(내 소관 아님)**: 이 두 결함은 이제 **기계 재현**이다. `research.md` §10의 등급 표와 REQ-PANEL-015 / AC-PANEL-010b의 “검증 등급” 문구는 manager-spec 소관이므로 건드리지 않았다.
+
+#### AC 판정 표 (8건)
+
+실행 명령: `npx vitest run tests/store/workspaceStore.test.ts`
+
+| AC | 상태 | 수정 전 관측 (RED) | 수정 후 |
+|---|---|---|---|
+| AC-PANEL-010 | PASS | `appStore 상태 필드 = ["filePath","content","isDirty","theme","themePreference","systemTheme","editMode","lastNonMarkdownMode","headingHint"]` — 문서 축·패널 축·창 전역이 한 객체에 섞여 판정 대상 자체가 없었다 | `✓ 경로·내용·미저장 여부·파일 종류는 문서에만, 표시 모드는 패널에만 있다` / `✓ 조정 상태는 문서 축이며 패널에 없다` |
+| AC-PANEL-010b | PASS | `[AW] 저장 후 isDirty = false` (await 창) · `[STICKY] 원복 후 isDirty = true` (issue #12) | `✓` 3건 (await 창 / 가변 boolean 부재 / 원복 시 clean 복귀) |
+| AC-PANEL-011a | PASS | `panels/documents 필드 존재 = { panels: false, documents: false }` — 참조 구조가 없었다 | `✓ 패널이 문서를 참조하는 형태이며 1:1이 강제되지 않는다` / `✓ 저장은 문서 단위, 폐기 확인은 마지막 참조 패널 판정` |
+| AC-PANEL-011b | PASS | 동일 (중복 판정 자체가 없었다) | `✓` 3건 (별칭 두 패널 / 동일 경로 재사용 / 한계의 소스 기록) |
+| AC-PANEL-012 | PASS | 저장이 `markClean()`으로 끝나 문서 식별자가 등장하지 않았다 | `✓ 쓰기 1회 + 대상이 문서 식별자` / `✓ 저장 API가 패널 식별자를 받지 않는다` |
+| AC-PANEL-013 | PASS | 패널 개념이 없어 "마지막 참조 패널" 판정이 불가능했다 | `✓` 3건 (확인 호출 / 취소 시 보존 / 깨끗하면 확인 없음) |
+| AC-PANEL-013b | PASS | 동일 | `✓ 폐기 확인 조건이 참조 수로 표현된다` |
+| AC-PANEL-014 | PASS | 동일 | `✓ 분할·닫기 취소·활성 전환·외부 변경을 임의 순서로 해도 내용이 보존된다` |
+
+**수정 전 통과한 AC: 0건.** 8개 전부 수정 전에는 판정 대상이 없었거나(구조 부재) 결함 동작을 보였다.
+
+**RED의 형태 (정직한 기술)**: `AC-PANEL-010b`만 **결함 동작**의 RED를 갖는다 — 위 0단계가 실제 모듈로 재현했다. 나머지 7건의 “수정 전”은 **구조의 부재**이며, 그것을 주장이 아니라 관측으로 남기려고 `appStore` 필드 집합을 찍는 임시 프로브를 돌렸다(`red-1-axes-absent.log`). 새 모듈에 대한 테스트는 원리상 결함 형태의 RED를 가질 수 없고, 그 사실을 숨기지 않는다.
+
+#### 구현
+
+| 위치 | 내용 |
+|---|---|
+| `src/store/workspaceStore.ts` (신규) | 문서 축 `{id, path, content, currentRevision, savedRevision, kind}` + 패널 축 `{panelId, documentId, displayMode}`. 두 필드 집합의 교집합은 공집합이고 `documentId`는 소유가 아니라 참조다 |
+| 〃 | `isDirty(doc) = currentRevision !== savedRevision` — 파생값. `saveDocument`가 쓰기 **전에** revision을 붙잡고 완료 후 대입하므로 await 창이 구조적으로 닫힌다 |
+| 〃 | `panelsReferencing` / `isLastReferencingPanel` / `needsDiscardConfirm` — 폐기 확인 판정을 참조 **수**로 표현. v0.3에서 도달 불가한 분기를 도달 불가한 채로 남긴다 |
+| 〃 | `samePath` — 경로 동일성 한 곳. 별칭 미탐지가 정의된 한계이며, REQ-PANEL-051의 완전한 정규화가 들어올 교체 지점이다 |
+| `src/store/appStore.ts` | 문서 필드 3종 + `setFile`/`setContent`/`markClean` 제거. 창 전역(테마·모드·안내 플래그)만 남았다 |
+| `useFileMenuCommands` · `useAppCloseGuard` | 저장이 `saveDocument`를 탄다. `markClean()` 호출 2곳 소멸 |
+| 소비처 8개 | `useAppStore((s) => s.filePath)` → `useActiveDocument((d) => d?.path ?? null)` 형태의 기계적 교체 |
+
+#### revision의 형태 — SPEC 내부 긴장 1건과 그 해소
+
+`REQ-PANEL-015`는 dirty를 `currentRevision !== savedRevision`으로 규정하고 `design.md` §2.3은 편집이 revision을 “올린다”고 적어 **단조 증가 카운터**를 시사한다. 그러나 카운터로 두면 `AC-PANEL-010b`의 세 번째 단언(**편집 후 원복하면 미저장 여부가 거짓으로 돌아온다**)이 실패한다 — 원복해도 카운터는 되돌아가지 않기 때문이다. 그리고 그 실패 형태가 **issue #12 sticky 그 자체**이므로, 카운터는 REQ-PANEL-015가 스스로 내건 근거(“파생값은 sticky일 수 없다”)를 성립시키지 못한다.
+
+**해소**: revision을 **내용의 정체성**으로 정의했다(같은 내용 ⇒ 같은 revision). 필드 이름은 SPEC 그대로이고 부등식도 그대로이며, 원복이 clean으로 돌아오고 await 창도 닫힌다. 해시가 아니라 내용 자체이므로 충돌로 dirty 문서를 clean으로 오판할 여지도 없다. **SPEC 본문은 고치지 않았다** — 문구 조정이 필요하다면 manager-spec 소관이다.
+
+#### 경계 — M1이 하지 않은 것
+
+| 항목 | 왜 |
+|---|---|
+| `editMode`를 패널 축으로 이관 | 모드 값의 출처는 **OQ-3 미해결**이고 M4 소관이다. 패널의 `displayMode` 필드는 만들되 배선하지 않았다 |
+| 소비처를 패널 지목 형태로 재작성 | **OQ-4 미해결**(활성 뷰 접근자 vs ref vs 패널 ID). 지금은 "활성 패널의 문서"를 읽는 형태이며, M4가 그 결정을 담는다 |
+| 파일 종류 판정 함수 | `kind` 필드는 문서 축에 있으나 확장자 판정은 M5 소관(REQ-PANEL-040~042, OQ-10) |
+| `AC-PANEL-001` / `011` | 렌더된 편집 표면을 요구하므로 M2 소속(판 0.3.6 R2) |
+
+#### 불변식
+
+| 검사 | 결과 |
+|---|---|
+| 조정 코어 5파일 (`git diff --quiet 040df4a`) | 5건 모두 exit 0 |
+| `docs/DOCUMENT_MODE_PRINCIPLES.md` | exit 0 |
+| `tests/electron/extensionIndependence.test.ts` | exit 0 (무변경) |
+| `MarkdownEditor.tsx`의 extension 배열 (AC-PANEL-042 allowlist 전제) | 추가·삭제 줄 **0건** |
+
+#### 전체 게이트
+
+| 명령 | 결과 | 기준선 대비 |
+|---|---|---|
+| `pnpm test` | exit 0 — `Test Files 203 passed (203)` / `Tests 2237 passed (2237)` | M0 종료 시점 201/2209 → **+2 파일 / +28 테스트** (신규 테스트 21 + 7과 정확히 일치) |
+| `pnpm typecheck` | exit 0 | — |
+| `pnpm lint` | exit 0 | — |
+| `pnpm test:coverage` | exit 0 — `All files 96.06%` | `appStore.ts`가 문서 필드 제거로 82.14%까지 떨어져 게이트를 깼다. **게이트를 낮추지 않고** 미커버였던 모드 전환 2갈래에 테스트를 붙여 100%로 올렸다 |
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
 run_complete_at: 2026-08-09
-run_commit_sha: 48aa799        # M0 구현 커밋. 이 줄은 후속 백필 커밋이 채운다
-run_status: milestone-partial   # M0만 완료. M1~M8은 미착수
-milestone: M0
-ac_pass_count: 12
+run_commit_sha: 48aa799        # M0 구현 커밋
+m1_commit_sha: pending-backfill-m1
+run_status: milestone-partial   # M0·M1 완료. M2~M8은 미착수
+milestone: M0+M1
+ac_pass_count: 20               # M0 12 + M1 8
 ac_fail_count: 0
-ac_scope: "AC-PANEL-080 / 080b / 080c / 080d / 080e / 080f / 081 / 081b / 081c / 082 / 083 / 084"
-reproduction_first: true         # REQ-PANEL-073 — RED 선행 실증 완료
+ac_scope: >-
+  M0: AC-PANEL-080 / 080b / 080c / 080d / 080e / 080f / 081 / 081b / 081c / 082 / 083 / 084
+  M1: AC-PANEL-010 / 010b / 011a / 011b / 012 / 013 / 013b / 014
+reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
 document_mode_principles_unchanged: true
 extension_independence_unchanged: true
+extension_array_untouched: true       # AC-PANEL-042 allowlist 전제 보존
 new_warnings_or_lints_introduced: 0
 teardown_discipline: release-before-executor-detach
-test_files: 201                  # 기준선 199
-tests: 2209                      # 기준선 2191
-coverage_gate: pass              # per-file 85%, All files 96.11%
+dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2 M1의 긴장 해소 참조
+test_files: 203                  # 기준선 199 → M0 201 → M1 203
+tests: 2237                      # 기준선 2191 → M0 2209 → M1 2237
+coverage_gate: pass              # per-file 85%, All files 96.06%
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
-total_run_phase_files: 15        # 소스 7 + 테스트 7(신규 2 + 갱신 5) + progress.md 1
-m1_to_mN_commit_strategy: "M0 단일 커밋. M1~M8은 후속 위임에서 마일스톤별 커밋"
+total_run_phase_files: 31        # M0 15 + M1 16(소스 8 + 테스트 7 + progress.md 1)
+m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M2~M8은 후속 위임"
+deferred_by_open_decision:
+  - "editMode의 패널 축 이관 — OQ-3 (M4)"
+  - "소비처의 패널 지목 배선 — OQ-4 (M4)"
+  - "파일 종류 판정 함수 — OQ-10 (M5)"
 ```
 
 ---

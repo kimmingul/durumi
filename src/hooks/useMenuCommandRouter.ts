@@ -3,6 +3,12 @@ import type { RefObject } from 'react';
 import type { EditorView } from '@codemirror/view';
 import type { MenuCommand } from '@shared/ipc-contract';
 import { useAppStore } from '../store/appStore';
+import {
+  activeDocument,
+  isDirty as isDocumentDirty,
+  useActiveDocument,
+  useWorkspaceStore,
+} from '../store/workspaceStore';
 import { useSidebarStore } from '../store/sidebarStore';
 import { useRightSidebarStore } from '../store/rightSidebarStore';
 import { useLanguage, resolveRendererLang } from '../i18n/t';
@@ -47,7 +53,8 @@ interface MenuCommandRouterDeps {
  * `MenuCommand` variant into the right action across the file / export /
  * citation / AI palette / workspace / editor-formatting subsystems.
  *
- * Reads the active appStore slice (`filePath`, `content`, `isDirty`,
+ * Reads the active document from `workspaceStore` (`path`, `content`, 미저장
+ * 여부) plus the appStore window-global slice (
  * `themePreference`) so the subscription re-binds whenever those snapshots
  * change — without that, async menu handlers would close over stale values.
  *
@@ -67,9 +74,9 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
     setShortcutsOpen,
   } = deps;
 
-  const filePath = useAppStore((s) => s.filePath);
-  const content = useAppStore((s) => s.content);
-  const isDirty = useAppStore((s) => s.isDirty);
+  const filePath = useActiveDocument((d) => d?.path ?? null);
+  const content = useActiveDocument((d) => d?.content ?? '');
+  const isDirty = useActiveDocument((d) => (d ? isDocumentDirty(d) : false));
   const themePreference = useAppStore((s) => s.themePreference);
   const setThemePreference = useAppStore((s) => s.setThemePreference);
   const setEditModeStore = useAppStore((s) => s.setEditMode);
@@ -100,7 +107,7 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
       // 진입점. 시각적 어포던스(버튼 위치·단축키)는 SPEC-2 소유이므로
       // 여기서는 메뉴 커맨드로만 노출한다.
       if (cmd === 'refreshProjectTree') {
-        const path = useAppStore.getState().filePath;
+        const path = activeDocument(useWorkspaceStore.getState())?.path ?? null;
         if (path) await window.api.projectRefresh(path);
         return;
       }

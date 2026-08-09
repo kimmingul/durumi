@@ -43,6 +43,12 @@ const CitationSuggestPanel = lazy(() =>
 );
 import { currentParagraph } from './editor/paragraphContext';
 import { useAppStore } from './store/appStore';
+import {
+  activeDocument,
+  isDirty as isDocumentDirty,
+  useActiveDocument,
+  useWorkspaceStore,
+} from './store/workspaceStore';
 import { useMemoCaretFocus } from './hooks/useMemoCaretFocus';
 import type { Macro } from '@shared/ipc-contract';
 import { EditorView } from '@codemirror/view';
@@ -71,10 +77,15 @@ export function App() {
     editorViewRef.current = v;
     setEditorView(v);
   }, []);
-  const filePath = useAppStore((s) => s.filePath);
-  const content = useAppStore((s) => s.content);
-  const isDirty = useAppStore((s) => s.isDirty);
-  const setContent = useAppStore((s) => s.setContent);
+  const filePath = useActiveDocument((d) => d?.path ?? null);
+  const content = useActiveDocument((d) => d?.content ?? '');
+  const isDirty = useActiveDocument((d) => (d ? isDocumentDirty(d) : false));
+  // 편집은 **활성 패널이 참조하는 문서**로 간다. 패널이 아니라 문서가 내용을
+  // 소유하므로(REQ-PANEL-010) 대상은 문서 식별자로 고른다.
+  const setContent = useCallback((next: string) => {
+    const doc = activeDocument(useWorkspaceStore.getState());
+    if (doc) useWorkspaceStore.getState().editDocument(doc.id, next);
+  }, []);
   const editMode = useAppStore((s) => s.editMode);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);

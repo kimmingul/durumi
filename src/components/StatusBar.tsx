@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { isDirty as isDirty_, useActiveDocument } from '../store/workspaceStore';
 import { useDocComments } from '../hooks/useDocComments';
 import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { useLanguage, t } from '../i18n/t';
@@ -29,9 +30,9 @@ const MODES: ReadonlyArray<{ mode: EditMode; labelKey: string; icon: string; tit
 ];
 
 export function StatusBar() {
-  const filePath = useAppStore((s) => s.filePath);
-  const content = useAppStore((s) => s.content);
-  const isDirty = useAppStore((s) => s.isDirty);
+  const filePath = useActiveDocument((d) => d?.path ?? null);
+  const content = useActiveDocument((d) => d?.content ?? '');
+  const isDirty = useActiveDocument((d) => (d ? isDirty_(d) : false));
   const editMode = useAppStore((s) => s.editMode);
   const headingHint = useAppStore((s) => s.headingHint);
   const setEditMode = useAppStore((s) => s.setEditMode);

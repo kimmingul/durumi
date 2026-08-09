@@ -19,7 +19,7 @@ import {
   wrapCmComment,
 } from '../editor/keymap/wrapCriticMarkup';
 import { inlineMarksAt, type InlineMarkActiveSet } from '../editor/markdownExt/inlineMarkDetection';
-import { useAppStore } from '../store/appStore';
+import { useActiveDocument } from '../store/workspaceStore';
 import { t, useLanguage } from '../i18n/t';
 import { TableSizePopover } from './TableSizePopover';
 import { ToolbarMenu, type ToolbarMenuItem } from './ToolbarMenu';
@@ -275,7 +275,7 @@ function ToolButton({
 
 export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }: EditorToolbarProps) {
   useLanguage();
-  const content = useAppStore((s) => s.content);
+  const content = useActiveDocument((d) => d?.content ?? '');
   const [styleValue, setStyleValue] = useState<StyleValue>(() => detectStyle(view));
   const [marks, setMarks] = useState<InlineMarkActiveSet>(() => {
     if (!view) return EMPTY_MARKS;

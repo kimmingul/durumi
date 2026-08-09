@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { RefObject } from 'react';
 import type { EditorView } from '@codemirror/view';
-import { useAppStore } from '../store/appStore';
+import { useActiveDocument } from '../store/workspaceStore';
 
 /**
  * Toolbar "Image" button: opens the OS picker through the
@@ -19,7 +19,7 @@ import { useAppStore } from '../store/appStore';
 export function usePickAndInsertImage(
   editorViewRef: RefObject<EditorView | null>,
 ): () => Promise<void> {
-  const filePath = useAppStore((s) => s.filePath);
+  const filePath = useActiveDocument((d) => d?.path ?? null);
   return useCallback(async () => {
     const view = editorViewRef.current;
     if (!view) return;
