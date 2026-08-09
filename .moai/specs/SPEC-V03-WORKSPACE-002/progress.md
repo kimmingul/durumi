@@ -59,6 +59,8 @@ plan_artifact_commits:
   - 9f5c3da  # 판 0.3.8 — 규약에 분석적 귀결/전제 구분 추가
   - ddeae2d  # progress.md 커밋 SHA 백필
   - 9321b0a  # 판 0.3.9 — 앵커 만료(003b) + §C.0 세 번째 조항(판정 대상의 생산자)
+  - 2543ea0  # progress.md 커밋 SHA 백필
+  - 15456c9  # 판 0.3.10 — REQ-005a 진입점 + AC-005a/005b + §C.0 네 번째 조항(도달)
 blocking_decisions:
   total: 10
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
