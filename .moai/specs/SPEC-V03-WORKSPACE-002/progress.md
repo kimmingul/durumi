@@ -531,6 +531,69 @@ VS Code 관용인 `Cmd+\`는 이미 사이드바 토글이라 쓸 수 없어 `\`
 
 ---
 
+### M3 — 조정 계층의 문서 축
+
+**증거**: `.moai/state/verify/m3/`. 커밋 `f04c53b`(감시 등록의 문서 축·경로 대조) + `eb652fd`(문서별 조정·창 단위 정책의 판정).
+
+#### 중력 중심은 감시 등록이었다 — 나머지는 M0이 이미 닫아 두었다
+
+M3의 여섯 요구 중 실제로 **구현이 없던 것은 REQ-PANEL-050 하나**다. `useExternalChangeWiring`이 스칼라 `filePath` 하나를 받아 한 문서만 등록하고 있었고, 호출부는 `App.tsx` 한 곳이었다. 나머지 넷(051·052·055·056)은 M0이 조정 상태와 실행자를 경로별로 바꾸면서 구조적으로 이미 성립해 있었다 — **다만 그것을 판정하는 테스트가 하나도 없었다**(`grep -rn "AC-PANEL-05[0-9]" tests/` → 0건). M3가 그 판정을 붙였다.
+
+**통과를 만들기 위한 리팩터는 하지 않았다.** AC-PANEL-055·055b는 처음 쓴 판정이 곧바로 통과했고, 그 사실을 아래 표에 그대로 적는다.
+
+#### AC 판정 (10/10 PASS)
+
+| AC | 상태 | 판정 명령 | 근거 |
+|---|---|---|---|
+| 050 | PASS | `pnpm vitest run tests/hooks/useExternalChangeWiring.test.tsx` | 서로 다른 문서 셋을 연 패널 셋이 전부 등록되고 `unwatchOpenFile` 호출 0건 |
+| 050b | PASS | 동일 | 두 패널이 같은 문서 참조 시 등록 1회, 첫 패널 닫힘에 해제 0건, 마지막 참조 닫힘에 해제 1회 |
+| 051 | PASS | `pnpm vitest run tests/store/reconciliationDocumentAxis.test.ts` | a.md 확정 변경이 a.md에만 적용, b.md 버퍼 바이트 동일. 열지 않은 z.md는 어떤 버퍼도 안 바꿈 |
+| 051b | PASS | `pnpm vitest run tests/shared/pathIdentity.test.ts` | 논리 관계 5종을 macOS·Windows 표기로 각각 대조해 **판정 일치**. 흡수하는 차이(구분자·대소문자·드라이브)는 플랫폼별로 따로 고정 |
+| 052 | PASS | `pnpm vitest run tests/store/reconciliationDocumentAxis.test.ts` | dirty a.md는 `held-notify`+버퍼 불변, clean b.md는 자동 반영. 전이 후 상대 문서의 **상태 객체 참조**가 그대로 |
+| 055 | PASS **(M0이 닫았고 M3가 판정을 붙였다)** | 동일 | 첫 판정에서 곧바로 통과. 두 번째 패널 마운트 후에도 첫 패널의 실행자가 살아 있고, 세 패널이 동시에 조정을 받는다 |
+| 055b | PASS **(M0이 닫았고 M3가 판정을 붙였다)** | 동일 | 첫 판정에서 곧바로 통과. B 언마운트 후 A의 조정 생존 + 언마운트한 경로에는 더 이상 적용되지 않음(과다 해제·과소 해제 양방향) |
+| 056 | PASS | 동일 | 정책 1회 주입으로 문서 3개 전부 알림 상태. **주입 뒤 열린 네 번째 문서도 재주입 없이 적용**. 문서별 정책 맵 부재를 소스로 고정 |
+| 057 | PASS | `pnpm vitest run tests/layout/panelWatchScope.test.tsx` | 패널 3개에서 `excluded` 정확히 1개 = `folders`가 data 역할로 해석한 경로. 패널 1개일 때와 `excluded`·`folders` 동일 |
+| 057b | PASS | 동일 | data 역할 폴더는 감시 제외 유지 + 그 안의 `data/raw.csv`를 **보조 패널로 열면** 등록됨 (`splitPanel` → `open` 메뉴 커맨드 경로 통과) |
+
+#### 뒤집은 단언 (plan.md §B.8의 계약 산출물)
+
+`tests/hooks/useExternalChangeWiring.test.tsx:93` **"파일이 바뀌면 이전 파일의 감시를 먼저 푼다"** 를 지우지 않고 뒤집었다. 그 자리에 들어온 것은 참조 카운트 규칙이고, 옛 시나리오는 **규칙의 한 사례**로 남겼다 — 해제의 근거가 "경로가 바뀌었다"에서 **"그 경로를 참조하는 패널이 하나도 없다"** 로 옮겨졌다. 두 규칙을 갈라놓는 사례를 새로 세웠다: *다른 패널이 그 문서를 붙들고 있으면 갈아타도 풀리지 않는다* — 옛 규칙이면 여기서 보조 패널의 문서가 감시를 잃는다.
+
+#### 판정력 검증 — 새 판정이 실제로 결함을 잡는가
+
+`tests/layout/panelWatchScope.test.tsx`는 훅을 고친 **뒤에** 썼으므로 RED를 관측하지 못했다. 그래서 `openDocuments`에 "활성 패널만" 회귀를 일시 주입해 실측했다 — 그 파일 1건 + 훅 파일 10건이 실패했고, 특히 *보조 패널의 등록이 원고 패널의 감시를 풀었다* 단언이 잡았다. 회귀는 `git checkout`으로 되돌렸고 이후 전 게이트를 다시 통과시켰다.
+
+관련해 판정 형태를 한 번 바꿨다: 초판은 "원고 경로가 등록 이력에 있다"로 단언했는데, 그것은 **"등록됐다가 방금 풀렸다"를 통과시킨다.** 해제 부재(`unwatched`에 없음)로 바꿔야 지금 살아 있음을 말한다.
+
+#### 설계 긴장 1건 — 경로 대조를 라우팅에 실제로 꽂을 것인가
+
+`AC-PANEL-051b`의 판정 대상은 **순수 함수**다. 함수만 만들고 라우팅은 문자열 동일성으로 두어도 AC는 통과한다. 그러나 그러면 추출이 장식이고, Windows에서 main이 보낸 `C:\…` 표기와 렌더러가 연 `C:/…` 표기가 어긋나 **확정 변경이 열린 문서를 찾지 못하고 조용히 폐기된다** — 오류가 나지 않으므로 조정이 통째로 죽은 것을 알 수단이 없다.
+
+**꽂는 쪽을 택했다.** 대가는 `reconciliationStore`의 Map 키가 경로 문자열이 아니라 대조 키가 되는 것이고, POSIX에서는 항등이라 M0의 기존 단언(`statePaths()`가 `/w/b.md`를 담는다 등)이 그대로 통과한다. `ReconciliationSurface`가 `states.get(path)`를 직접 쓰던 것을 `stateFor(path)`로 바꾼 것이 이 선택의 유일한 파급이다 — 접는 규칙의 소유자를 스토어 하나로 유지한다.
+
+기각한 쪽: 함수만 추출하고 라우팅은 그대로 두기. 기각 근거는 위의 무성 실패이며, "AC는 통과하지만 요구는 성립하지 않는" 상태를 남긴다.
+
+#### 배선하지 않은 것 (관측으로만 기록)
+
+`resolveWatchScope` / `registerWatchScope`는 여전히 **프로덕션 호출부 0곳**이다(`plan.md` §A.4). M3의 `대상 요구:` 여섯 중 그 배선을 생산하는 요구가 없어 **손대지 않았다** — AC-PANEL-057의 문언이 "감시 범위를 해석한다"이므로 순수 함수 판정이 문언에 맞고, 배선을 끼워 넣는 것은 소유자 없는 범위 확장이다. 이 관측은 M3 진입 점검(§F)에 이미 기록되어 있고 여기서 되풀이한다.
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — `209 passed / 2315 passed` (M2 후속 종료 206/2266 → **+3 파일 / +49 테스트**). 신규 44건(pathIdentity 21 + 문서 축 15 + 감시 범위 5 + 훅 재작성 순증 3 = 44)에 훅 파일 재작성의 옛 10건 제거를 더하면 `2266 − 10 + 18 + 21 + 15 + 5 = 2315`로 일치한다. `typecheck`·`lint` exit 0(신규 경고 0). `coverage` exit 0 — All files 96.24%(직전 96.22%), per-file 85% 게이트에서 신규·수정 파일 전부 통과(`pathIdentity.ts` 100%, `useExternalChangeWiring.ts` 100%, `reconciliationStore.ts` 100%, `ReconciliationSurface.tsx` 100%, `workspaceStore.ts` 90.33%).
+
+`multiPanelShell.test.tsx`의 `act` 경고 46건은 **기존 것이다** — 기준선 `1b64c86`에서 실측 46건, M3 적용 후에도 46건으로 동일하다.
+
+#### 불변식
+
+조정 코어 5파일 · `docs/DOCUMENT_MODE_PRINCIPLES.md` · `extensionIndependence.test.ts` 전부 `git diff --quiet 040df4a` exit 0. `applyExternalChange`는 arity 2 유지(라우팅은 스토어가 target을 고르는 것으로 성립). `MarkdownEditor.tsx`는 M3에서 **한 줄도 바뀌지 않았고**(`git diff 1b64c86` 출력 0줄) extension 배열 추가·삭제 0건. 사이드바 보존 집합 9파일 전부 무변경 통과.
+
+#### 범위 밖으로 남긴 것
+
+REQ-PANEL-053(패널별 배너 표면)·054(IME 게이트 합류)는 M4다 — 편집 표면과 조합 관찰이 필요하다. 배너는 여전히 창 전역 1개(`App.tsx`의 `<ReconciliationSurface path={filePath} />`)이며 M3는 그것을 옮기지 않았다.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
@@ -539,33 +602,43 @@ run_commit_sha: 48aa799        # M0 구현 커밋
 m1_commit_sha: 66ddffa       # M1 구현 커밋
 m2_commit_sha: 6e7259f       # M2 구현 커밋
 m2_entrypoint_commit_sha: 48ffc7d   # 분할·닫기 진입점
-run_status: milestone-partial   # M0·M1 완료, M2 부분 완료(11/15). M3~M8 미착수
-milestone: M0+M1+M2(부분)
-ac_pass_count: 31               # M0 12 + M1 8 + M2 11
+m3_commit_sha: f04c53b       # M3 감시 등록의 문서 축 + 경로 대조
+m3_routing_commit_sha: eb652fd   # M3 문서별 조정 · 창 단위 정책 판정
+run_status: milestone-partial   # M0·M1·M3 완료, M2 부분 완료(11/15). M4~M8 미착수
+milestone: M0+M1+M2(부분)+M3
+ac_pass_count: 41               # M0 12 + M1 8 + M2 11 + M3 10
 ac_fail_count: 0
 ac_scope: >-
   M0: AC-PANEL-080 / 080b / 080c / 080d / 080e / 080f / 081 / 081b / 081c / 082 / 083 / 084
   M1: AC-PANEL-010 / 010b / 011a / 011b / 012 / 013 / 013b / 014
   M2: AC-PANEL-001 / 002 / 002b / 002c / 003 / 003b / 004 / 005 / 007 / 011 / 065
   M2 미착수: AC-PANEL-036 / 036b / 036c / 036d (프로젝트 트리 표면 부재)
+  M3: AC-PANEL-050 / 050b / 051 / 051b / 052 / 055 / 055b / 056 / 057 / 057b
 reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
 document_mode_principles_unchanged: true
 extension_independence_unchanged: true
 extension_array_untouched: true       # AC-PANEL-042 allowlist 전제 보존
-new_warnings_or_lints_introduced: 0
+new_warnings_or_lints_introduced: 0   # M3 실측: act 경고 46건은 1b64c86에서도 46건(기존)
 teardown_discipline: release-before-executor-detach
 dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2 M1의 긴장 해소 참조
-test_files: 206                  # 기준선 199 → M0 201 → M1 203 → M2 205 → M2e 206
-tests: 2266                      # 기준선 2191 → M0 2209 → M1 2237 → M2 2256 → M2e 2266
-coverage_gate: pass              # per-file 85%, All files 96.23%
+watch_registration_model: reference-counted-open-document-set  # M3 — 경로당 1회, 마지막 참조에서 해제
+path_identity: injectable-pure-function  # shared/pathIdentity.ts — 플랫폼을 인자로 받는다(C-7)
+reconciliation_policy_scope: window-single   # 문서별 정책 맵 없음 (REQ-PANEL-056)
+test_files: 209                  # 기준선 199 → M0 201 → M1 203 → M2 205 → M2e 206 → M3 209
+tests: 2315                      # 기준선 2191 → M0 2209 → M1 2237 → M2 2256 → M2e 2266 → M3 2315
+coverage_gate: pass              # per-file 85%, All files 96.24%
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
-total_run_phase_files: 31        # M0 15 + M1 16(소스 8 + 테스트 7 + progress.md 1)
-m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M2~M8은 후속 위임"
+  m3_mitigation: "경로 대조를 순수 함수로 떼고 양 플랫폼을 유닛에서 재현 (AC-PANEL-051b)"
+total_run_phase_files: 39        # M0 15 + M1 16 + M3 8(소스 5 + 테스트 3, progress.md 별도)
+m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4~M8은 후속 위임"
 deferred_by_open_decision:
+  - "패널별 배너 표면 — REQ-PANEL-053 (M4). 배너는 여전히 창 전역 1개다"
+  - "IME 게이트의 문서 축 합류 — REQ-PANEL-054 (M4)"
+  - "resolveWatchScope/registerWatchScope 프로덕션 배선 — 소유 요구 없음. 관측으로만 기록"
   - "editMode의 패널 축 이관 — OQ-3 (M4)"
   - "소비처의 패널 지목 배선 — OQ-4 (M4)"
   - "파일 종류 판정 함수 — OQ-10 (M5)"
@@ -588,9 +661,67 @@ sync_commit_sha: <pending sync-phase>
 
 ## §F Phase 4 Mode Selection
 
-_<pending — 오케스트레이터가 첫 run-phase `Agent()` spawn 전에 채운다>_
+> 섹션 문자 예약용이다. `§E.*` 네임스페이스는 era 분류 엔진이 파싱하므로 Mode Selection이 그것을 재사용해서는 안 된다. 내용 계약은 `.claude/rules/moai/workflow/orchestration-mode-selection.md` §D가 소유한다.
 
-> 섹션 문자 예약용 자리표시자다. `§E.*` 네임스페이스는 era 분류 엔진이 파싱하므로 Mode Selection이 그것을 재사용해서는 안 된다. 내용 계약은 `.claude/rules/moai/workflow/orchestration-mode-selection.md` §D가 소유한다.
+### M3 (2026-08-09)
+
+**입력 파라미터**
+
+| 항목 | 값 |
+|---|---|
+| tier | L |
+| 예상 파일 수 | 6~9 (`useExternalChangeWiring.ts` · `reconciliationStore.ts` · 경로 대조 순수 함수 신설 · `App.tsx` · `PanelContainer.tsx` 인접 + 테스트 4~5) |
+| 도메인 수 | 2 (렌더러 상태 계층 / 훅 배선) — 3 미만 |
+| 언어 구성 | TypeScript 100% |
+| 병렬 이득 | LOW — 구현 중심이며 파일 간 의존이 있다 (라우팅 키 → 훅 배선 → 테스트) |
+
+**모드 평가**
+
+| 모드 | 선택 | 근거 |
+|---|---|---|
+| 1 trivial | 미선택 | 의미 변경이 있는 다중 파일 구현 |
+| 2 background | 미선택 | 쓰기 작업 |
+| 3 agent-team | 미선택 | RETIRED (톰스톤) |
+| 4 parallel | 미선택 | 도메인 2개(<3), 파일 9개 이하(<10). 게다가 구현 중심이라 Anthropic coding-task 병렬성 유보 조항이 적용된다 |
+| 5 sub-agent | **선택** | 기본 폴백이며 위 조건이 이것을 가리킨다 |
+| 6 workflow | 미선택 | ~30 파일 미만이고 기계적 단일 변환 규칙이 아니다 |
+
+**Decision: sub-agent**
+
+**정당화**: M3는 라우팅 키 도입 → 훅 배선 재작성 → 테스트 부착의 순서 의존이 있는 구현 작업이다. 도메인 2개·파일 9개 이하로 Mode 4 임계(3 도메인 / 10 파일) 아래이며, 경계 근처도 아니다. Anthropic의 coding-task 병렬성 유보("most coding tasks involve fewer truly parallelizable tasks than research")에 따라 구현 중심 작업은 순차 sub-agent가 안전한 기본값이다. Tier L이므로 `manager-develop-prompt-template.md` Section A-E 전체 템플릿을 적용한다.
+
+### M3 진입 — §C.0 기계 점검 결과 (2026-08-09)
+
+`plan.md` §C.0이 마일스톤 진입 시 의무화한 점검을 실행했다.
+
+| 점검 | 결과 | 근거 |
+|---|---|---|
+| 점검 1 — §A.4 전수 대조 | **위반 1건** | 아래 |
+| 점검 2 — 생산 요구 부재 탐지 | 통과 | M3의 `REQ-PANEL-050`(Ubiquitous)·051·052·056이 긍정 능력 요구다. 제약형만으로 구성되지 않았다 |
+| 네 번째 조항 — 도달 가능한 진입점 | **위반 아님 (실측으로 기각)** | 아래 |
+
+**점검 1 위반 — 감시 범위 배선에 생산 요구가 없다 (§C.0a 계열 네 번째 사례).**
+
+`resolveWatchScope` / `registerWatchScope`는 §A.4(`plan.md:448`)가 "프로덕션 호출부 0곳"으로 열거한 두 표면 중 하나이며, **지금도 0곳이다** — `src`·`shared`·`electron` 전수 grep에서 정의 파일(`electron/watchScope.ts`) 외 매치 없음. 그런데 이 둘을 생산하게 만드는 요구가 **어느 마일스톤의 `대상 요구:`에도 없다**: M3의 `REQ-PANEL-057`은 Unwanted 제약형("패널 수 증가는 … 무효화하지 않아야 한다", `spec.md:554`)이고, 나머지 8개 마일스톤의 `대상 요구:` 어디에도 "규약 폴더 감시를 등록하라"는 긍정 능력 요구가 없다.
+
+결과: `AC-PANEL-057`은 `resolveWatchScope`를 유닛에서 직접 호출해 **판정 가능하고 초록이 된다** — 그 함수가 프로덕션에서 한 번도 불리지 않는 채로. 사슬 **배정 → 생산 → 도달** 중 **생산**에서 새는 형태이며, 프로젝트 트리(§C.0a) · 감시 배선 · 분할 진입점(판 0.3.10)에 이은 네 번째다.
+
+**택한 처리 (사용자 승인, 2026-08-09)**: **관측만 기록하고 M3를 계획대로 진행한다.** M3의 밀폐성은 깨지지 않으며 `AC-PANEL-057`/`057b`는 `openFiles` 3개 대 1개의 순수 함수 대조로 판정 가능하다. **배선 소유는 이 마일스톤이 잡지 않는다** — 배선 지점이 main 프로세스의 프로젝트 열기 경로여서 M3 대상 AC 10건 밖이고, 넣으면 판정할 AC가 없는 코드가 M3에 들어온다. 프로젝트 트리 표면 위임(M2 미착수분, `progress.md` M2 §미착수)과 함께 범위를 잡는다.
+
+**네 번째 조항이 위반이 아닌 이유 (의심 후 실측으로 기각).** `AC-PANEL-057b`가 "그 파일을 **보조 패널로 연다**"를 요구해 진입점 부재를 의심했다. 실측 결과 호출 경로가 실재한다 — 보기 메뉴 `splitPanel` → `openInNewPanel(null, '')`로 빈 패널이 활성이 되고(`src/hooks/useMenuCommandRouter.ts:150`), 파일 메뉴 열기가 `openInActivePanel(r.path, r.content)`로 그 패널에 적재한다(`src/hooks/useFileMenuCommands.ts:107`). **결함으로 기록하지 않는다** — 텍스트 패턴 추론을 도구 실측 없이 결함으로 승격하지 않는다는 규약을 따랐다.
+
+### M3 진입 — 전제 검증 (2026-08-09)
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| HEAD·브랜치·원격 | `git rev-parse --short HEAD` / `git rev-list --count --left-right` | `1b64c86` / `feat/v0.3-workspace` / `0 0` |
+| 테스트 기준선 | `pnpm test` | exit 0 — `206 passed (206)` / `2266 passed (2266)` |
+| 코어 5파일 불변식 | `git diff --quiet 040df4a` ×7 | 코어 5파일 + `extensionIndependence.test.ts` + `docs/DOCUMENT_MODE_PRINCIPLES.md` 전부 exit 0 |
+| M3 대상 목록 | `plan.md:839-840` | 요구 6건 / AC 10건 — 일치 |
+
+**OQ-8 차단 해제 판정**: `blocking_decisions.m3_blocked_by: [OQ-8]`은 같은 줄 주석대로 **핵 결함이 M0에서 닫힌** 뒤 남은 항목이 `AC-PANEL-084`(창 축 e2e 추가 여부, M0 소속)뿐이다. M3의 AC 10건 중 OQ-8을 인용하는 것은 0건이므로 M3는 차단되지 않는다.
+
+**M0·M2가 이미 만든 것 (M3 작업면 축소)**: `reconciliationStore.ts`는 M0에서 경로 키잉으로 전환되어 `effectHandlers: Map<string, handler>`(`:68`) · `openDocuments: Set<string>`(`:72`) · `setEffectHandlerFor(path, handler)`(`:160-166`)를 갖추었고, `MarkdownEditor.tsx:188-190`이 `path`를 클로저로 묶어 등록한다. `AC-PANEL-055`(마운트 탈취)·`055b`(언마운트 무장 해제)가 지목한 두 경로는 **구조적으로 이미 닫힌 것으로 보인다 — 다만 두 AC를 판정하는 테스트는 0건이므로 미검증이다**(`grep -rn "AC-PANEL-05[0-9]" tests/` 무매치). 반면 `AC-PANEL-050`의 핵심 결함은 그대로다: `useExternalChangeWiring(filePath, content, isDirty)`가 `src/App.tsx:110`에서 **스칼라 경로 하나로 단 한 번** 호출된다 — `REQ-PANEL-050`이 대체 대상으로 지목한 바로 그 지점이다.
 
 ---
 
