@@ -45,6 +45,8 @@ plan_artifact_commits:
   - fdd6b66  # 판 0.3.1 — Plan Audit FAIL 대응 (Blocking 4 + Medium/Low 11)
   - 2541727  # progress.md 커밋 SHA 백필
   - 9417ec0  # 판 0.3.2 — D7 실질 해소 + F1~F14
+  - 7e5ca6f  # progress.md 커밋 SHA 백필
+  - 0da38ed  # 판 0.3.3 — High 3건 (N1 배정 축 / N2 예외 / N3 뷰 준비)
 blocking_decisions:
   total: 9
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
