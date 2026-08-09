@@ -49,6 +49,8 @@ plan_artifact_commits:
   - 0da38ed  # 판 0.3.3 — High 3건 (N1 배정 축 / N2 예외 / N3 뷰 준비)
   - 8ff7f3d  # progress.md 커밋 SHA 백필
   - 710ba13  # 판 0.3.4 — N11~N15 복원 + 배정 도출 미검토 명시 (기록 전용)
+  - 94266c2  # progress.md 커밋 SHA 백필
+  - bd1ece5  # 판 0.3.5 — R1~R5 (plan 단계 최종판)
 blocking_decisions:
   total: 9
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
