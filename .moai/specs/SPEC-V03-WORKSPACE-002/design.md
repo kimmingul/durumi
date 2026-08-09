@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.9"
+version: "0.3.10"
 status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
@@ -771,7 +771,7 @@ e2e는 macOS 전용이다. 패널 레이아웃은 CSS·flex 계산이므로 플�
 
 ## 10. 참조
 
-- `spec.md` — 요구사항 **61개** (REQ-PANEL-070~073 + 070a·070b·071a + 001~065)
+- `spec.md` — 요구사항 **62개** (REQ-PANEL-070~073 + 070a·070b·071a + 001~065, 005a 포함)
 - `plan.md` — §A 확정 결정 + **미해결 결정**, §C 마일스톤, §D 위험
 - `acceptance.md` — 수용 기준
 - `research.md` — 8개 영역 조사 + 멀티패널 위험 목록 + 미검증 항목
