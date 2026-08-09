@@ -532,7 +532,7 @@ run_complete_at: 2026-08-09
 run_commit_sha: 48aa799        # M0 구현 커밋
 m1_commit_sha: 66ddffa       # M1 구현 커밋
 m2_commit_sha: 6e7259f       # M2 구현 커밋
-m2_entrypoint_commit_sha: pending-backfill-m2e   # 분할·닫기 진입점
+m2_entrypoint_commit_sha: 48ffc7d   # 분할·닫기 진입점
 run_status: milestone-partial   # M0·M1 완료, M2 부분 완료(11/15). M3~M8 미착수
 milestone: M0+M1+M2(부분)
 ac_pass_count: 31               # M0 12 + M1 8 + M2 11
