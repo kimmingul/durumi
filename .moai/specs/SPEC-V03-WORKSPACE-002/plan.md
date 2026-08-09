@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "구현 계획 — v0.3 멀티패널 셸"
-version: "0.3.6"
+version: "0.3.7"
 status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
@@ -118,7 +118,7 @@ codex의 정밀 의무: **`RightSidebar`는 "활성 원고 패널"에 속하는 
 
 **검증 등급**: 코드 직독 확인이며 **재현하지 않았다.** 결함 A(기계 재현)와 등급이 다르고, `research.md` §10 항목 2a가 조합 플래그 결함에 대해 하는 구분과 같은 방식으로 구분한다.
 
-**SPEC-2가 고치는가**: **(4)의 revision 기반 dirty 파생이 이 결함을 무료로 해소한다** — `markClean()`이라는 "지금을 clean으로 선언하는" 명령형 연산 자체가 사라지고, `savedRevision = <저장된 revision>` 대입으로 바뀌기 때문이다. 저장이 시작된 시점의 revision을 기록하면 await 창 안의 편집은 revision을 올려 `currentRevision !== savedRevision`이 참으로 남는다. **따라서 SPEC-2가 (4)를 구현하는 부수 효과로 닫는 것을 권고하며**(가장 저렴한 해소), 별개 SPEC으로 넘기지 않는다. AC-PANEL-010b가 이 성질을 고정한다.
+**SPEC-2가 고치는가**: **(4)의 revision 기반 dirty 파생이 이 결함을 무료로 해소한다** — `markClean()`이라는 "지금을 clean으로 선언하는" 명령형 연산 자체가 사라지고, `savedRevision = <저장된 revision>` 대입으로 바뀌기 때문이다. 저장이 시작된 시점의 revision을 기록하면 await 창 안의 편집은 `currentRevision`을 **갈라놓아** `currentRevision !== savedRevision`이 참으로 남는다(revision은 **내용의 동일성**이며 단조 카운터가 아니다 — 판 0.3.7, `design.md` §2.3). **따라서 SPEC-2가 (4)를 구현하는 부수 효과로 닫는 것을 권고하며**(가장 저렴한 해소), 별개 SPEC으로 넘기지 않는다. AC-PANEL-010b가 이 성질을 고정한다.
 ---
 
 #### OQ-3 — 모드 모델: 컨트롤 표면과 `defaultMode` 의미론

@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.6"
+version: "0.3.7"
 status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
@@ -102,11 +102,36 @@ dirty를 문서 축으로 옮기면 이 sticky 성질이 **문서마다 복제�
 
 **두 await를 건너는 동안 타이핑된 편집이 clean으로 표시된다.** codex가 첫 번째를 발견했고, 오케스트레이터와 내가 소스를 읽어 **진입점이 둘임**을 확인했다.
 
-핵심은 `markClean()`이라는 **"지금을 clean으로 선언하는" 명령형 연산 자체가 결함의 형태**라는 것이다. revision 파생에서 저장은 `savedRevision = <저장을 시작한 시점의 revision>` 대입이 되고, await 창 안의 편집은 `currentRevision`을 올려 부등식이 참으로 남는다. **명령형 선언이 사라지면 낡은 선언도 사라진다.**
+핵심은 `markClean()`이라는 **"지금을 clean으로 선언하는" 명령형 연산 자체가 결함의 형태**라는 것이다. revision 파생에서 저장은 `savedRevision = <저장을 시작한 시점의 revision>` 대입이 되고, await 창 안의 편집은 `currentRevision`을 **갈라놓아** 부등식이 참으로 남는다. **명령형 선언이 사라지면 낡은 선언도 사라진다.**
+
+**revision은 단조 카운터가 아니라 내용의 동일성이다 — 초판의 "올린다"는 표현 정정 (M1 구현에서 발견).** 초판은 이 문단을 "`currentRevision`을 **올려**"라고 적었고 그 동사는 단조 증가 카운터를 함의한다. **카운터는 `AC-PANEL-010b`의 세 번째 단언을 통과하지 못한다** — 편집한 뒤 원래 내용으로 되돌리면 미저장 여부가 거짓으로 돌아와야 하는데, 카운터는 내려오지 않는다. 더 날카로운 지점은 **그 실패 형태가 issue #12의 sticky 그 자체**라는 것이다("한 번 참이 되면 내용이 복원되어도 다시 거짓이 되지 않는다"). 즉 `REQ-PANEL-015`가 파생 모델을 정당화하며 든 근거 1("파생값은 sticky일 수 없다")과 §2.3이 시사한 메커니즘이 **서로 반대를 가리키고 있었다.**
+
+채택된 형태는 **내용 동일성**이다 — 같은 내용이면 같은 revision:
+
+```ts
+export const revisionOf = (content: string): Revision => content as Revision;  // branded string
+const isDirty = (doc) => doc.currentRevision !== doc.savedRevision;
+```
+
+(`src/store/workspaceStore.ts:56, :84`. 필드 이름과 부등식은 `REQ-PANEL-015`가 규정한 그대로이며 **메커니즘만 이 문단이 잘못 서술했다.**)
+
+| 성질 | 근거 |
+|---|---|
+| 원복하면 clean으로 돌아온다 | 같은 문자열 → 같은 revision → 부등식 거짓. `AC-PANEL-010b` 세 번째 단언 충족 |
+| clean을 dirty로 오보하지 않는다 | **해시가 아니므로 충돌 경로가 없다.** 다른 내용이 같은 revision을 가질 수 없다 |
+| 내용을 두 벌 들고 있지 않다 | JS 문자열은 불변이라 저장 직후 두 필드가 **같은 참조**를 공유한다 |
+| await 창이 닫힌다 | `markDocumentSaved(documentId, revision)`이 **저장을 시작할 때 붙잡은 revision**을 받는다(`workspaceStore.ts:407-441`). await 중의 편집은 `currentRevision`을 갈라놓으므로 dirty로 남는다 |
+
+기각된 대안:
+
+| 대안 | 기각 근거 |
+|---|---|
+| 단조 증가 카운터 | `AC-PANEL-010b` 원복 단언 실패. 그 실패가 곧 issue #12 sticky의 형태이므로 **`REQ-PANEL-015`의 존재 이유를 스스로 무효화한다** |
+| 내용 해시 | 충돌 시 **dirty 문서를 clean으로 보고**한다 — 데이터 손실 방향의 오보. 내용 동일성보다 나은 점이 없다(문자열 불변성 덕에 메모리 이득도 없다) |
 
 따라서 이 결함은 별개 SPEC으로 넘기지 않고 **SPEC-2가 REQ-PANEL-015를 구현하는 부수 효과로 닫는다** — 가장 저렴한 해소다. AC-PANEL-010b가 성질을 고정한다.
 
-**검증 등급 (정직한 구분)**: 코드 직독 확인이며 **재현하지 않았다.** 결함 A(REQ-PANEL-070, 기계 재현)와 등급이 다르고 조합 플래그(REQ-PANEL-071)와 같은 등급이다. `research.md` §10이 세 등급을 표로 구분한다.
+**검증 등급 — 판 0.3.7에서 코드 직독 → 기계 재현으로 승격.** M1 구현이 실제 `useFileMenuCommands` 모듈을 preload 브리지만 대체해 구동하며 **await 창 결함과 sticky 양쪽을 관측**했다. 증거 `.moai/state/verify/m1/red-0-awaitwindow-repro.log` — 저장 후 버퍼와 디스크가 갈라진 채 `isDirty = false`, 원복 후 `isDirty = true`. `research.md` §10.0 등급 표에 반영했다.
 
 ### 2.4a 별개 undo 스택은 공짜지만 **버퍼 일관성은 아니다** — 초판의 오류 정정
 

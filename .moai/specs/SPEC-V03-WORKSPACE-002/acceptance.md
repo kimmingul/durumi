@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "수용 기준 — v0.3 멀티패널 셸"
-version: "0.3.6"
+version: "0.3.7"
 status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
@@ -287,7 +287,8 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **And** 상태 계층에 `isDirty`(또는 동등한) **가변 boolean 필드가 존재하지 않는다** (필드 집합 단언)
 - **And** 내용을 편집한 뒤 원래 값으로 되돌리면 미저장 여부가 거짓으로 돌아온다 (sticky 아님 — issue #12의 형태가 재도입되지 않았다)
 - **무엇을 닫는가**: 오늘 두 저장 진입점이 클로저 `content`를 캡처한 뒤 두 개의 await를 건너 무조건 `markClean()`을 호출한다 — `src/hooks/useFileMenuCommands.ts:51-64`, `src/hooks/useAppCloseGuard.ts:24-33`. revision 파생은 `markClean()`이라는 명령형 선언 자체를 없애 이 창을 구조적으로 닫는다
-- **검증 등급 (정직한 구분)**: 이 결함은 **코드 직독으로 확인되었고 재현하지 않았다** (외부 검토 발견 + 오케스트레이터·나의 소스 확인). 결함 A(AC-PANEL-080, 기계 재현)와 등급이 다르다
+- **검증 등급 — 판 0.3.7에서 코드 직독 → 기계 재현으로 승격**: M1 구현이 실제 `useFileMenuCommands` 모듈을 **preload 브리지만 대체해** 구동하며 두 결함을 함께 관측했다 — 저장 후 버퍼와 디스크가 갈라진 채 `isDirty = false`, 원복 후 `isDirty = true`(issue #12). 증거 `.moai/state/verify/m1/red-0-awaitwindow-repro.log`. 이제 결함 A(AC-PANEL-080)와 **같은 등급**이다. 초판은 "외부 검토 발견 + 소스 확인, 재현하지 않음"이었다
+- **메커니즘 범위** (과잉주장 금지 규약): 세 번째 단언(원복 → clean 복귀)이 판정하는 것은 **revision이 내용의 함수**라는 성질이다. 단조 카운터는 이 단언을 통과할 수 없고, 그 실패 형태가 곧 issue #12이다 — 메커니즘 선택의 근거는 `design.md` §2.3이 담는다
 
 ### AC-PANEL-011 `[P+N]` **v0.3에서 dual-open은 금지되고 기존 패널로 이동한다** ↔ REQ-PANEL-011
 - **Given** 패널 A가 `a.md`를 열고 있고 패널 B가 다른 파일을 열고 있을 때
@@ -335,6 +336,7 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 - **When** 패널 분할·닫기·활성 전환·외부 변경 수신을 임의 순서로 수행한다 (외부 변경은 확정 이벤트 주입)
 - **Then** 어느 문서의 내용도 사용자 확인 없이 변경되지 않는다
 - **And** 이는 SPEC-1 REQ-WS-028의 패널 축 확장이며 동일하게 타협 불가다
+- **"임의 순서"의 실제 검증 범위 (판 0.3.7, M1 결과 기록 — 과잉주장 금지 규약)**: M1은 이 AC를 **선택된 순서 하나**로 판정했다 — 분할 → 활성 전환 → 외부 변경 2회 → 닫기 취소 → 활성 전환. **순열 전수도 property-based 테스트도 수행하지 않았다.** 따라서 이 AC가 현재 지지하는 명제는 "그 순서에서 성립한다"이며, **"모든 순서에서 성립한다"로 읽어서는 안 된다.** 불변식의 성격상 순서 무관이 기대되지만 기대는 증거가 아니다 — 순서 축을 강화하려면 property-based 생성기가 필요하고, 그것은 이 SPEC의 범위 밖이다
 
 ---
 
