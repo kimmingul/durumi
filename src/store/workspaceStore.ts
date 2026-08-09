@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { pathKey, samePath as samePathIdentity } from '@shared/pathIdentity';
 import type { EditMode } from '../editor/editMode';
 
 /**
@@ -108,18 +109,19 @@ export interface PanelState {
 /**
  * 두 경로가 같은 문서를 가리키는가 (REQ-PANEL-011a).
  *
- * **보장하는 것**: 동일한 절대 경로는 같은 문서로 인식된다.
+ * **보장하는 것**: 같은 파일을 가리키는 두 표기는 그 플랫폼의 규칙으로 동일시된다
+ * (Windows의 구분자·대소문자 차이 흡수 — REQ-PANEL-051).
  * **보장하지 않는 것**: 같은 파일을 가리키는 심볼릭·하드 링크 별칭은 서로 다른
  * 경로로 인식된다. `electron/pathGuard.ts`가 `fs.realpath`를 **의도적으로
  * 호출하지 않으므로**(모든 guarded 호출에 비동기 디스크 접근을 붙이지 않기 위한
  * 기록된 수용 위험) 앱은 바이트 수준 파일 동일성 탐지를 **주장하지 않는다**.
  *
- * 대소문자·구분자 정규화까지 포함하는 완전한 대조는 REQ-PANEL-051 소관이며 이
- * 함수가 그 교체 지점이다 — 호출부는 바뀌지 않는다.
+ * 판정 자체는 `shared/pathIdentity.ts`의 순수 함수가 한다 — 여기 두면 Windows
+ * 규칙이 Windows에서만 검증 가능해지는데 이 저장소에는 Windows e2e가 없다(C-7).
+ * 예고된 교체 지점이 여기였고, 호출부는 바뀌지 않았다.
  */
 export function samePath(a: string | null, b: string | null): boolean {
-  if (a === null || b === null) return false;
-  return a === b;
+  return samePathIdentity(a, b);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +154,35 @@ export function activeDocument(s: WorkspaceSnapshot): DocumentState | null {
 /** 그 문서를 참조하는 패널 전부. v0.3에서는 언제나 0개 또는 1개다. */
 export function panelsReferencing(s: WorkspaceSnapshot, documentId: DocumentId): PanelState[] {
   return s.panels.filter((p) => p.documentId === documentId);
+}
+
+/**
+ * 패널이 하나 이상 참조하는, **경로를 가진** 문서 전부 (REQ-PANEL-050).
+ *
+ * 외부 변경 감시의 등록 대상이 이 목록이다. 활성 패널의 문서 하나가 아니라
+ * **열린 모든 패널의 문서**인 것이 요점이다 — 보조 패널의 문서가 빠지면 그
+ * 문서의 외부 변경이 영영 올라오지 않고, 사용자는 남이 고친 파일 위에 저장한다.
+ *
+ * ## 참조 카운트를 숫자로 들고 다니지 않는 이유
+ *
+ * 등록은 **경로당 1회**다. 그러면 "참조하는 패널이 하나라도 있는가"만으로
+ * REQ-PANEL-050의 등록·해제 규칙이 그대로 성립한다 — 두 패널이 같은 문서를
+ * 보면 목록에 한 번 나타나므로 등록이 1회이고, 마지막 패널이 닫히는 순간
+ * 목록에서 사라지므로 해제도 1회다. 숫자를 따로 관리하면 그 숫자와 집합이
+ * 어긋날 여지가 생기고, 어긋나면 감시가 조용히 끊긴다.
+ *
+ * 중복 제거는 **경로 동일성**으로 한다(REQ-PANEL-051). 문서 식별자로만 접으면
+ * 같은 파일을 가리키는 두 표기가 두 번 등록된다.
+ */
+export function openDocuments(s: WorkspaceSnapshot): DocumentState[] {
+  const byPath = new Map<string, DocumentState>();
+  for (const panel of s.panels) {
+    const doc = s.documents.get(panel.documentId);
+    if (!doc || doc.path === null) continue;
+    const key = pathKey(doc.path);
+    if (!byPath.has(key)) byPath.set(key, doc);
+  }
+  return [...byPath.values()];
 }
 
 /** 그 경로를 이미 열고 있는 패널. dual-open 판정의 근거다(REQ-PANEL-011). */

@@ -43,7 +43,6 @@ import { currentParagraph } from './editor/paragraphContext';
 import {
   activeDocument,
   documentOf,
-  isDirty as isDocumentDirty,
   useActiveDocument,
   useWorkspaceStore,
 } from './store/workspaceStore';
@@ -74,7 +73,6 @@ export function App() {
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const filePath = useActiveDocument((d) => d?.path ?? null);
   const content = useActiveDocument((d) => d?.content ?? '');
-  const isDirty = useActiveDocument((d) => (d ? isDocumentDirty(d) : false));
   // 편집은 **활성 패널이 참조하는 문서**로 간다. 패널이 아니라 문서가 내용을
   // 소유하므로(REQ-PANEL-010) 대상은 문서 식별자로 고른다.
   const setContent = useCallback((next: string) => {
@@ -107,7 +105,9 @@ export function App() {
   // Memo sidecar / bibliography binding / memo DOM events.
   useMemoEvents(filePath, content);
   // SPEC-V03-WORKSPACE-001 M8: 외부 변경 채널 배선.
-  useExternalChangeWiring(filePath, content, isDirty);
+  // 등록 대상은 **열린 모든 패널의 문서**다(REQ-PANEL-050) — 활성 문서 하나가
+  // 아니므로 훅이 워크스페이스 스토어를 직접 구독한다.
+  useExternalChangeWiring();
   // OS-close intercept that prompts on dirty buffers.
   useAppCloseGuard();
   // Auto-focus the matching card when the caret lands on a memo's line.
