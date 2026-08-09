@@ -721,6 +721,49 @@ sync_commit_sha: <pending sync-phase>
 
 **OQ-8 차단 해제 판정**: `blocking_decisions.m3_blocked_by: [OQ-8]`은 같은 줄 주석대로 **핵 결함이 M0에서 닫힌** 뒤 남은 항목이 `AC-PANEL-084`(창 축 e2e 추가 여부, M0 소속)뿐이다. M3의 AC 10건 중 OQ-8을 인용하는 것은 0건이므로 M3는 차단되지 않는다.
 
+### M3 종료 — 오케스트레이터 독립 검증 + e2e 기준선 대조 (2026-08-09)
+
+manager-develop 보고와 별개로 오케스트레이터가 직접 실행했다. 증거: `.moai/state/verify/m3-orch/`.
+
+| 검사 | 결과 |
+|---|---|
+| `pnpm test` | exit 0 — `209 passed (209)` / `2315 passed (2315)` (기준선 206/2266 → **+3 파일 / +49 테스트**, 회귀 0) |
+| `pnpm typecheck` / `pnpm lint` | 둘 다 exit 0, 출력 없음 |
+| `pnpm test:coverage` | exit 0 — All files **96.24%** (M2 96.22% → 상승) |
+| 코어 5파일 + `extensionIndependence.test.ts` + `DOCUMENT_MODE_PRINCIPLES.md` | `git diff --quiet 040df4a` 전부 exit 0 |
+| 사이드바 preserve 9파일 | 전부 exit 0 |
+| 원격 | `0 0` — 커밋 3건 푸시 완료 |
+
+**`MarkdownEditor.tsx` 불변식 표기 주의.** 이 파일에 `git diff --quiet 040df4a`를 돌리면 **exit 1**이 나온다 — M0·M1·M2가 정당하게 고쳤기 때문이다. 이 파일의 불변식은 "파일 무변경"이 아니라 **"extension 배열 추가·삭제 0줄"**이며, `git diff 040df4a HEAD -- src/editor/MarkdownEditor.tsx`에서 extension 관련 추가·삭제 줄을 뽑아 **0건**임을 확인했다. M3는 이 파일을 아예 열지 않았다(`git diff 1b64c86..HEAD` 무출력). **exit 1을 불변식 위반으로 읽지 말 것.**
+
+#### e2e 실사용 확인 — 실패 3건은 전부 기존 결함이다 (기준선 대조로 확정)
+
+`pnpm test:e2e`(Playwright가 실제 Electron을 띄운다)를 HEAD에서 실행: **210 passed / 3 failed / 4 skipped**, exit 1.
+
+| 실패 스펙 | HEAD (`b3843c6`) | 기준선 (`1b64c86`, M3 착수 전) |
+|---|---|---|
+| `b2-features.spec.ts:64` outline 탭 헤딩·클릭 점프 | ✘ (30.0s 타임아웃) | ✘ (30.0s 타임아웃) |
+| `pending-assets-migration.spec.ts:133` `durumi-asset://` pending 이미지 | ✘ | ✘ |
+| `round-trip.spec.ts:289` HTML export 이미지 data: URI 인라인 | ✘ | ✘ |
+
+**대조 방법**: `git worktree add <tmp> 1b64c86` → `pnpm build` → 같은 3개 스펙만 재실행. 기준선 결과 `3 failed / 4 passed`로 **동일한 세 건이 동일한 형태로 실패**했다. 증거: `.moai/state/verify/m3-orch/6-e2e-baseline-1b64c86.log`. 워크트리는 제거했고 트리는 clean이다.
+
+**판정: M3의 e2e 회귀는 0건이다.** 다만 **브랜치에 기존 e2e 실패 3건이 빨간 채로 남아 있다** — M3 소관이 아니지만 v0.3 릴리스 게이트 전에 처리되어야 한다. 세 건 모두 M3가 건드리지 않은 영역이다(`git diff 1b64c86..HEAD -- e2e/ src/hooks/useDocOutline.ts src/components/sidebar/` 무출력).
+
+**주의 — e2e 실행은 추적 파일을 더럽힌다.** `e2e/screenshots/v0.2-smoke/{49,50,51}-*.png` 3개가 재생성되어 바이트가 바뀐다. 검증 산출물이므로 `git restore`로 되돌렸다. e2e를 돌린 뒤에는 이 3개를 확인할 것 — 무심코 커밋하면 검증 실행의 바이트 churn이 SPEC 커밋에 섞인다.
+
+#### OQ-3 · OQ-4 인용 재확인 (M4 선행 결정용) — 정정 2건
+
+`plan.md` §A.2의 두 OQ 후보표는 `040df4a` 기준으로 작성되었고 이후 M0~M3가 같은 파일을 고쳤으므로 HEAD에서 전수 재측정했다.
+
+**OQ-3**: 줄 번호는 어긋났으나(`appStore.ts:65-71` → 실제 `:29`/`:41`, `useMenuCommandRouter.ts:126,131` → 실제 `:135`/`:140`) 사실은 유지된다 — 모드는 여전히 창 전역이다. `usePreferencesInit.ts:58`은 정확히 일치.
+
+**정정 A — 후보 1의 비용이 표보다 싸다.** M1이 `PanelState.displayMode: EditMode`를 **이미 만들어 두었다**(`workspaceStore.ts:102`). `'wysiwyg'`로만 설정되고(`:287`, `:352`) 읽는 곳이 없다 — M1이 "필드는 만들되 배선하지 않았다"고 적은 그대로다. 후보 1의 "모드 필드 이관"은 신설이 아니라 **이미 있는 필드를 잇는 일**이다. 현재 모드 필드는 `appStore.editMode`(살아 있음, 전역)와 `PanelState.displayMode`(만들어졌으나 죽어 있음) 둘이다.
+
+**정정 B — OQ-4의 "5개 훅"은 4개다.** `editorViewRef`를 받는 훅은 `useAiPalette` · `useCitationInsertFlow` · `useMenuCommandRouter` · `usePickAndInsertImage` **4개**다. `useMemoCaretFocus`는 ref가 아니라 **값**을 받는다(`App.tsx:114`). 그리고 이것은 M0~M3의 드리프트가 **아니다** — `git show 040df4a:src/App.tsx`의 `:97`에서도 이미 값 전달이었다. **plan을 쓸 때부터 틀린 개수**다. 후보 1의 비용("5개 훅 시그니처")과 후보 3의 비용("5개 훅 테스트 전부")이 각각 한 파일씩 과대 계상되어 있다.
+
+**권고는 뒤집히지 않는다.** 후보 1의 근거는 훅 개수가 아니라 낡은 ref 위험이고, 그것은 실측으로 확인했다 — `useMenuCommandRouter.ts:107`의 `const view = editorViewRef.current`가 `async` 핸들러 첫 줄이고 그 아래로 `await` 분기가 여럿이다(plan은 `:98`로 적었으나 9줄 밀렸을 뿐 구조는 동일). 다만 결정은 참인 숫자 위에서 내려야 하므로 적어 둔다. **두 정정은 SPEC 본문 수정이 필요하므로 판 0.3.11에서 manager-spec이 반영한다** — 오케스트레이터는 본문을 고치지 않는다.
+
 **M0·M2가 이미 만든 것 (M3 작업면 축소)**: `reconciliationStore.ts`는 M0에서 경로 키잉으로 전환되어 `effectHandlers: Map<string, handler>`(`:68`) · `openDocuments: Set<string>`(`:72`) · `setEffectHandlerFor(path, handler)`(`:160-166`)를 갖추었고, `MarkdownEditor.tsx:188-190`이 `path`를 클로저로 묶어 등록한다. `AC-PANEL-055`(마운트 탈취)·`055b`(언마운트 무장 해제)가 지목한 두 경로는 **구조적으로 이미 닫힌 것으로 보인다 — 다만 두 AC를 판정하는 테스트는 0건이므로 미검증이다**(`grep -rn "AC-PANEL-05[0-9]" tests/` 무매치). 반면 `AC-PANEL-050`의 핵심 결함은 그대로다: `useExternalChangeWiring(filePath, content, isDirty)`가 `src/App.tsx:110`에서 **스칼라 경로 하나로 단 한 번** 호출된다 — `REQ-PANEL-050`이 대체 대상으로 지목한 바로 그 지점이다.
 
 ---
