@@ -416,7 +416,7 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 ```yaml
 run_complete_at: 2026-08-09
 run_commit_sha: 48aa799        # M0 구현 커밋
-m1_commit_sha: pending-backfill-m1
+m1_commit_sha: 66ddffa       # M1 구현 커밋. 이 줄은 후속 백필 커밋이 채운다
 run_status: milestone-partial   # M0·M1 완료. M2~M8은 미착수
 milestone: M0+M1
 ac_pass_count: 20               # M0 12 + M1 8
