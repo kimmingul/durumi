@@ -6,10 +6,12 @@ import { useAppStore } from '../store/appStore';
 import {
   activeDocument,
   isDirty as isDocumentDirty,
+  requestClosePanel,
   useActiveDocument,
   useWorkspaceStore,
 } from '../store/workspaceStore';
 import { useSidebarStore } from '../store/sidebarStore';
+import { basenameOf } from '../utils/path';
 import { useRightSidebarStore } from '../store/rightSidebarStore';
 import { useLanguage, resolveRendererLang } from '../i18n/t';
 import { currentParagraph } from '../editor/paragraphContext';
@@ -139,6 +141,28 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         return;
       }
       if (cmd === 'openFolder') { await workspace.openWorkspaceFolder(); return; }
+      if (cmd === 'splitPanel') {
+        // **분할은 빈 패널을 연다.** 같은 파일을 두 패널에 띄우는 것은 v0.3에서
+        // 금지되어 있고(REQ-PANEL-011), 그 금지를 우회하지 않는다 — 문서↔뷰
+        // 트랜잭션 동기화 프로토콜(`design.md` §2.5의 다섯 의무) 없이 중복 뷰를
+        // 출하하면 한쪽의 키 입력이 다른 쪽에서 문서 전체 교체가 된다.
+        // 따라서 v0.3의 분할은 "두 번째 파일을 열 자리를 만드는 것"이다.
+        useWorkspaceStore.getState().openInNewPanel(null, '');
+        return;
+      }
+      if (cmd === 'closePanel') {
+        // 마지막 패널은 닫히지 않는다(REQ-PANEL-004) — `closePanel`이 거부하므로
+        // 이 커맨드는 그 경우 **무동작**이다. 메뉴 항목을 비활성화하는 대신
+        // 무동작을 택한 이유: 비활성화하려면 main이 렌더러의 패널 수를 알아야
+        // 하고, 그 채널 하나가 얻는 것보다 늘리는 표면이 크다.
+        const panelId = useWorkspaceStore.getState().activePanelId;
+        if (panelId === null) return;
+        await requestClosePanel(panelId, {
+          confirmDiscard: (name) => window.api.confirmDiscard(basenameOf(name)),
+          save: () => fileCommands.doSave(),
+        });
+        return;
+      }
       if (cmd === 'toggleSidebar') { toggleSidebarVisible(); return; }
       if (cmd === 'toggleRightSidebar') { toggleRightSidebarVisible(); return; }
       if (cmd === 'toggleMemoPanel') { toggleMemoTab(); return; }

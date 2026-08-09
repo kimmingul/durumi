@@ -486,6 +486,45 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 
 ---
 
+### M2 후속 — 분할·닫기의 진입점 (도달 불가 기능 해소)
+
+**사용자 확인에서 드러났다**: "분할을 어떻게 하는지 모르겠어요." 실측 결과 `openInNewPanel`/`closePanel`의 **UI 호출부가 0곳**이었다 — 메뉴 항목도 단축키도 버튼도 없이 기능만 있었다. 2,256개 테스트가 초록이었던 이유는 **모든 AC가 스토어 액션을 직접 호출**했기 때문이다.
+
+이 SPEC에서 같은 형태가 세 번째다(프로젝트 트리, 감시 배선, 분할 진입점). 공통점은 **제약 형태의 요구는 있는데 능력을 만들라는 요구가 없다**는 것이다. `plan.md` M2 산문은 "분할·닫기를 구현한다"고 적지만 산문은 `대상 요구:`가 아니고 판정되지 않는다.
+
+#### 단축키 — 실측으로 충돌 없음 확인
+
+`electron/menu.ts`의 accelerator 42개를 전수 추출하고 `src/editor/`의 keymap 키를 전수 추출해 대조했다. Alt 계열은 메뉴에 `CommandOrControl+Alt+F`·`+M` 둘, 에디터에 `Mod-Alt-m` 하나뿐이다.
+
+| 커맨드 | 단축키 | 위치 |
+|---|---|---|
+| 패널 분할 | `CommandOrControl+Alt+\` | 보기 메뉴 (사이드바 토글 옆) |
+| 패널 닫기 | `CommandOrControl+Alt+W` | 동일 |
+
+VS Code 관용인 `Cmd+\`는 이미 사이드바 토글이라 쓸 수 없어 `\` 니모닉만 물려받았다. 테스트가 **accelerator 중복 0건**을 전수로 단언한다 — 같은 조합을 두 항목이 쓰면 하나가 조용히 죽는다.
+
+#### 분할의 의미 — 빈 패널을 연다 (제약을 우회하지 않았다)
+
+`REQ-PANEL-011`이 dual-open을 금지하므로 활성 문서를 새 패널에 열면 경로 동일성 판정에 걸려 **아무 일도 일어나지 않는다.** 따라서 v0.3의 분할은 **빈 패널을 여는 것**으로 정의했다 — "두 번째 파일을 열 자리를 만드는 것"이다.
+
+같은 파일을 나란히 보는 것은 v0.4의 문서↔뷰 동기화 프로토콜(`design.md` §2.5의 다섯 의무)이 들어와야 가능하다. **그 전까지는 표현 불가능하며, 우회하지 않고 그렇게 적는다.** 테스트가 분할 후 경로가 `['/w/a.md', null]`이고 같은 경로의 문서 항목이 여전히 1개임을 단언한다.
+
+#### 닫기 — 무동작을 택했다
+
+마지막 패널에서 `closePanel` 커맨드는 **무동작**이다(REQ-PANEL-004). 메뉴 항목 비활성화 대신 무동작을 택한 이유: 비활성화하려면 main이 렌더러의 패널 수를 알아야 하고, 그 채널 하나가 얻는 것보다 늘리는 표면이 크다. 테스트가 마지막 패널에서 패널 수·식별자 불변을 단언해 고정한다.
+
+미저장 편집이 있으면 `requestClosePanel`이 폐기 확인을 거치고(REQ-PANEL-013), 취소하면 패널도 내용도 그대로다.
+
+#### 이 마일스톤에 없던 단언 계열
+
+`tests/layout/panelCommands.test.tsx`는 **커맨드 경로를 통과해서** 판정한다 — 메뉴 커맨드를 발신하고 패널 수와 렌더된 편집 표면 수가 바뀌는지 본다. 스토어를 직접 부르지 않는 것이 요점이며, 이것이 초록불 2,256개가 놓친 단언 계열이다.
+
+#### 게이트
+
+`pnpm test` exit 0 — `206 passed / 2266 passed` (직전 205/2256 → **+1 파일 / +10 테스트**). `typecheck`·`lint`·`coverage`(96.23%) exit 0. **단일 패널 축퇴 7건 재확인 통과** — 사용자가 방금 확인한 화면은 그대로다. 조정 코어 5파일·원칙 문서·확장자 독립 무변경, extension 배열 무접촉.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
@@ -493,6 +532,7 @@ run_complete_at: 2026-08-09
 run_commit_sha: 48aa799        # M0 구현 커밋
 m1_commit_sha: 66ddffa       # M1 구현 커밋
 m2_commit_sha: 6e7259f       # M2 구현 커밋
+m2_entrypoint_commit_sha: pending-backfill-m2e   # 분할·닫기 진입점
 run_status: milestone-partial   # M0·M1 완료, M2 부분 완료(11/15). M3~M8 미착수
 milestone: M0+M1+M2(부분)
 ac_pass_count: 31               # M0 12 + M1 8 + M2 11
@@ -511,9 +551,9 @@ extension_array_untouched: true       # AC-PANEL-042 allowlist 전제 보존
 new_warnings_or_lints_introduced: 0
 teardown_discipline: release-before-executor-detach
 dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2 M1의 긴장 해소 참조
-test_files: 205                  # 기준선 199 → M0 201 → M1 203 → M2 205
-tests: 2256                      # 기준선 2191 → M0 2209 → M1 2237 → M2 2256
-coverage_gate: pass              # per-file 85%, All files 96.22%
+test_files: 206                  # 기준선 199 → M0 201 → M1 203 → M2 205 → M2e 206
+tests: 2266                      # 기준선 2191 → M0 2209 → M1 2237 → M2 2256 → M2e 2266
+coverage_gate: pass              # per-file 85%, All files 96.23%
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
@@ -525,6 +565,7 @@ deferred_by_open_decision:
   - "파일 종류 판정 함수 — OQ-10 (M5)"
   - "프로젝트 트리 표면 — M2 미착수분, 후속 위임 (AC-036/036b/036c/036d)"
   - "패널 폭 등식의 픽셀 단언 — jsdom 레이아웃 부재, e2e 이관 (AC-005)"
+  - "같은 파일을 두 패널에 — v0.4 문서↔뷰 동기화 프로토콜 (REQ-PANEL-011이 v0.3에서 금지)"
 ```
 
 ---

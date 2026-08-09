@@ -318,6 +318,7 @@ export type MenuCommand =
   | 'strikethrough' | 'insertTable' | 'toggleTask' | 'codeBlock'
   | 'refreshProjectTree'
   | 'openFolder' | 'toggleSidebar' | 'toggleRightSidebar' | 'showFiles' | 'showOutline' | 'showSearch' | 'quickOpen'
+  | 'splitPanel' | 'closePanel'
   | 'toggleFocusMode' | 'toggleTypewriterMode'
   | 'toggleMemoPanel'
   | 'addMemo'
