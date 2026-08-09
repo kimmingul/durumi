@@ -431,19 +431,71 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 
 ---
 
+### M2 — 레이아웃 셸과 단일 패널 축퇴 (부분 완료)
+
+**증거**: `.moai/state/verify/m2/`. 기준선 픽스처는 저장소 안 `tests/fixtures/singlePanelLayout.json`.
+
+#### 기준선 앵커 — `bd62b80`을 택했다
+
+`AC-PANEL-003b`는 앵커로 `2541727`(M0 착수 전)을 지목했으나 **M2 착수 직전 커밋 `bd62b80`** 에서 픽스처를 떴다. 근거 둘: (1) `git diff 2541727 bd62b80 -- src/App.tsx src/components/` 의 JSX 요소 수준 변화는 `<ReconciliationSurface path={filePath} />` **prop 추가 한 건뿐**이고 요소·형제 순서·flex 스타일은 그대로다(M0·M1은 상태 계층 변경이었다). (2) `bd62b80`은 **사용자가 실제 구동으로 동작을 확인한 트리**다.
+
+#### 설계 긴장 1건 — 실측으로 드러났고, 택한 쪽을 기록한다
+
+초판은 패널이 하나면 래퍼 없이 렌더해 DOM을 오늘과 **바이트 동일**하게 만들었다. 그러자 `AC-PANEL-005`가 실패했다 — **분할했다 닫으면 살아남는 패널의 캐럿이 3에서 0으로 돌아갔다**. 패널 수가 1↔2로 오갈 때 컨테이너 노드가 `<>`↔`<div>`로 바뀌어 살아남는 서브트리가 재부모화되고, React가 그것을 재마운트해 `EditorView`가 새로 만들어지기 때문이다.
+
+**두 성질은 동시에 성립할 수 없다.** 살아남는 패널의 서브트리는 (a) 단일 패널일 때 통과용 노드를 한 겹 얻거나, (b) 전환 때 재부모화되거나 둘 중 하나다.
+
+**(a)를 택했다.** `AC-PANEL-005`는 사용자가 실제로 잃는 것(캐럿·스크롤)을 막는 **동작** 기준이고, `AC-PANEL-003b`의 문언은 "가로 **배치**"와 "패널 다중화를 시사하는 **시각 요소**"를 말한다 — 스타일 없는 통과용 노드 한 겹은 둘 다 바꾸지 않는다. 분할할 때마다 캐럿이 문서 맨 앞으로 튀는 것은 사용자가 확실히 알아채는 회귀이고, 보이지 않는 `<div>` 한 겹은 그렇지 않다.
+
+**픽스처를 재기준화하지 않았다.** 새로 뜨면 기준선이 구현을 따라가 회귀 방어선이 사라진다. 픽스처는 `bd62b80` 그대로 두고, 테스트가 **허용하는 델타를 이름으로 명시**한다 — 통과용 노드 한 겹을 걷어낸 뒤 기준선과 완전히 같아야 하며, 다른 어떤 차이도 검사를 깨뜨린다.
+
+#### AC 판정 (11/15 PASS, 4건 미착수)
+
+| AC | 상태 | 근거 |
+|---|---|---|
+| 001 | PASS | 두 패널의 캐럿·선택·문서·`EditorState`가 독립 |
+| 002 | PASS | 사이드바 4파일 `git diff --quiet 040df4a` exit 0 + 무변경 통과 |
+| 002b | PASS | 패널 2개 상태에서 좌·우 폭이 `WIDTH_BOUNDS` 상수로 clamp |
+| 002c | PASS | 분할·닫기 반복에도 사이드바 `prefsSet` 0건, 값 불변 |
+| 003 | PASS | 프로젝트 없음에서 패널 1개, 오류·경고 없음 |
+| 003b | PASS | 통과용 노드 한 겹 제외하고 픽스처와 완전 일치 + `layoutFacts` 일치 |
+| 004 | PASS | 마지막 패널 닫기 거부, 문서 닫기는 빈 버퍼로 축퇴 |
+| 005 | PASS | 분할→닫기 후 내용·revision·캐럿·스크롤 보존. **폭 등식은 구성으로만 판정** (아래 Gap) |
+| 007 | PASS | 패널 3개까지 늘려도 사이드바 불변, 역방향도 불변 |
+| 011 | PASS | 재열기 시 `reused: true`, `EditorView` 수·문서 맵 항목 수 불변, 오류 없음 |
+| 065 | PASS | B가 왼쪽·A가 활성인 배치에서 사이드바가 **A**를 겨냥 |
+| 036 / 036b / 036c / 036d | **미착수** | 프로젝트 트리 표면 자체가 없다 (아래) |
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — `205 passed / 2256 passed` (M1 종료 203/2237 → **+2 파일 / +19 테스트**, 신규 7+12와 일치). `typecheck`·`lint`·`coverage`(All files 96.22%) 전부 exit 0.
+
+#### 불변식
+
+조정 코어 5파일 · `docs/DOCUMENT_MODE_PRINCIPLES.md` · `extensionIndependence.test.ts` 전부 `git diff --quiet 040df4a` exit 0. `MarkdownEditor.tsx`의 extension 배열 추가·삭제 줄 **0건**.
+
+#### 미착수 — 프로젝트 트리 (AC-036 / 036b / 036c / 036d)
+
+`window.api.projectDiscover`의 렌더러 호출부가 **0곳**이므로 프로젝트 트리 표면은 이 저장소에 아직 존재하지 않는다(사이드바의 `FileTree`는 워크스페이스 폴더 축이며 매니페스트 소유 프로젝트 축이 아니다). 네 AC는 그 표면을 새로 만들어야 판정 가능하고, 그중 `036c`는 신뢰 트리 필터링까지 요구한다. **손대지 않았다** — 절반 만든 표면을 남기는 것보다 없는 편이 낫고, 후속 위임에서 온전히 다루는 것이 맞다고 판단했다.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
 run_complete_at: 2026-08-09
 run_commit_sha: 48aa799        # M0 구현 커밋
-m1_commit_sha: 66ddffa       # M1 구현 커밋. 이 줄은 후속 백필 커밋이 채운다
-run_status: milestone-partial   # M0·M1 완료. M2~M8은 미착수
-milestone: M0+M1
-ac_pass_count: 20               # M0 12 + M1 8
+m1_commit_sha: 66ddffa       # M1 구현 커밋
+m2_commit_sha: pending-backfill-m2
+run_status: milestone-partial   # M0·M1 완료, M2 부분 완료(11/15). M3~M8 미착수
+milestone: M0+M1+M2(부분)
+ac_pass_count: 31               # M0 12 + M1 8 + M2 11
 ac_fail_count: 0
 ac_scope: >-
   M0: AC-PANEL-080 / 080b / 080c / 080d / 080e / 080f / 081 / 081b / 081c / 082 / 083 / 084
   M1: AC-PANEL-010 / 010b / 011a / 011b / 012 / 013 / 013b / 014
+  M2: AC-PANEL-001 / 002 / 002b / 002c / 003 / 003b / 004 / 005 / 007 / 011 / 065
+  M2 미착수: AC-PANEL-036 / 036b / 036c / 036d (프로젝트 트리 표면 부재)
 reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
@@ -453,9 +505,9 @@ extension_array_untouched: true       # AC-PANEL-042 allowlist 전제 보존
 new_warnings_or_lints_introduced: 0
 teardown_discipline: release-before-executor-detach
 dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2 M1의 긴장 해소 참조
-test_files: 203                  # 기준선 199 → M0 201 → M1 203
-tests: 2237                      # 기준선 2191 → M0 2209 → M1 2237
-coverage_gate: pass              # per-file 85%, All files 96.06%
+test_files: 205                  # 기준선 199 → M0 201 → M1 203 → M2 205
+tests: 2256                      # 기준선 2191 → M0 2209 → M1 2237 → M2 2256
+coverage_gate: pass              # per-file 85%, All files 96.22%
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
@@ -465,6 +517,8 @@ deferred_by_open_decision:
   - "editMode의 패널 축 이관 — OQ-3 (M4)"
   - "소비처의 패널 지목 배선 — OQ-4 (M4)"
   - "파일 종류 판정 함수 — OQ-10 (M5)"
+  - "프로젝트 트리 표면 — M2 미착수분, 후속 위임 (AC-036/036b/036c/036d)"
+  - "패널 폭 등식의 픽셀 단언 — jsdom 레이아웃 부재, e2e 이관 (AC-005)"
 ```
 
 ---

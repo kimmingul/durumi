@@ -1,0 +1,172 @@
+{
+  "anchorCommit": "bd62b80",
+  "facts": {
+    "cmHostCount": 1,
+    "cmContentCount": 1,
+    "statusBarIndex": 1,
+    "reconcileSurfaceIndex": -1,
+    "panelResizers": 0,
+    "panelTabs": 0,
+    "panelFrames": 0
+  },
+  "digest": {
+    "tag": "div",
+    "className": "",
+    "style": {},
+    "data": {},
+    "children": [
+      {
+        "tag": "div",
+        "className": "",
+        "style": {
+          "display": "flex",
+          "flexDirection": "column",
+          "height": "100%"
+        },
+        "data": {},
+        "children": [
+          {
+            "tag": "div",
+            "className": "",
+            "style": {
+              "display": "flex",
+              "flex": "1 1 0%",
+              "flexDirection": "row",
+              "flexGrow": "1",
+              "flexShrink": "1",
+              "flexBasis": "0%",
+              "minHeight": "0"
+            },
+            "data": {},
+            "children": [
+              {
+                "tag": "aside",
+                "className": "cm-sidebar",
+                "style": {
+                  "width": "240px"
+                },
+                "data": {},
+                "children": [
+                  {
+                    "tag": "div",
+                    "className": "cm-sidebar-tabs",
+                    "style": {},
+                    "data": {},
+                    "children": []
+                  },
+                  {
+                    "tag": "div",
+                    "className": "cm-sidebar-body",
+                    "style": {},
+                    "data": {},
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "className": "cm-sidebar-resizer",
+                "style": {},
+                "data": {},
+                "children": []
+              },
+              {
+                "tag": "div",
+                "className": "",
+                "style": {
+                  "display": "flex",
+                  "flex": "1 1 0%",
+                  "flexDirection": "column",
+                  "flexGrow": "1",
+                  "flexShrink": "1",
+                  "flexBasis": "0%",
+                  "minWidth": "0",
+                  "overflow": "auto"
+                },
+                "data": {},
+                "children": [
+                  {
+                    "tag": "div",
+                    "className": "editor-toolbar",
+                    "style": {},
+                    "data": {
+                      "data-testid": "editor-toolbar"
+                    },
+                    "children": []
+                  },
+                  {
+                    "tag": "div",
+                    "className": "",
+                    "style": {
+                      "flex": "1 1 0%",
+                      "flexGrow": "1",
+                      "flexShrink": "1",
+                      "flexBasis": "0%",
+                      "minHeight": "0",
+                      "overflow": "auto"
+                    },
+                    "data": {},
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "tag": "div",
+            "className": "status-bar",
+            "style": {},
+            "data": {},
+            "children": [
+              {
+                "tag": "span",
+                "className": "",
+                "style": {},
+                "data": {},
+                "children": []
+              },
+              {
+                "tag": "span",
+                "className": "status-bar-counters",
+                "style": {},
+                "data": {},
+                "children": []
+              },
+              {
+                "tag": "span",
+                "className": "status-bar-mode",
+                "style": {},
+                "data": {
+                  "data-testid": "status-edit-mode"
+                },
+                "children": [
+                  {
+                    "tag": "button",
+                    "className": "status-bar-mode-btn status-bar-mode-btn-active",
+                    "style": {},
+                    "data": {},
+                    "children": []
+                  },
+                  {
+                    "tag": "button",
+                    "className": "status-bar-mode-btn",
+                    "style": {},
+                    "data": {},
+                    "children": []
+                  },
+                  {
+                    "tag": "button",
+                    "className": "status-bar-mode-btn",
+                    "style": {},
+                    "data": {},
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

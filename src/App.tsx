@@ -1,6 +1,4 @@
-import { Suspense, lazy, useCallback, useRef, useState } from 'react';
-import { MarkdownEditor } from './editor/MarkdownEditor';
-import { EditorToolbar } from './components/EditorToolbar';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
@@ -42,13 +40,14 @@ const CitationSuggestPanel = lazy(() =>
   import('./components/CitationSuggestPanel').then((m) => ({ default: m.CitationSuggestPanel })),
 );
 import { currentParagraph } from './editor/paragraphContext';
-import { useAppStore } from './store/appStore';
 import {
   activeDocument,
+  documentOf,
   isDirty as isDocumentDirty,
   useActiveDocument,
   useWorkspaceStore,
 } from './store/workspaceStore';
+import { PanelContainer } from './components/PanelContainer';
 import { useMemoCaretFocus } from './hooks/useMemoCaretFocus';
 import type { Macro } from '@shared/ipc-contract';
 import { EditorView } from '@codemirror/view';
@@ -73,10 +72,6 @@ export function App() {
   // view without an extra render pass — the ref stays the source of truth for
   // event handlers, and `editorView` is the source of truth for JSX.
   const [editorView, setEditorView] = useState<EditorView | null>(null);
-  const handleEditorReady = useCallback((v: EditorView) => {
-    editorViewRef.current = v;
-    setEditorView(v);
-  }, []);
   const filePath = useActiveDocument((d) => d?.path ?? null);
   const content = useActiveDocument((d) => d?.content ?? '');
   const isDirty = useActiveDocument((d) => (d ? isDocumentDirty(d) : false));
@@ -86,7 +81,18 @@ export function App() {
     const doc = activeDocument(useWorkspaceStore.getState());
     if (doc) useWorkspaceStore.getState().editDocument(doc.id, next);
   }, []);
-  const editMode = useAppStore((s) => s.editMode);
+  const panels = useWorkspaceStore((s) => s.panels);
+  const activePanelId = useWorkspaceStore((s) => s.activePanelId);
+  // 패널 식별자 → 그 패널의 편집 표면. 사이드바는 **활성 패널**의 뷰를 겨냥한다
+  // (REQ-PANEL-065) — "가장 왼쪽 패널"이 아니다. 레이아웃 순서가 데이터 귀속을
+  // 결정하면 패널을 재배치할 때 서지·메모가 조용히 다른 원고를 가리킨다.
+  const panelViewsRef = useRef<Map<string, EditorView>>(new Map());
+  const [panelViewEpoch, setPanelViewEpoch] = useState(0);
+  const handlePanelViewReady = useCallback((panelId: string, view: EditorView | null) => {
+    if (view) panelViewsRef.current.set(panelId, view);
+    else panelViewsRef.current.delete(panelId);
+    setPanelViewEpoch((n) => n + 1);
+  }, []);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -106,6 +112,14 @@ export function App() {
   useAppCloseGuard();
   // Auto-focus the matching card when the caret lands on a memo's line.
   useMemoCaretFocus(editorView, content);
+
+  // 활성 패널의 뷰가 곧 사이드바·커맨드의 대상이다. 활성 패널이 바뀌거나 그
+  // 패널의 뷰가 준비/파기되면 갱신된다.
+  useEffect(() => {
+    const next = activePanelId ? (panelViewsRef.current.get(activePanelId) ?? null) : null;
+    editorViewRef.current = next;
+    setEditorView(next);
+  }, [activePanelId, panelViewEpoch]);
 
   // Feature slices — each owns a coherent slice of menu-command behaviour.
   const fileCommands = useFileMenuCommands();
@@ -153,24 +167,14 @@ export function App() {
             }, 50);
           }}
         />
-        <div style={{ flex: 1, overflow: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <EditorToolbar
-            view={editorView}
-            visible={editMode === 'wysiwyg'}
-            onOpenCitePalette={() => citationFlow.setCitePaletteOpen(true)}
-            onPickImage={pickAndInsertImage}
-          />
-          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-            <MarkdownEditor
-              value={content}
-              onChange={setContent}
-              onReady={handleEditorReady}
-              filePath={filePath}
-              macros={macros}
-              editMode={editMode}
-            />
-          </div>
-        </div>
+        <PanelContainer
+          panels={panels}
+          documentOfPanel={(panel) => documentOf(useWorkspaceStore.getState(), panel.panelId)}
+          macros={macros}
+          onPanelViewReady={handlePanelViewReady}
+          onOpenCitePalette={() => citationFlow.setCitePaletteOpen(true)}
+          onPickImage={pickAndInsertImage}
+        />
         <RightSidebar
           content={content}
           view={editorView}
