@@ -55,6 +55,8 @@ plan_artifact_commits:
   - 92d621d  # 판 0.3.6 — R2 정정 + R7~R9 + 규약 + 외부 주장 전수 (plan 단계 최종판)
   - e569d05  # progress.md 커밋 SHA 백필
   - aaacd35  # 판 0.3.7 — revision 메커니즘 정정 + 등급 승격 2건 (M1 되먹임, 기록 전용)
+  - d1b3866  # progress.md 커밋 SHA 백필
+  - 9f5c3da  # 판 0.3.8 — 규약에 분석적 귀결/전제 구분 추가
 blocking_decisions:
   total: 10
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
