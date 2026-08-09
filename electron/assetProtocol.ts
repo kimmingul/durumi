@@ -58,8 +58,33 @@ const MIME_BY_EXT: Record<string, string> = {
  *     doesn't downgrade or block mixed-content in dev.
  *   - `supportFetchAPI: true` — lets fetch() / `<img>` request this
  *     scheme.
+ *   - `corsEnabled: true` — see below; without it every renderer
+ *     `fetch()` to this scheme fails.
  *   - `stream: true` — allows large media without buffering the whole
  *     file in memory.
+ *
+ * `corsEnabled`가 필요한 이유 (기본값 false):
+ *
+ * 렌더러는 `file://` 출처(`win.loadFile(...)`)이고 이 스킴은 `standard: true`
+ * 라서 자기 자신이 별도 출처다. 즉 렌더러에서 `durumi-asset://`로 나가는
+ * 요청은 항상 교차 출처다. `<img src="durumi-asset://...">`는 교차 출처
+ * 표시가 허용되므로 그냥 뜨지만, `fetch()`는 스킴이 CORS 대상으로 등록돼
+ * 있지 않으면 Chromium이 요청 자체를 막고 `TypeError: Failed to fetch`를
+ * 던진다. 이 비대칭 때문에 이미지 위젯은 멀쩡히 동작하는데 fetch만 죽어서,
+ * v0.2.10 HTML 이미지 인라인 기능이 조용히 무력화돼 있었다 —
+ * `src/export/inlineImages.ts`의 기본 fetcher가 그 TypeError를
+ * `{ ok: false }`로 삼켜서 내보낸 HTML에 `<img src="...">`가 그대로 남았다.
+ *
+ * 응답 헤더 문제가 아니다. 실측으로 확인했다: `Access-Control-Allow-Origin: *`
+ * 를 붙여도 `corsEnabled` 없이는 여전히 실패하고, 반대로 헤더 없이
+ * `corsEnabled: true`만 켜면 200 + `response.type === 'basic'`으로 통과한다.
+ * 그래서 헤더는 넣지 않는다 — 동작에 기여하지 않는 와일드카드 헤더를
+ * 굳이 남길 이유가 없다.
+ *
+ * 신뢰 경계는 넓어지지 않는다. 어떤 경로를 읽을 수 있는지는 아래 핸들러의
+ * `isAllowedPath` 게이트가 정하고, 렌더러는 이미 `file:openPath` IPC로
+ * 동일한 게이트를 통과한 파일 내용을 받아올 수 있다. `corsEnabled`는 이미
+ * 열려 있는 집합을 fetch로도 읽게 할 뿐, 게이트 자체는 그대로다.
  */
 export function registerAssetProtocolSchemes(): void {
   protocol.registerSchemesAsPrivileged([
@@ -69,6 +94,9 @@ export function registerAssetProtocolSchemes(): void {
         standard: true,
         secure: true,
         supportFetchAPI: true,
+        // 렌더러 fetch()의 전제. 지우면 이미지 인라인 내보내기가 조용히
+        // 죽는다 — tests/electron/assetProtocol.test.ts가 이 값을 고정한다.
+        corsEnabled: true,
         stream: true,
       },
     },
