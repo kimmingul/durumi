@@ -4,6 +4,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { MarkdownEditor } from '../editor/MarkdownEditor';
 import { useAppStore } from '../store/appStore';
 import {
+  documentOf,
   useWorkspaceStore,
   type DocumentState,
   type PanelId,
@@ -144,11 +145,27 @@ function Panel({
 
   useEffect(() => () => onViewReady(panel.panelId, null), [onViewReady, panel.panelId]);
 
+  // 편집은 **호출 시점에** 그 패널의 현재 문서로 간다 — 렌더 시점의 `doc`을
+  // 가두면 안 된다.
+  //
+  // 편집 표면은 문서를 갈아타며 **재사용된다**: `MarkdownEditor`는 `key`를 받지
+  // 않고, 그 안의 CodeMirror `updateListener`는 마운트 시점의 `onChange`를
+  // 영구히 붙든다(`MarkdownEditor.tsx`의 마운트 이펙트는 deps가 `[]`다). 그래서
+  // 이 콜백이 렌더 스코프의 `doc`을 닫아 버리면, 패널이 다른 문서로 재바인딩된
+  // 뒤에도 **처음 마운트 때의 문서 식별자**로 편집을 계속 보낸다.
+  //
+  // 그 식별자는 이미 사라지고 없다 — `openInActivePanel`의 `bind`가 새 문서를
+  // 만들고 아무도 참조하지 않게 된 옛 문서를 거둔다. `editDocument`는 없는
+  // 문서를 **조용히 무시하므로**(`withDocument`의 이른 반환) 오류도 나지 않고,
+  // 문서는 영원히 clean으로 남는다. 그러면 조정 정책이 미저장 편집을 보지 못해
+  // 외부 변경을 자동 반영하고 사용자의 편집이 확인 없이 사라진다 —
+  // REQ-WS-028이 타협 불가라고 못박은 결과다.
   const handleChange = useCallback(
     (next: string) => {
-      if (doc) useWorkspaceStore.getState().editDocument(doc.id, next);
+      const current = documentOf(useWorkspaceStore.getState(), panel.panelId);
+      if (current) useWorkspaceStore.getState().editDocument(current.id, next);
     },
-    [doc],
+    [panel.panelId],
   );
 
   return (
