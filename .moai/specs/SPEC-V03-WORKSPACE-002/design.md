@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.4"
+version: "0.3.5"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -372,13 +372,25 @@ main: 경로별 확정 ──broadcast──► renderer
 
 **결론: 라우팅 키는 `src/store/` 계층에 산다. 조정 코어 5파일은 전혀 바뀌지 않는다.**
 
-F6이 금지하는 것과 허용하는 것을 정확히 구분해야 한다:
+**다섯 파일은 전부 무변경이다.** 아래 표의 오른쪽 열은 **파일을 고쳐도 되는 범위가 아니라**, 그 파일에 **이미 존재해서 밖에서 쓸 수 있는 것**이다. 두 가지를 혼동하면 R1이 된다(§6.2a-1).
 
-| | 금지 (테스트가 고정) | 허용 |
+| 파일 | 테스트가 고정하는 금지 | **이미 있는 것 — 파일 밖에서 쓴다** (편집 허가가 **아니다**) |
 |---|---|---|
-`shared/reconciliation.ts` | 확장자 판독 수단 도입(`:42-65`) | **`ConfirmedChange.path`는 이미 존재한다**(`:20`) — 타입은 경로를 나르고 리듀서가 쓰지 않을 뿐이다. 리듀서 시그니처 `reduceReconciliation(state, event, policy)`는 그대로 둔다 |
-`src/editor/applyExternalChange.ts` | arity 변경(`:171-174`가 2로 고정) | **`target`(첫 인자)이 이미 패널 식별자다** — `DispatchTarget`은 그 뷰/버퍼를 가리킨다. 어느 target에 적용할지 고르는 것이 곧 라우팅이며, 그 선택은 호출자의 몫이다 |
-`electron/changeConfirmation.ts`, `electron/watchScope.ts`, `src/editor/minimalDiff.ts` | 확장자 판독 | 무변경 |
+`shared/reconciliation.ts` | 확장자 판독 수단 도입(`:42-65`) | `ConfirmedChange.path`가 **이미 존재한다**(`:20`) — 타입은 경로를 나르고 리듀서가 쓰지 않을 뿐이다. 리듀서 시그니처는 **그대로 둔다** |
+`src/editor/applyExternalChange.ts` | arity 변경(`:171-174`가 2로 고정) | `target`(첫 인자)이 **이미 패널 식별자다.** 어느 target에 적용할지 고르는 것이 곧 라우팅이며 **그 선택은 호출자에서 일어난다** — 이 파일 안이 아니다 |
+`electron/changeConfirmation.ts`, `electron/watchScope.ts`, `src/editor/minimalDiff.ts` | 확장자 판독 | (없음) 무변경 |
+
+### 6.2a-1 이 금지가 네 번 만에 확정된 이유 — 검색 질문의 형태
+
+D11 → N2 → **R1**로 세 번의 철회가 실패했다. 매번 **철회한 문장은 지웠지만 같은 허가를 다른 말로 주는 문장이 남았다**:
+
+| 시도 | 살아남은 문장 | 왜 검색을 통과했나 |
+|---|---|---|
+| D11 | `AC-PANEL-082`의 `git diff` 예외 | — (첫 발견) |
+| N2 | `plan.md` §E 7a "예외이며 … 별도 증거를 제시한다" | "예외"라는 단어를 썼으나 **다른 파일**이었다 |
+| **R1** | `plan.md` §A.5 "등록 방식은 **바뀐다** — 그 함수는 arity 단언 **대상이 아니다**" | **"예외"라는 단어를 쓰지 않았다.** 문구 기반 검색을 통과했다 |
+
+**교훈은 수정 자체가 아니라 검색 질문의 형태다**: "철회된 **문장**이 남아 있는가"가 아니라 **"다섯 파일 중 하나를 손대도 된다고 말하는 문장이 어떤 표현으로든 있는가"** 를 물어야 한다. 후자는 문구 매칭이 아니라 **다섯 파일이 언급된 모든 문장을 문맥에서 읽는 것**으로만 답할 수 있다.
 
 즉 **오늘의 API가 이미 라우팅을 지원한다.** 빠진 것은 호출자다:
 
@@ -408,7 +420,7 @@ electron/ipc/project.ts:40 │                                        │
 registerReconciliationExecutor(view, (h) => setEffectHandlerFor(filePath, h))
 ```
 
-`registerReconciliationExecutor(target, setEffectHandler)`의 **두 번째 인자가 주입된 setter**이고(`src/editor/applyExternalChange.ts:123-132`) 호출부에는 `filePath`가 스코프에 있으므로, **경로가 클로저에 담긴다.** 시그니처는 **하나도 바뀌지 않는다** — arity 2가 유지되고 확장자 판독 수단 6종 금지도 유지된다. 즉 `applyExternalChange.ts`는 **무변경일 수 있다**(그래서 §D11에 따라 AC-PANEL-082의 `git diff` 예외를 철회했다).
+`registerReconciliationExecutor(target, setEffectHandler)`의 **두 번째 인자가 주입된 setter**이고(`src/editor/applyExternalChange.ts:123-132`) 호출부에는 `filePath`가 스코프에 있으므로, **경로가 클로저에 담긴다.** 시그니처는 **하나도 바뀌지 않는다** — arity 2가 유지되고 확장자 판독 수단 6종 금지도 유지된다. 즉 `applyExternalChange.ts`는 **무변경이다** — "무변경일 수 있다"가 아니다(판 0.3.5 정정: 가능성 표현은 R1과 같은 허가 여지를 남긴다). 그래서 AC-PANEL-082의 `git diff` 예외를 철회했고(D11), `plan.md` §A.5의 잔존 허가도 제거했다(R1).
 
 #### 등록·해제는 `filePath` 변화에 결속된다 — `[]`가 아니다 (감사 지적 D1)
 
@@ -449,7 +461,7 @@ useEffect(() => {
 
 **M8에서 실재한다**: REQ-PANEL-006의 배치 복원은 **경로를 이미 가진 채로 패널을 마운트한다.** 그러면 첫 실행이 `view === null`을 만나 등록을 건너뛰고, 이후 `filePath`가 **변하지 않으므로 재실행도 없다** — 복원된 문서는 외부 변경을 영영 받지 못하고, **오류도 나지 않으며 상태도 정상으로 보인다.**
 
-**확정**: 라우팅 등록은 **`filePath` 변화 *와* 뷰 준비 상태 양쪽에 결속된다(shall)** — 둘 중 하나만으로는 부족하다. 구현 형태는 자유이나(뷰 준비를 deps에 포함하든, `onReady` 시점에 현재 `filePath`로 등록하든) **"경로를 이미 가진 채 마운트된 패널이 등록된다"** 가 관측 가능해야 한다. AC-PANEL-080e가 그 케이스를 판정한다.
+**확정**: 라우팅 등록은 **`filePath` 변화 *와* 뷰 준비 상태 양쪽에 결속된다(shall)** — 둘 중 하나만으로는 부족하다. 여기서 "뷰 준비"는 **등록 생명주기의 시작점**이며 React 컴포넌트 마운트와 동의어가 아니다 — M0의 유닛 판정에서는 주입된 `DispatchTarget`이 준비 신호를 내는 시점이 그것이다(R3 명확화). 구현 형태는 자유이나(뷰 준비를 deps에 포함하든, `onReady` 시점에 현재 `filePath`로 등록하든) **"경로를 이미 가진 채 마운트된 패널이 등록된다"** 가 관측 가능해야 한다. AC-PANEL-080e가 그 케이스를 판정한다.
 
 **검증 등급**: 코드 직독. React의 effect 실행 순서를 StrictMode 아래에서 **관측하지 않았다** — 선언 순서 규칙과 `:165` 주석의 진술에서 도출했다.
 
