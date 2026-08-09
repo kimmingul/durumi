@@ -52,7 +52,7 @@ plan_artifact_commits:
   - 94266c2  # progress.md 커밋 SHA 백필
   - bd1ece5  # 판 0.3.5 — R1~R5
   - 040df4a  # progress.md 커밋 SHA 백필
-  - PENDING  # 판 0.3.6 — R2 정정 + R7~R9 + 규약 + 외부 주장 전수 (plan 단계 최종판)
+  - 92d621d  # 판 0.3.6 — R2 정정 + R7~R9 + 규약 + 외부 주장 전수 (plan 단계 최종판)
 blocking_decisions:
   total: 10
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
