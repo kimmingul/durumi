@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.5"
+version: "0.3.6"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -307,7 +307,20 @@ function decorationsForMode(mode: EditMode) {
         └─ 보조층 (보조 패널만)
              언어 문법 (LanguageDescription → @codemirror/language-data)
              (그 외 없음 — REQ-PANEL-042가 마크다운층 전부를 배제)
+
+미분류 3항목 (OQ-10 — M5 진입 전 확정 필요)
+  spellcheckExclusion() · ghostTextExtension() · macroCompartment
 ```
+
+**이 분류는 전수여야 한다** (판 0.3.6 실측). REQ-PANEL-042의 판정이 금지 목록에서 **allowlist**로 바뀌었으므로(공통층 ∪ 보조층 밖 항목 = 실패), 오늘 조립되는 최상위 항목이 **하나도 빠짐없이** 어느 한 층에 속해야 판정이 성립한다. 실측: `MarkdownEditor.tsx:88-147` 최상위 **24항목**. 위 공통층 10 + 마크다운층 11 = 21이므로 **3항목이 어느 층에도 없었다** — 이 표가 그 사실을 처음 기록한다.
+
+| 미분류 항목 | 정의 위치 | 실측 성질 | 잠정 분류 |
+|---|---|---|---|
+| `spellcheckExclusion()` | `src/editor/spellcheckExclusion.ts:1,4` | `syntaxTree`의 **FencedCode·InlineCode·FrontMatter lezer 노드**에 의존한다(파일 상단 주석이 대상 노드를 열거). 마크다운 언어층이 없으면 그 노드 타입이 생기지 않아 데코레이션이 비고, 남는 것은 `$…$` 정규식 스캔이 `.py` 소스를 훑는 낭비다 | **마크다운층** — 기술적 근거가 명확하다 |
+| `ghostTextExtension({refs})` | `src/editor/ai/ghostText.ts:118` | 트리거 로직은 **언어 무관**이다(`ViewPlugin.update`가 `docChanged`/`selectionSet`에만 반응 — `:125-126`). 마크다운 특화 코드가 없다 | **결정 사항** — 기술 제약이 아니라 제품 판단. 잠정 **마크다운층**: 보조 패널은 원고 저작 도구가 아니고, 세션 호출 상한(`GHOST_TEXT_BOUNDS.sessionCap`)이 공유 예산이라 `.py` 패널의 타이핑이 원고의 예산을 소모한다 |
+| `macroCompartment` (`buildMacroKeymap(macros)`) | `src/editor/keymap/macros.ts:61` | 순수 텍스트 삽입 keymap이다(`:63-75`, `view.dispatch({changes, selection})`). 마크다운 의존이 없다 | **결정 사항**. 잠정 **공통층**: 사용자 정의 매크로는 `.py`/`.bib` 패널에서도 동일하게 유용하고, 배제할 기술적 이유가 없다 |
+
+`viewModes()`가 공통층에 남는 것은 아래 문단의 `editModeStateExtension()` 근거와 같은 계열이다 — 3-모드의 **관측 가능한 효과**는 데코레이션 컴파트먼트가 담당하고, REQ-PANEL-022가 요구하는 "3-모드 미적용"은 컴파트먼트를 비우는 것으로 달성된다.
 
 `editModeStateExtension()`을 **공통층**에 두는 것이 미묘하지만 의도적이다: `currentEditMode(state)`(`src/editor/editMode.ts:40-48`)는 field 부재 시 `typora`로 폴백하고, 그 폴백은 레거시 테스트 호환용이다(`:41-47` 주석). 보조 패널에서 field를 빼면 폴백 값이 흘러들어 예측 불가해지므로, field는 항상 등록하고 **컴파트먼트(데코레이션)만** 빼는 것이 안전하다. REQ-PANEL-022가 요구하는 것은 "3-모드가 적용되지 않음"이며 그것은 데코레이션 부재로 달성된다.
 
@@ -317,13 +330,22 @@ function decorationsForMode(mode: EditMode) {
 
 - **새 의존성 0개**(C-11 만족).
 - 카탈로그는 `LanguageDescription` 배열이므로 확장자로 조회 가능하고, 문법 본체는 지연 로드된다 — 보조 패널을 열 때만 해당 언어 청크를 받는다.
-- `.csv`는 카탈로그에 문법이 없을 가능성이 높다. REQ-PANEL-045의 평문 폴백이 이 경우를 정상 경로로 규정한다.
+- **카탈로그가 무엇을 덮는지는 추측하지 않고 측정했다** (감사 지적 R7, 수용). 초판은 "`.csv`는 카탈로그에 문법이 없을 **가능성이 높다**"고 적었다 — 가능성 진술이 요구(REQ-PANEL-041)에서는 `shall`로 굳어 있었다. 2026-08-09 설치본(`^6.5.2`, 143개 언어) 실측:
+
+| 확장자 | 결과 | 귀결 |
+|---|---|---|
+| `.py` / `.json` / `.yaml` / `.yml` | Python / JSON / YAML / YAML | REQ-PANEL-041 (문법 조달) |
+| `.csv` | **부재** | REQ-PANEL-045 (평문 폴백) — 초판의 추측이 맞았다 |
+| `.bib` / `.bibtex` | **부재** (카탈로그 전체 "bib" 문자열 0건) | REQ-PANEL-045 — 초판이 REQ-041에 넣은 것이 **틀렸다** |
+
+확인 방법: `require('@codemirror/language-data').languages` 순회 + `extensions` 조회. **설치 버전 시점 측정**이며 M5 진입 시 재측정한다.
 
 기각된 대안:
 
 | 대안 | 기각 근거 |
 |---|---|
 | 언어별 개별 패키지(`@codemirror/lang-python` 등) 추가 | C-11 위반. `language-data`가 이미 같은 문법을 지연 로드로 제공한다 |
+| `.bib → LaTeX`/`sTeX` 수동 매핑 | `sTeX`는 `extensions: []`라 확장자 조회로 도달 불가하고, `LaTeX`(`["text","ltx","tex"]`)는 도달 가능하나 **BibTeX는 LaTeX 문법이 아니다** — `@article{key, field = {value}}` 가 매크로·그룹으로 파싱된다. **그 매핑의 실제 가독성은 측정하지 않았다**; 확인된 것은 확장자 조회가 그것을 공급하지 않는다는 사실뿐이다. 정직한 평문 폴백을 택했다 |
 | 자체 문법 정의 | 유지 비용이 기능 가치를 압도한다 |
 | 보조 파일을 평문으로만 열기(하이라이팅 없음) | `EPIC-V03-WORKSPACE.md` §2.1의 (d) "비마크다운 파일 편집 — `@codemirror/language-data`로 즉시 지원"이 CodeMirror 유지 결정의 근거 중 하나였다. 하이라이팅을 포기하면 그 근거를 스스로 무효화한다 |
 

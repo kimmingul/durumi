@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "코드베이스 조사 — 멀티패널 셸"
-version: "0.3.5"
+version: "0.3.6"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -258,7 +258,7 @@ src/editor/MarkdownEditor.tsx:93-95  markdown({ base: markdownLanguage, codeLang
 
 ### 5.3 extension 목록 조립의 **단일 지점**
 
-`src/editor/MarkdownEditor.tsx:86-148` — `EditorState.create({ doc: value, extensions: [ … 30여 항목 … ] })`.
+`src/editor/MarkdownEditor.tsx:86-148` — `EditorState.create({ doc: value, extensions: [ … ] })`. **실측 (판 0.3.6)**: `extensions:` 배열 자체는 `:88-147`이며 **최상위 24항목**, `markdown()` 중첩 **8항목**, 합 32. 세는 방법은 "8칸 들여쓰기로 시작하고 주석이 아닌 줄"이다. 초판의 "30여 항목"은 중첩까지 셀 때만 맞았고 세는 방법을 적지 않았다(§10.1 #8).
 
 이 배열이 파일 종류에 따라 달라져야 하는 곳이다. 현재 배열은 **전부 마크다운 전제**다. 마크다운 전용 항목의 예:
 
@@ -739,6 +739,32 @@ AC 본문이 각 결함의 등급을 명시하며(`acceptance.md` 표기 규약)
 4b. **e2e 34파일의 셀렉터가 실제로 어떤 형태인지 개별 확인하지 않았다.** `grep -rl`로 파일 목록만 얻었고 각 파일이 `.cm-content`를 어떻게 쓰는지(단일 가정 정도)는 열지 않았다. AC-PANEL-095가 "유일 요소 가정 셀렉터 0건"을 요구하므로 그 판정은 run 단계에서 파일별로 이루어진다 — 34는 **상한**이며 실제 이관 대상은 그보다 적을 수 있다.
 5. **CRLF(issue #11)가 비마크다운 파일에서 더 심각해지는지 정량 확인하지 않았다.** `applyExternalChange.ts:54-58, 79-95`의 주석과 `docs/v0.3-signoff.md` §4의 구조 설명을 근거로 plan.md §A 미해결 결정으로 올렸다.
 6. **Windows 경로에서의 패널 동작은 코드 읽기만 했다** — e2e가 macOS 전용이라는 SPEC-1 C-6 제약이 그대로 승계된다.
+
+---
+
+## 10.1 외부 메커니즘 주장 전수 확인 (판 0.3.6, 2026-08-09)
+
+감사 Gap 1의 지적: 이 SPEC은 외부 메커니즘(제3자 패키지·기존 코드 상수·IPC 채널)의 능력을 여러 곳에서 인용하지만 **실제로 대조된 것은 두 건뿐**이었다(`@codemirror/language-data`, `durumi:*` 이벤트). 나머지를 전수 확인했다.
+
+**확인 방법**: 각 주장을 (a) 설치된 패키지 런타임 조회 (b) 소스 직독 (c) 인용 라인 번호 대조 중 해당하는 것으로 검사. 아래 표의 "등급"은 §10.0의 세 등급 체계를 따른다.
+
+| # | 주장 | 인용처 | 실측 결과 | 판정 |
+|---|---|---|---|---|
+| 1 | `@codemirror/language-data`가 `.py`/`.csv`/`.bib`/`.bibtex`/`.json`/`.yaml` 문법을 공급 | `spec.md` REQ-PANEL-041, `acceptance.md` AC-041 | `.py`→Python · `.json`→JSON · `.yaml`/`.yml`→YAML **존재**. `.csv` **부재**, `.bib`·`.bibtex` **부재**, 카탈로그 143개 언어 전체에서 "bib" 문자열 **0건**. `LaTeX = ["text","ltx","tex"]`, `sTeX = []` | **거짓 — R7.** 요구 자신의 `shall not` 아래서 충족 불가. 판 0.3.6이 `.csv`·`.bib`를 REQ-PANEL-045 폴백으로 이관 |
+| 2 | `WIDTH_BOUNDS`가 폭 경계 SSOT이고 **main의 `setPreferences`도 같은 값으로 clamp** | `research.md` §2.1, `spec.md` REQ-PANEL-002, `acceptance.md` AC-PANEL-002c | `shared/prefsValidation.ts:22-26` 정의(`sidebar {180,480}` · `rightSidebar {200,560}` · `memoPanel {220,560}`). 렌더러 3개 스토어가 import(`sidebarStore.ts:2` · `rightSidebarStore.ts:2` · `memoPanelStore.ts:2`). **main 절반도 실재**: `prefsValidation.ts:59-62`의 `NESTED_NUMBERS`가 같은 상수를 쓰고 `sanitizePreferencesPatch`(`:87`)가 `clampInt`(`:76-80`)로 보정하며, `electron/preferences.ts:251`이 그것을 호출 | **참.** 다만 인용이 렌더러 절반에만 걸려 있었다 — main 절반의 근거(`electron/preferences.ts:251` + `sanitizePreferencesPatch`)를 이번에 보강했다 |
+| 3 | 열기 다이얼로그 필터가 `['md','markdown','txt']` | `research.md` §4, `spec.md` REQ-PANEL-040 | `electron/ipc/files.ts:34` 축자 일치 | **참** |
+| 4 | Save As 필터가 `[{name:'Markdown', extensions:['md']}]` 하드코딩 | `spec.md` §D 표, `plan.md` §B, `design.md` §7 | `electron/ipc/files.ts:96` 축자 일치(인용 범위 `:92-97` 안) | **참** |
+| 5 | `project:refresh` 채널이 존재하고 렌더러가 호출 가능 | `acceptance.md` AC-PANEL-036 | 핸들러 `electron/ipc/project.ts:146`, preload 브리지 `electron/preload.ts:38`(`projectRefresh`), 기존 테스트 3파일이 이미 구동 | **참** |
+| 6 | 보조 패널에서 배제할 마크다운 전용 확장 9종 | `acceptance.md` AC-PANEL-042, `spec.md` REQ-PANEL-042 | 9종 전부 `MarkdownEditor.tsx`에 실제 심볼로 존재: 라이브 데코레이션(`editModeCompartment`+`decorationsForMode`) · 3-모드(`viewModes`) · `atomicMediaExtension` · `wysiwygEscapeFilter` · `citationAutocomplete` · `citationHoverTooltip` · `headingHintPlugin` · `markdownKeymap` · `EditorView.domEventHandlers({paste,drop})` | **참 — 그러나 불완전.** 아래 #7 |
+| 7 | (암묵) 위 9종 열거가 마크다운 결속 항목을 **덮는다** | AC-PANEL-042의 `Then` 형태 | 최상위 실측 **24항목** 중 9종 밖에 `atomicInlineMarksExtension()`(`:120`) · `spellcheckExclusion()`(`:125`) 등 마크다운 결속 항목이 있다. 열거 밖 항목은 **부재를 단언받지 않았다** | **불완전.** 판 0.3.6이 판정을 allowlist로 전환 |
+| 8 | extension 배열이 "`:86-148` … 30여 항목" | `research.md` §1.2, §5.3 | `EditorState.create` 는 `:86-148`, **`extensions:` 배열 자체는 `:88-147`**. 최상위 항목 **24**, `markdown()` 중첩 **8**, 합 **32** | **부정확 — 이번에 정정.** "30여"는 중첩까지 셀 때만 맞고 세는 방법을 적지 않았다 |
+| 9 | `@codemirror/*` 직접 의존성 목록 | `research.md` §5.2 | `package.json:35-42` 8개(`autocomplete` · `commands` · `lang-markdown` · `language` · `language-data` · `search` · `state` · `view`). **언어별 `lang-*` 패키지는 `lang-markdown` 하나뿐**이므로 C-11의 "개별 패키지 추가 금지"는 오늘 상태와 일관 | **참** |
+
+**측정 기준선 — 워킹 트리가 아니라 커밋 `040df4a`다.** 이 확인을 수행하는 동안 **M0 구현이 같은 파일들을 수정 중이었다**(`src/editor/MarkdownEditor.tsx` 등 4파일 dirty). 첫 측정을 dirty 트리에서 뜨는 바람에 `atomicInlineMarksExtension`·`spellcheckExclusion`의 줄 번호를 각각 2줄·1줄 틀리게 적었고(`:118`/`:124` → 실제 `:120`/`:125`), `git show 040df4a:<path>` 로 재측정해 정정했다. **plan 아티팩트의 모든 인용은 커밋 기준이어야 한다** — 병행 구현이 있는 동안 워킹 트리는 안정된 기준선이 아니다. 이 사건 자체가 §10.1이 존재하는 이유의 실례다.
+
+**측정 시점과 성격**: 위 전부 2026-08-09, 커밋 `040df4a` 기준. #1과 #9는 **설치된 버전에 대한 시점 측정**(`^6.5.2` 등 캐럿 범위이므로 재설치로 달라질 수 있다) — M5 진입 시 재측정한다. #2~#8은 소스 사실이며 코드 변경 시 드리프트한다.
+
+**남는 공백 (이번 확인이 덮지 않은 것)**: `@codemirror/language-data`의 **지연 로드 동작**은 여전히 실행 확인하지 않았다(§10-4 유지) — 확인한 것은 카탈로그가 어떤 확장자를 **주장**하는가이지, 보조 패널을 열 때 실제로 청크가 지연 로드되는가가 아니다. `.bib → LaTeX` 매핑의 **가독성**도 측정하지 않았다(`design.md` §5.3 기각 표에 명시).
 
 ---
 
