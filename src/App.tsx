@@ -186,7 +186,7 @@ export function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
       </div>
-      <ReconciliationSurface />
+      <ReconciliationSurface path={filePath} />
       <StatusBar />
       <ToastHost />
       <QuickOpen

@@ -1,5 +1,5 @@
 import 'katex/dist/katex.min.css';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
@@ -66,6 +66,9 @@ export function MarkdownEditor({
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // 뷰 준비 신호. 조정 라우팅 등록이 `filePath` 변화 **와** 뷰 준비 양쪽에
+  // 결속되어야 하므로(REQ-PANEL-070a) deps에 넣을 수 있는 형태로 노출한다.
+  const [readyView, setReadyView] = useState<EditorView | null>(null);
   const filePathRef = useRef<string | null>(filePath);
   const macroCompartmentRef = useRef<Compartment>(new Compartment());
   const editModeCompartmentRef = useRef<Compartment>(new Compartment());
@@ -149,30 +152,59 @@ export function MarkdownEditor({
 
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
-    // SPEC-V03-WORKSPACE-001 REQ-WS-020: 조합이 열려 있는 동안 외부 변경
-    // 조정이 문서를 건드리지 못하게 막는다. 게이트 자체의 계약은
-    // `src/editor/compositionGate.ts`와 그 테스트가 고정한다.
-    const compositionGate = attachReconciliationCompositionGate(view.contentDOM);
-    // SPEC-V03-WORKSPACE-001 REQ-WS-025: M2가 방출해 온 apply-to-buffer effect의
-    // 실행자를 붙인다. 여기까지가 렌더러 안쪽이며, 확정 이벤트를 main에서
-    // 나르는 IPC 채널은 M8 소관이다.
-    const detachExecutor = registerReconciliationExecutor(
-      view,
-      useReconciliationStore.getState().setEffectHandler,
-    );
     // Seed the docPath field with the prop value so widgets created on
     // the first paint (e.g. an image already in the initial document)
     // resolve correctly. Subsequent changes go through the filePath effect.
     if (filePath !== null) view.dispatch({ effects: setDocPath.of(filePath) });
+    setReadyView(view);
     onReady?.(view);
     return () => {
-      detachExecutor();
-      compositionGate.detach();
+      setReadyView(null);
       view.destroy();
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // SPEC-V03-WORKSPACE-002 M0 — 조정 라우팅 등록과 조합 게이트.
+  //
+  // **등록은 `filePath` 변화 *와* 뷰 준비 양쪽에 결속된다**(REQ-PANEL-070a·070b,
+  // `design.md` §6.2a). 둘 중 하나만으로는 부족하다:
+  //  - `[]`에 두면 경로가 첫 마운트에 캡처된다. 상위가 `key`를 주지 않으므로
+  //    (`src/App.tsx`) 하나의 `EditorView`가 문서를 갈아타며 재사용되고, 옛
+  //    경로의 변경이 이 패널로 들어온다.
+  //  - `[filePath]`에만 두면 마운트 시 뷰가 아직 없어 몸통을 건너뛰는데,
+  //    **경로를 이미 가진 채 마운트된 패널**은 이후 `filePath`가 변하지 않아
+  //    재실행도 없다 — 그 문서는 외부 변경을 영영 받지 못한다.
+  //
+  // 경로가 없는 문서(untitled)는 등록하지 않는다 — null을 키로 쓰면 서로 다른
+  // untitled 문서가 같은 라우팅 키를 공유한다(REQ-PANEL-070b).
+  useEffect(() => {
+    if (!readyView) return;
+    const path = filePath;
+    const detachExecutor =
+      path === null
+        ? null
+        : registerReconciliationExecutor(readyView, (h) =>
+            useReconciliationStore.getState().setEffectHandlerFor(path, h),
+          );
+    // SPEC-V03-WORKSPACE-001 REQ-WS-020: 조합이 열려 있는 동안 외부 변경
+    // 조정이 문서를 건드리지 못하게 막는다. 게이트 자체의 계약은
+    // `src/editor/compositionGate.ts`와 그 테스트가 고정한다.
+    const compositionGate = attachReconciliationCompositionGate(
+      readyView.contentDOM,
+      () => filePathRef.current,
+    );
+    return () => {
+      // REQ-PANEL-071a — 택한 규정: **조합 보류 해제가 실행자 분리보다 먼저**.
+      // 순서를 뒤집으면 detach의 해제가 드레인한 `apply-to-buffer`가
+      // `reconciliationStore`의 `handler?.(effect)`에서 옵셔널 체이닝에 조용히
+      // 삼켜지고 상태만 `settled`로 정착한다 — 버퍼는 변경을 받지 못했는데
+      // 상태가 완료를 주장하는 조합이며, AC-PANEL-081c가 그것을 금지한다.
+      compositionGate.detach();
+      detachExecutor?.();
+    };
+  }, [filePath, readyView]);
 
   useEffect(() => {
     const view = viewRef.current;

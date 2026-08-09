@@ -5,6 +5,9 @@ import { useExternalChangeWiring } from '../../src/hooks/useExternalChangeWiring
 import { useReconciliationStore } from '../../src/store/reconciliationStore';
 import type { ExternalFileChange } from '@shared/ipc-contract';
 
+/** 이 창이 실제로 열고 있는 문서. 조정 상태는 문서별로 조회한다. */
+const PATH = '/w/a.md';
+
 /** main 채널을 흉내낸다 — 실제 IPC 없이 배선만 본다. */
 const calls = {
   watch: [] as Array<[string, string]>,
@@ -118,7 +121,7 @@ describe('버퍼 기준 동기화', () => {
 describe('미저장 편집 전달 — REQ-WS-028', () => {
   it('dirty 상태가 조정 계층에 전달된다', () => {
     render('/w/a.md', 'a\n', true);
-    expect(useReconciliationStore.getState().state.isDirty).toBe(true);
+    expect(useReconciliationStore.getState().stateFor(PATH)?.isDirty).toBe(true);
   });
 
   it('dirty일 때 외부 변경이 버퍼를 교체하지 않는다', () => {
@@ -126,7 +129,7 @@ describe('미저장 편집 전달 — REQ-WS-028', () => {
     // 사용자의 미저장 편집이 확인 없이 사라진다.
     const applied: string[] = [];
     render('/w/a.md', 'a\n', true);
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
     act(() => {
@@ -135,7 +138,7 @@ describe('미저장 편집 전달 — REQ-WS-028', () => {
       }
     });
     expect(applied, '미저장 편집이 있는데 버퍼가 교체됐다').toEqual([]);
-    expect(useReconciliationStore.getState().state.status).toBe('held-notify');
+    expect(useReconciliationStore.getState().stateFor(PATH)?.status).toBe('held-notify');
   });
 });
 
@@ -152,7 +155,7 @@ describe('채널 구독 — C-3', () => {
   it('올라온 변경이 조정 계층에 도달한다', () => {
     render('/w/a.md', 'a\n');
     const applied: string[] = [];
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
     act(() => {

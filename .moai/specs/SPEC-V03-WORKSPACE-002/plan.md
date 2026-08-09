@@ -2,7 +2,7 @@
 id: SPEC-V03-WORKSPACE-002
 title: "구현 계획 — v0.3 멀티패널 셸"
 version: "0.3.6"
-status: draft
+status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
 author: manager-spec

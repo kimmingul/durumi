@@ -13,6 +13,11 @@ import { noticeFor, type ConfirmedChange } from '@shared/reconciliation';
  */
 
 const CHANGE: ConfirmedChange = { path: '/w/a.md', content: '# disk\n', mtimeMs: 1, size: 7 };
+/** 조정 상태는 문서별이므로 게이트도 자기 문서를 지목한다 (REQ-PANEL-071). */
+const PATH = CHANGE.path;
+const gateOnDoc = (el: HTMLElement, options?: { defer: (fn: () => void) => () => void }) =>
+  attachReconciliationCompositionGate(el, () => PATH, options);
+const docState = () => useReconciliationStore.getState().stateFor(PATH)!;
 
 let el: HTMLElement;
 let deferred: Array<() => void>;
@@ -52,6 +57,7 @@ beforeEach(() => {
   document.body.appendChild(el);
   deferred = [];
   useReconciliationStore.getState().reset();
+  useReconciliationStore.getState().openDocument(PATH);
 });
 
 afterEach(() => {
@@ -169,25 +175,25 @@ describe('비정상 이벤트열에도 상태가 깨지지 않는다', () => {
 
 describe('조정 계층 배선 — AC-WS-023b, REQ-WS-020, 021', () => {
   it('실제 조합이 조정 계층을 보류 상태로 들여보낸다 (AC-WS-023b)', () => {
-    const gate = attachReconciliationCompositionGate(el, { defer });
+    const gate = gateOnDoc(el, { defer });
     const store = useReconciliationStore.getState();
 
     fire('compositionstart');
-    store.dispatch({ type: 'external-change', change: CHANGE });
+    store.dispatchFor(PATH, { type: 'external-change', change: CHANGE });
 
-    expect(useReconciliationStore.getState().state.status).toBe('held-composition');
+    expect(docState().status).toBe('held-composition');
     gate.detach();
   });
 
   it('보류 중 버퍼 적용 effect가 나가지 않는다 (REQ-WS-020)', () => {
     const applied: string[] = [];
-    const gate = attachReconciliationCompositionGate(el, { defer });
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    const gate = gateOnDoc(el, { defer });
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
 
     fire('compositionstart');
-    useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+    useReconciliationStore.getState().dispatchFor(PATH, { type: 'external-change', change: CHANGE });
     expect(applied).toEqual([]);
 
     // compositionend 시점에도 아직 적용되지 않는다.
@@ -205,11 +211,11 @@ describe('조정 계층 배선 — AC-WS-023b, REQ-WS-020, 021', () => {
     probe.focus();
     const before = document.activeElement;
 
-    const gate = attachReconciliationCompositionGate(el, { defer });
+    const gate = gateOnDoc(el, { defer });
     fire('compositionstart');
-    useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+    useReconciliationStore.getState().dispatchFor(PATH, { type: 'external-change', change: CHANGE });
 
-    const notice = noticeFor(useReconciliationStore.getState().state)!;
+    const notice = noticeFor(docState())!;
     expect(notice.presentation).toBe('status');
     expect(notice.actions).toEqual([]);
     expect(document.activeElement).toBe(before);
@@ -220,8 +226,8 @@ describe('조정 계층 배선 — AC-WS-023b, REQ-WS-020, 021', () => {
 
   it('보류 중 복수 변경은 조합 종료 후 최종 상태 1회만 적용된다 (REQ-WS-021)', () => {
     const applied: string[] = [];
-    const gate = attachReconciliationCompositionGate(el, { defer });
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    const gate = gateOnDoc(el, { defer });
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
 
@@ -229,7 +235,7 @@ describe('조정 계층 배선 — AC-WS-023b, REQ-WS-020, 021', () => {
     for (const c of ['v1', 'v2', 'v3']) {
       useReconciliationStore
         .getState()
-        .dispatch({ type: 'external-change', change: { ...CHANGE, content: c } });
+        .dispatchFor(PATH, { type: 'external-change', change: { ...CHANGE, content: c } });
     }
     fire('compositionend');
     flushDeferred();
@@ -240,19 +246,19 @@ describe('조정 계층 배선 — AC-WS-023b, REQ-WS-020, 021', () => {
 
   it('연속 조합 사이에 조정이 끼어들지 않는다', () => {
     const applied: string[] = [];
-    const gate = attachReconciliationCompositionGate(el, { defer });
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    const gate = gateOnDoc(el, { defer });
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
 
     fire('compositionstart');
-    useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+    useReconciliationStore.getState().dispatchFor(PATH, { type: 'external-change', change: CHANGE });
     fire('compositionend');
     fire('compositionstart'); // 다음 음절이 먼저 도착
     flushDeferred();
 
     expect(applied).toEqual([]);
-    expect(useReconciliationStore.getState().state.status).toBe('held-composition');
+    expect(docState().status).toBe('held-composition');
     gate.detach();
   });
 });

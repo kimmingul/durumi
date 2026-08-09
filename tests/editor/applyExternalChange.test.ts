@@ -292,12 +292,12 @@ describe('조정 스토어 배선 — M2의 apply-to-buffer 실행자', () => {
     useReconciliationStore.getState().reset();
 
     const editor = makeEditor('before\n');
-    const detach = registerReconciliationExecutor(
-      editor,
-      useReconciliationStore.getState().setEffectHandler,
+    useReconciliationStore.getState().openDocument('/w/a.md');
+    const detach = registerReconciliationExecutor(editor, (h) =>
+      useReconciliationStore.getState().setEffectHandlerFor('/w/a.md', h),
     );
 
-    useReconciliationStore.getState().dispatch({
+    useReconciliationStore.getState().dispatchFor('/w/a.md', {
       type: 'external-change',
       change: { path: '/w/a.md', content: 'after\n', mtimeMs: 1, size: 6 },
     });
@@ -313,18 +313,18 @@ describe('조정 스토어 배선 — M2의 apply-to-buffer 실행자', () => {
     useReconciliationStore.getState().reset();
 
     const editor = makeEditor('keep\n');
-    const detach = registerReconciliationExecutor(
-      editor,
-      useReconciliationStore.getState().setEffectHandler,
+    useReconciliationStore.getState().openDocument('/w/a.md');
+    const detach = registerReconciliationExecutor(editor, (h) =>
+      useReconciliationStore.getState().setEffectHandlerFor('/w/a.md', h),
     );
 
     const store = useReconciliationStore.getState();
-    store.dispatch({ type: 'dirty-changed', isDirty: true });
-    store.dispatch({
+    store.dispatchFor('/w/a.md', { type: 'dirty-changed', isDirty: true });
+    store.dispatchFor('/w/a.md', {
       type: 'external-change',
       change: { path: '/w/a.md', content: 'disk\n', mtimeMs: 1, size: 5 },
     });
-    store.dispatch({ type: 'user-view-diff' });
+    store.dispatchFor('/w/a.md', { type: 'user-view-diff' });
 
     expect(editor.state.doc.toString()).toBe('keep\n');
     detach();

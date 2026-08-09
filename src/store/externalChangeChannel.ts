@@ -16,6 +16,14 @@ import { useReconciliationStore } from './reconciliationStore';
  *
  * 내용도 오류도 없는 조합은 있을 수 없지만, 통과시키면 null을 정상 내용으로
  * 넘기게 되므로 명시적으로 무시한다.
+ *
+ * **경로는 버리지 않고 라우팅 키로 쓴다** (SPEC-V03-WORKSPACE-002 REQ-PANEL-070).
+ * main의 `broadcast()`는 확정 이벤트를 `BrowserWindow.getAllWindows()` — 즉 **모든
+ * 창** 에 보내므로(`electron/ipc/project.ts:40-44`), 이 창이 열지도 감시 등록도
+ * 하지 않은 경로의 이벤트가 여기 도착한다. `change.path`를 열린 문서와 대조하지
+ * 않으면 그 내용이 현재 버퍼에 적용되고 조정 상태는 정상 완료로 정착한다 —
+ * 사용자가 알 수단이 없는 데이터 손실이다. 대조는 스토어의 `dispatchFor`가
+ * 하며, 열린 문서가 아니면 리듀서를 호출하지 않고 폐기한다.
  */
 
 /** 구독만 필요로 하는 최소 인터페이스 — 테스트가 `window.api` 없이 구동한다. */
@@ -26,19 +34,23 @@ export interface ExternalChangeSource {
 /** 구독 해제 클로저를 반환한다 (C-3). */
 export function attachExternalChangeChannel(source: ExternalChangeSource): () => void {
   return source.onExternalFileChange((change) => {
-    const { dispatch } = useReconciliationStore.getState();
+    const { dispatchFor } = useReconciliationStore.getState();
 
     if (change.kind === 'deleted') {
-      dispatch({ type: 'external-delete', path: change.path });
+      dispatchFor(change.path, { type: 'external-delete', path: change.path });
       return;
     }
     if (change.decodeError !== null) {
-      dispatch({ type: 'decode-error', path: change.path, message: change.decodeError });
+      dispatchFor(change.path, {
+        type: 'decode-error',
+        path: change.path,
+        message: change.decodeError,
+      });
       return;
     }
     if (change.content === null) return;
 
-    dispatch({
+    dispatchFor(change.path, {
       type: 'external-change',
       change: {
         path: change.path,

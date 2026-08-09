@@ -10,6 +10,9 @@ import type { ExternalFileChange } from '@shared/ipc-contract';
  * 실패가 정상 변경으로 처리되어 버퍼를 덮어쓴다.
  */
 
+/** 이 창이 실제로 열고 있는 문서. 라우팅 대조의 기준이다. */
+const PATH = '/w/a.md';
+
 let subscribers: Array<(c: ExternalFileChange) => void>;
 let unsubscribed: number;
 
@@ -40,13 +43,15 @@ beforeEach(() => {
   subscribers = [];
   unsubscribed = 0;
   useReconciliationStore.getState().reset();
+  // 조정 상태는 문서별이므로 대상 문서를 열어 둔다 (REQ-PANEL-070).
+  useReconciliationStore.getState().openDocument(PATH);
 });
 afterEach(() => useReconciliationStore.getState().reset());
 
 describe('세 갈래 라우팅', () => {
   it('일반 변경은 조정으로 간다', () => {
     const applied: string[] = [];
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
     const detach = attachExternalChangeChannel(fakeApi);
@@ -58,19 +63,19 @@ describe('세 갈래 라우팅', () => {
   it('삭제는 사라짐 상태로 간다 (REQ-WS-030)', () => {
     const detach = attachExternalChangeChannel(fakeApi);
     emit({ kind: 'deleted', content: null });
-    expect(useReconciliationStore.getState().state.status).toBe('missing');
+    expect(useReconciliationStore.getState().stateFor(PATH)?.status).toBe('missing');
     detach();
   });
 
   it('디코드 실패는 조정을 중단시킨다 (REQ-WS-031)', () => {
     const applied: string[] = [];
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
     const detach = attachExternalChangeChannel(fakeApi);
     emit({ content: null, decodeError: 'not utf-8' });
 
-    const s = useReconciliationStore.getState().state;
+    const s = useReconciliationStore.getState().stateFor(PATH)!;
     expect(s.status).toBe('decode-error');
     expect(s.errorMessage).toBe('not utf-8');
     expect(applied, '손상된 내용으로 버퍼를 덮어쓰지 않는다').toEqual([]);
@@ -80,7 +85,7 @@ describe('세 갈래 라우팅', () => {
   it('내용이 없는데 오류도 없으면 조정하지 않는다', () => {
     // 있을 수 없는 조합이지만, 통과시키면 null을 정상 내용으로 넘기게 된다.
     const applied: string[] = [];
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
     const detach = attachExternalChangeChannel(fakeApi);
@@ -103,6 +108,6 @@ describe('구독 해제 계약 — C-3', () => {
     const detach = attachExternalChangeChannel(fakeApi);
     detach();
     emit({ kind: 'deleted', content: null });
-    expect(useReconciliationStore.getState().state.status).toBe('idle');
+    expect(useReconciliationStore.getState().stateFor(PATH)?.status).toBe('idle');
   });
 });

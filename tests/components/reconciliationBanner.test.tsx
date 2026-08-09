@@ -14,13 +14,20 @@ import { bannerNotifyPolicy, type ConfirmedChange } from '@shared/reconciliation
  */
 
 const CHANGE: ConfirmedChange = { path: '/w/a.md', content: '# disk\n', mtimeMs: 1, size: 7 };
+/** 조정 상태는 문서별이므로 표면도 어느 문서의 알림인지 지목받는다. */
+const PATH = CHANGE.path;
+/** 조합 게이트 하나를 흉내낸 식별자 — 합류(OR)의 참가자다. */
+const GATE = Symbol('test-gate');
+
+const send = (event: Parameters<ReturnType<typeof useReconciliationStore.getState>['dispatchFor']>[1]) =>
+  useReconciliationStore.getState().dispatchFor(PATH, event);
 
 function mount() {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
   act(() => {
-    root.render(<ReconciliationSurface />);
+    root.render(<ReconciliationSurface path={PATH} />);
   });
   return {
     host,
@@ -31,15 +38,18 @@ function mount() {
   };
 }
 
-beforeEach(() => useReconciliationStore.getState().reset());
+beforeEach(() => {
+  useReconciliationStore.getState().reset();
+  useReconciliationStore.getState().openDocument(PATH);
+});
 afterEach(() => useReconciliationStore.getState().reset());
 
 describe('배너 렌더 — REQ-WS-027 / AC-WS-029', () => {
   it('미저장 편집 + 외부 변경이면 두 동작을 가진 배너가 뜬다', () => {
     const { host, cleanup } = mount();
     act(() => {
-      useReconciliationStore.getState().dispatch({ type: 'dirty-changed', isDirty: true });
-      useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+      send({ type: 'dirty-changed', isDirty: true });
+      send({ type: 'external-change', change: CHANGE });
     });
     const banner = host.querySelector('[data-reconcile-surface="banner"]');
     expect(banner).not.toBeNull();
@@ -53,12 +63,12 @@ describe('배너 렌더 — REQ-WS-027 / AC-WS-029', () => {
   it('해제하면 배너가 사라지고 버퍼 적용 effect가 없다', () => {
     const { host, cleanup } = mount();
     const applied: string[] = [];
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
     act(() => {
-      useReconciliationStore.getState().dispatch({ type: 'dirty-changed', isDirty: true });
-      useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+      send({ type: 'dirty-changed', isDirty: true });
+      send({ type: 'external-change', change: CHANGE });
     });
     const dismiss = host.querySelector<HTMLButtonElement>('button[data-action="dismiss"]')!;
     act(() => dismiss.click());
@@ -70,12 +80,12 @@ describe('배너 렌더 — REQ-WS-027 / AC-WS-029', () => {
   it('디스크에서 불러오기를 누르면 적용 effect가 나간다', () => {
     const { host, cleanup } = mount();
     const applied: string[] = [];
-    useReconciliationStore.getState().setEffectHandler((e) => {
+    useReconciliationStore.getState().setEffectHandlerFor(PATH, (e) => {
       if (e.kind === 'apply-to-buffer') applied.push(e.content);
     });
     act(() => {
-      useReconciliationStore.getState().dispatch({ type: 'dirty-changed', isDirty: true });
-      useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+      send({ type: 'dirty-changed', isDirty: true });
+      send({ type: 'external-change', change: CHANGE });
     });
     const load = host.querySelector<HTMLButtonElement>('button[data-action="load-from-disk"]')!;
     act(() => load.click());
@@ -94,8 +104,8 @@ describe('보류·사라짐 표시 — REQ-WS-023, 030 / AC-WS-023, AC-WS-031', 
   it('조합 중 보류는 동작 버튼 없는 status 표면으로 표시된다', () => {
     const { host, cleanup } = mount();
     act(() => {
-      useReconciliationStore.getState().dispatch({ type: 'composition-start' });
-      useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+      useReconciliationStore.getState().compositionStart(PATH, GATE);
+      send({ type: 'external-change', change: CHANGE });
     });
     const surface = host.querySelector('[data-reconcile-surface="status"]');
     expect(surface).not.toBeNull();
@@ -106,7 +116,7 @@ describe('보류·사라짐 표시 — REQ-WS-023, 030 / AC-WS-023, AC-WS-031', 
   it('삭제되면 사라짐 표시가 뜨고 해제 버튼이 없다', () => {
     const { host, cleanup } = mount();
     act(() => {
-      useReconciliationStore.getState().dispatch({ type: 'external-delete', path: '/w/a.md' });
+      send({ type: 'external-delete', path: PATH });
     });
     expect(host.querySelector('[data-reconcile-status="missing"]')).not.toBeNull();
     expect(host.querySelector('button[data-action="dismiss"]')).toBeNull();
@@ -116,9 +126,7 @@ describe('보류·사라짐 표시 — REQ-WS-023, 030 / AC-WS-023, AC-WS-031', 
   it('디코드 실패는 원인을 담은 배너로 보고된다', () => {
     const { host, cleanup } = mount();
     act(() => {
-      useReconciliationStore
-        .getState()
-        .dispatch({ type: 'decode-error', path: '/w/a.md', message: 'invalid utf-8' });
+      send({ type: 'decode-error', path: PATH, message: 'invalid utf-8' });
     });
     const surface = host.querySelector('[data-reconcile-status="decode-error"]');
     expect(surface).not.toBeNull();
@@ -133,29 +141,26 @@ describe('모달 금지 — REQ-WS-049 / AC-WS-060', () => {
     [
       'held-notify',
       () => {
-        useReconciliationStore.getState().dispatch({ type: 'dirty-changed', isDirty: true });
-        useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+        send({ type: 'dirty-changed', isDirty: true });
+        send({ type: 'external-change', change: CHANGE });
       },
     ],
     [
       'held-composition',
       () => {
-        useReconciliationStore.getState().dispatch({ type: 'composition-start' });
-        useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+        useReconciliationStore.getState().compositionStart(PATH, GATE);
+        send({ type: 'external-change', change: CHANGE });
       },
     ],
-    ['missing', () => useReconciliationStore.getState().dispatch({ type: 'external-delete', path: 'p' })],
-    [
-      'decode-error',
-      () => useReconciliationStore.getState().dispatch({ type: 'decode-error', path: 'p', message: 'm' }),
-    ],
+    ['missing', () => send({ type: 'external-delete', path: PATH })],
+    ['decode-error', () => send({ type: 'decode-error', path: PATH, message: 'm' })],
     [
       'held-approval',
       () => {
         useReconciliationStore
           .getState()
           .setPolicy({ id: 'q', decide: () => ({ kind: 'defer', reason: 'r' }) });
-        useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+        send({ type: 'external-change', change: CHANGE });
       },
     ],
   ];
@@ -185,7 +190,7 @@ describe('모달 금지 — REQ-WS-049 / AC-WS-060', () => {
     const { host, cleanup } = mount();
     act(() => {
       useReconciliationStore.getState().setPolicy(bannerNotifyPolicy);
-      useReconciliationStore.getState().dispatch({ type: 'external-change', change: CHANGE });
+      send({ type: 'external-change', change: CHANGE });
     });
     expect(host.querySelector('[data-reconcile-surface="banner"]')).not.toBeNull();
     expect(document.querySelector('dialog')).toBeNull();

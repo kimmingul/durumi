@@ -2,7 +2,7 @@
 id: SPEC-V03-WORKSPACE-002
 title: "v0.3 멀티패널 셸 — 패널 레이아웃·모드·커맨드 라우팅·비마크다운 편집 표면"
 version: "0.3.6"
-status: draft
+status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
 author: manager-spec

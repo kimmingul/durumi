@@ -11,6 +11,10 @@ import './ReconciliationSurface.css';
  * 이 컴포넌트는 포커스를 옮기지 않는다 — 자동 포커스 속성도, 프로그램적
  * 포커스 호출도 쓰지 않고 `aria-live="polite"`로만 알린다. 조합 중 포커스를
  * 빼앗으면 한글 IME가 깨진다(REQ-WS-049).
+ *
+ * 조정 상태는 **문서별**이므로(SPEC-V03-WORKSPACE-002 M0) 어느 문서의 알림인지를
+ * `path`로 받는다. 경로가 없거나 그 문서가 열려 있지 않으면 아무것도 렌더하지
+ * 않는다.
  */
 
 const MESSAGE_KEY: Record<ReconciliationNotice['status'], string> = {
@@ -33,12 +37,17 @@ const ACTION_EVENT: Record<NoticeAction, 'user-view-diff' | 'user-load-from-disk
   dismiss: 'user-dismiss',
 };
 
-export function ReconciliationSurface(): JSX.Element | null {
-  const state = useReconciliationStore((s) => s.state);
-  const dispatch = useReconciliationStore((s) => s.dispatch);
+export interface ReconciliationSurfaceProps {
+  /** 이 표면이 알림을 표시할 문서의 경로. */
+  path: string | null;
+}
 
-  const notice = noticeFor(state);
-  if (!notice) return null;
+export function ReconciliationSurface({ path }: ReconciliationSurfaceProps): JSX.Element | null {
+  const state = useReconciliationStore((s) => (path === null ? undefined : s.states.get(path)));
+  const dispatchFor = useReconciliationStore((s) => s.dispatchFor);
+
+  const notice = state ? noticeFor(state) : null;
+  if (!notice || path === null) return null;
 
   const message = t(MESSAGE_KEY[notice.status]);
 
@@ -59,7 +68,7 @@ export function ReconciliationSurface(): JSX.Element | null {
               key={action}
               type="button"
               data-action={action}
-              onClick={() => dispatch({ type: ACTION_EVENT[action] })}
+              onClick={() => dispatchFor(path, { type: ACTION_EVENT[action] })}
             >
               {t(ACTION_KEY[action])}
             </button>

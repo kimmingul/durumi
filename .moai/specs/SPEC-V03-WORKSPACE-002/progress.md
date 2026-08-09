@@ -2,7 +2,7 @@
 id: SPEC-V03-WORKSPACE-002
 title: "진행 기록 — v0.3 멀티패널 셸"
 version: "0.3.6"
-status: draft
+status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
 author: manager-spec
@@ -227,13 +227,126 @@ M0은 v0.2.31에 **이미 출하된** 결함 두 건을 닫는다. 기능 마일
 
 ## §E.2 Run-phase Evidence
 
-_<pending run-phase>_ — manager-develop이 채운다. M0의 RED 실패 출력과 GREEN 통과 출력 양쪽이 여기 기록된다(REQ-PANEL-073).
+### M0 — 출하 중인 결함 두 건의 재현 우선 해소
+
+**증거 파일**: `.moai/state/verify/m0/` (런타임 상태이므로 커밋되지 않는다 — 아래 표의 출력이 저장소 안의 기록이다)
+
+| 로그 | 내용 |
+|---|---|
+| `red-0-defect-repro.log` | 보관된 재현 소스 2건을 그대로 되살려 실행한 결과 (세 결함의 verbatim 재현) |
+| `red-1-permanent-tests.log` | 영구 AC 테스트의 수정 전 실패 출력 |
+| `green-1-m0-tests.log` / `green-3-m0-verbose.log` | 수정 후 통과 출력 |
+| `gate-test.log` / `gate-typecheck.log` / `gate-lint.log` / `gate-coverage.log` | 전체 게이트 |
+
+#### 0단계 — 결함의 기계 재현 (REQ-PANEL-073)
+
+`plan.md` §C M0과 `spec.md` §B.0이 기록한 관측을 **바이트 동일하게** 재생산했다. 실제 모듈 3건(`attachExternalChangeChannel` / `useReconciliationStore` / `registerReconciliationExecutor`)과 실제 `EditorState`를 구동했고, 대체한 것은 preload 브리지와 `DispatchTarget`뿐이다.
+
+```
+[OQ-8] emit 후 b.md 버퍼 = "A의 내용\n"
+[OQ-8] 조정 상태 = "idle"
+[OQ-8/dirty] emit 후 b.md 버퍼 = "B의 내용\n"
+[OQ-8/dirty] 조정 상태 = "held-notify"
+[D3] 배너 상태 = "held-notify"
+[D3] pending.path = "/w/a.md"
+[D3] emit 직후 버퍼 = "B의 내용\n"
+[D3] 불러오기 후 버퍼 = "A의 내용\n"
+[D4] 조합 시작 후 composing = true
+[D4] detach 후 composing = true
+[D4] 이후 조정 상태 = "held-composition"
+[D4] 버퍼 = "B의 내용\n"
+```
+
+#### AC 판정 표 (12건)
+
+수정 전 실패 출력과 수정 후 통과 출력을 함께 싣는다. 실행 명령은 두 가지뿐이다:
+
+- `npx vitest run tests/store/reconciliationRouting.test.ts`
+- `npx vitest run tests/editor/compositionRouting.test.ts`
+
+| AC | 상태 | 수정 전 실제 출력 (RED) | 수정 후 실제 출력 (GREEN) |
+|---|---|---|---|
+| AC-PANEL-080 | PASS | `expected 'A의 내용\n' to be 'B의 내용\n'` | `✓ b.md만 연 창에 a.md의 확정 변경이 와도 b.md 버퍼가 불변이다` |
+| AC-PANEL-080b | PASS | `리듀서가 호출되었다: expected "reduceReconciliation" to not be called at all, but actually been called 1 times` | `✓ 리듀서가 호출되지 않고, 상태 객체 참조도 Map 항목도 그대로다` |
+| AC-PANEL-080c | PASS | `a.md의 변경이 b.md의 pending에 심겼다: expected { path: '/w/a.md', …(3) } to be null` | `✓ 다른 경로의 변경은 pending에 심기지 않고 배너도 뜨지 않는다` / `✓ 정상 경로 회귀 …` |
+| AC-PANEL-080d | PASS | `expected [ [ '/w/b.md', 'A의 내용\n' ] ] to deeply equal [ [ '/w/b.md', 'B의 내용\n' ] ]` | `✓ 저장 시 쓰기 채널에 전달된 바이트가 원래 버퍼와 동일하다` |
+| AC-PANEL-080e | PASS | `옛 경로의 변경이 도달했다: expected [ 'A의 새 내용\n' ] to deeply equal []` | `✓ 재바인딩 후 옛 경로는 도달하지 않고 새 경로만 도달한다` / `✓ 경로를 이미 가진 상태에서 뷰가 준비되면 …` |
+| AC-PANEL-080f | PASS | `expected [] to deeply equal [ '/w/saved-as.md' ]` (경로 획득 분기) | `✓` 3건 (Map 항목 부재 / 키 비공유 / 경로 획득 시 등록) |
+| AC-PANEL-081 | PASS | `다른 표면의 조합 종료가 A의 보류를 풀었다: expected 'idle' to be 'held-composition'` | `✓ 표면 B의 compositionend가 표면 A의 보류를 풀지 않는다` |
+| AC-PANEL-081b | PASS | `detach 후에도 composing이 참이다: expected true to be false` | `✓ 조합 중 detach하면 보류가 해제되고 큐가 드레인된다` / `✓ PRESERVE …` |
+| AC-PANEL-081c | PASS | `보류분이 실행자에 도달하지 않았다: expected [] to have a length of 1` · `해제가 실행자 분리보다 뒤에 있다: expected 7414 to be less than 7390` | `✓ 패널 정리에서 보류분의 apply-to-buffer가 실행자에 도달한다` / `✓ 규정이 소스에서 확인 가능하다` |
+| AC-PANEL-082 | PASS | (회귀 방어 — 수정 전후 모두 통과) | `npx vitest run tests/electron/extensionIndependence.test.ts` → `10 passed`, 파일 무변경(`git diff --quiet` exit 0) |
+| AC-PANEL-083 | PASS | `경로 → 상태 Map이 없다: expected '…' to match /Map<string,\s*ReconciliationState>/` | `✓ 경로 키 Map이 src/store/ 아래에 산다` / `✓ 다섯 조정 코어 파일 어디에도 경로 키 라우팅이 없다` |
+| AC-PANEL-084 | PASS | (의도된 회귀 방어 — 수정 전에도 통과) | `✓ main은 여전히 모든 창에 브로드캐스트한다` |
+
+**수정 전에 통과한 AC (정직한 기록)**: `AC-PANEL-084`(의도된 회귀 방어, `acceptance.md`가 명시) 하나와, 분할된 하위 단언 중 회귀 방어 성격인 것들 — `080c`의 "정상 경로 회귀" 팔, `080e`의 "뷰 준비" 팔(오늘은 경로 필터가 아예 없어 도달한다 — F2가 정정한 형태 그대로), `081b`의 PRESERVE 팔. `080f`의 구조 단언 2건은 수정 전에는 **관측 수단 자체가 없어** 어댑터가 빈 목록을 돌려주는 형태로 통과했으므로 **의미 있는 RED가 아니었다**; 판별력을 갖는 것은 세 번째 팔(경로 획득 시 등록)이며 그것은 RED에서 실패했다.
+
+**RED의 형태에 대한 정직한 기술**: 영구 테스트는 스토어 API 형태에 매이지 않도록 파일 상단에 **어댑터 블록**을 둔다. RED 실행에서는 그 어댑터가 수정 전 API(`setEffectHandler` / `dispatch` / `state`)를 가리켰고, GREEN에서 경로 키 API(`setEffectHandlerFor` / `dispatchFor` / `stateFor`)로 바뀌었다. **AC 단언 본문은 RED와 GREEN에서 바이트 동일하다** — 바뀐 것은 어댑터 5~7줄뿐이다.
+
+#### 구현 — 라우팅 계층 (`design.md` §6.2a 그대로)
+
+| 위치 | 내용 |
+|---|---|
+| `src/store/reconciliationStore.ts` | 라우팅 키 3종: `states: Map<string, ReconciliationState>` (리액티브), `effectHandlers: Map<string, ReconciliationEffectHandler>`, `openDocuments: Set<string>`. 열린 문서가 아닌 경로의 이벤트는 **리듀서를 호출하지 않고 폐기**한다 |
+| `src/store/externalChangeChannel.ts` | 세 갈래 모두 `dispatchFor(change.path, …)`로 라우팅 |
+| `src/editor/compositionGate.ts` | `detach()`가 보유 중인 조합 보류를 해제(REQ-PANEL-071). `attachReconciliationCompositionGate(target, resolvePath, options)` — 게이트마다 식별자를 갖고 자기 문서에 OR로 합류한다 |
+| `src/editor/MarkdownEditor.tsx` | 등록이 `[filePath, readyView]`에 결속(REQ-PANEL-070a·070b). 정리 순서는 **해제 → 실행자 분리** |
+| `src/hooks/useExternalChangeWiring.ts` | 감시 등록과 같은 지점에서 `openDocument` / `closeDocument` |
+| `src/components/ReconciliationSurface.tsx` · `src/App.tsx` | 알림 표면이 `path` prop으로 어느 문서의 알림인지 받는다 |
+
+**시그니처 무변경 확인**: `registerReconciliationExecutor(view, (h) => setEffectHandlerFor(filePath, h))` — 두 번째 인자가 이미 주입된 setter이므로 경로는 호출부 클로저에 담긴다. `applyExternalChange`의 arity 2와 조정 코어 5파일은 **무변경**이다.
+
+#### REQ-PANEL-071a — 택한 teardown 규정
+
+**택한 것: 조합 보류 해제가 실행자 분리보다 먼저 일어난다.** ("해제는 드레인하지 않는다"는 대안은 기각했다 — `AC-PANEL-081b`가 detach 시 큐 드레인을 요구하므로 두 AC가 충돌한다.)
+
+소스에서의 위치: `src/editor/MarkdownEditor.tsx`의 `[filePath, readyView]` effect 정리 클로저 — `compositionGate.detach(); detachExecutor?.();` 순서와 `REQ-PANEL-071a` 주석. `AC-PANEL-081c`의 두 번째 테스트가 그 순서를 소스 스캔으로 고정한다.
+
+#### 불변식
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| 조정 코어 5파일 무변경 (C-12) | `git diff --quiet -- <각 파일>` | 5건 모두 exit 0 |
+| 확장자 독립 테스트 무변경 통과 | `git diff --quiet -- tests/electron/extensionIndependence.test.ts` + 실행 | exit 0 / `10 passed` |
+| 문서모드 원칙 무변경 (C-9, AC-WS-037) | `git diff --quiet -- docs/DOCUMENT_MODE_PRINCIPLES.md` | exit 0 |
+
+#### 전체 게이트
+
+| 명령 | 결과 | 기준선 대비 |
+|---|---|---|
+| `pnpm test` | exit 0 — `Test Files 201 passed (201)` / `Tests 2209 passed (2209)` | 199/2191 → **+2 파일 / +18 테스트** (신규 AC 테스트 2파일 13+5건과 정확히 일치) |
+| `pnpm typecheck` | exit 0 | 변화 없음 |
+| `pnpm lint` | exit 0 | 변화 없음 |
+| `pnpm test:coverage` | exit 0 — `All files 96.11%` statements/lines (파일 단위 85% 게이트 통과) | — |
 
 ---
 
 ## §E.3 Run-phase Audit-Ready Signal
 
-_<pending run-phase>_ — manager-develop이 채운다.
+```yaml
+run_complete_at: 2026-08-09
+run_commit_sha: pending-backfill-m0
+run_status: milestone-partial   # M0만 완료. M1~M8은 미착수
+milestone: M0
+ac_pass_count: 12
+ac_fail_count: 0
+ac_scope: "AC-PANEL-080 / 080b / 080c / 080d / 080e / 080f / 081 / 081b / 081c / 082 / 083 / 084"
+reproduction_first: true         # REQ-PANEL-073 — RED 선행 실증 완료
+preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
+reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
+document_mode_principles_unchanged: true
+extension_independence_unchanged: true
+new_warnings_or_lints_introduced: 0
+teardown_discipline: release-before-executor-detach
+test_files: 201                  # 기준선 199
+tests: 2209                      # 기준선 2191
+coverage_gate: pass              # per-file 85%, All files 96.11%
+cross_platform_build:
+  performed: false
+  reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
+total_run_phase_files: 15        # 소스 7 + 테스트 7(신규 2 + 갱신 5) + progress.md 1
+m1_to_mN_commit_strategy: "M0 단일 커밋. M1~M8은 후속 위임에서 마일스톤별 커밋"
+```
 
 ---
 
