@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "코드베이스 조사 — 멀티패널 셸"
-version: "0.3.8"
+version: "0.3.9"
 status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
