@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "구현 계획 — v0.3 멀티패널 셸"
-version: "0.3.2"
+version: "0.3.3"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
@@ -560,6 +560,25 @@ SPEC-1이 "조합 유지형 e2e 프리미티브 자체가 산출물"이라고 �
 > 우선순위 라벨만 사용한다. 기간 예측 없음.
 > 각 마일스톤은 **자기 AC를 닫을 수 있게 밀폐적으로** 설계했다. SPEC-1의 AC-WS-023 분할 교훈(밀폐 가능한 부분과 후속 마일스톤 의존 부분을 분리)을 따라, 밀폐 불가한 AC는 해당 마일스톤에 **명시적으로 배정하지 않았다**.
 
+### §C.0 배정 규약 — 모든 REQ와 AC는 최소 한 마일스톤에 배정된다
+
+> **N1이 드러낸 축**: REQ↔AC 양방향 확인이 깨끗해도 **REQ→마일스톤 배정**은 검사되지 않을 수 있다. 판 0.3.2까지 AC 목록을 가진 마일스톤은 **M0 하나뿐**이었고 M1~M8은 배정 축이 아예 없었다. 판 0.3.3에서 전 항목을 기계 점검해 채웠다.
+
+**규약**: 각 마일스톤은 `대상 요구:`와 `대상 AC:` **두 줄을 모두** 가진다. 요구나 AC를 새로 만들면 **선언과 동시에** 배정한다 — 배정 없는 항목은 승인된 실행 범위에서 조용히 누락된다.
+
+**교차 마일스톤 항목** (특정 마일스톤에 배정되지 않는 것들, 의도된 예외):
+
+| AC | 성격 | 적용 시점 |
+|---|---|---|
+| AC-PANEL-090 / 091 / 092 / 093 | 품질 게이트 (typecheck / lint·test / 커버리지 / 커밋 위생) | **모든 마일스톤의 완료 조건** — 특정 마일스톤 소유가 아니다 |
+| AC-PANEL-094 | 릴리스 게이트 (수동 한글 IME 스모크) | v0.3 릴리스 사인오프. SPEC-1 AC-WS-024와 함께 |
+
+`AC-PANEL-095`(e2e 셀렉터 이관)는 예외가 아니라 **M4 소속**이다 — 패널 지목 수단 도입과 같은 작업이기 때문이다(`design.md` §3.2a).
+
+**점검 방법 (재현 가능)**: `spec.md`의 `^\*\*REQ-PANEL-` 와 `acceptance.md`의 `^### AC-PANEL-` 로 인벤토리를 만들고, `plan.md`의 `^대상 요구:` / `^대상 AC:` 줄을 파싱해 차집합을 구한다. 판 0.3.3 실행 결과는 `progress.md` §E.1c에 기록했다.
+
+---
+
 ### M0 — 출하 중인 결함 두 건의 재현 우선 해소 (Priority: **Highest**, 기능 마일스톤보다 앞선다)
 
 **선행 조건 없음.** OQ-1~OQ-9의 어느 결정도 이 마일스톤을 막지 않는다 — 라우팅 계층의 **위치**는 F6이 강제하므로(`design.md` §6.2a) 선택의 문제가 아니다.
@@ -607,12 +626,14 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
    - **(3) 재바인딩 재키잉** — 패널을 A→B로 재바인딩한 뒤 A의 변경이 도달하지 않고 B의 변경이 도달함을 단언한다(AC-PANEL-080e). 수정 전에는 **정확히 반대 결과**가 관측된다.
    - **(4) detach 해제** — 조합 중 게이트를 detach하면 보류가 해제되고 큐가 드레인됨을 단언한다(AC-PANEL-081b). 감사가 기계 재현했으므로 실패 형태가 이미 관측되어 있다.
    - **(5) dirty `pending` 오염** — dirty 문서의 `pending`이 다른 경로의 변경으로 설정되지 않고, 배너 동작이 그 문서의 내용만 적용함을 단언한다(AC-PANEL-080c). 감사가 기계 재현했다.
+   - **(6) null-path 키잉** — 경로 없는 문서가 Map 항목을 갖지 않고(null·빈 문자열을 키로 쓰지 않음), 경로 획득 시 등록됨을 단언한다(AC-PANEL-080f / REQ-PANEL-070b).
+   - **(7) teardown 순서** — 해제가 실행자 분리보다 먼저 일어나 드레인이 손실되지 않음을, 또는 "해제는 드레인하지 않는다"는 규정을 택했음을 단언한다(AC-PANEL-081c / REQ-PANEL-071a). **규정 없이 두는 것이 이 항목의 실패 조건이므로, M0에서 선택이 이루어져야 한다.**
    - 두 재현 모두 **창 2개가 필요 없다** — 재현이 창 하나로 결함을 실증했고, 원인은 창이 아니라 라우팅 부재다.
 2. **GREEN**: `src/store/` 계층에 라우팅 키(`Map<path, …>` 3종)를 세운다. `design.md` §6.2a의 배치를 그대로 따른다.
 3. **불변식 확인**: `tests/electron/extensionIndependence.test.ts` 무변경 통과 (C-12). 조정 코어 5파일의 `git diff --quiet` exit 0.
 
-대상 요구: REQ-PANEL-070, **070a**(재키잉), 071, 072, 073
-대상 AC: AC-PANEL-080 / 080b / 080c / 080d / **080e** / 081 / **081b** / 082 / 083 / 084
+대상 요구: REQ-PANEL-070, **070a**(재키잉), **070b**(null-path 키잉), 071, **071a**(teardown 순서), 072, 073
+대상 AC: AC-PANEL-080 / 080b / 080c / 080d / **080e** / **080f** / 081 / **081b** / **081c** / 082 / 083 / 084
 **밀폐성**: 완전히 밀폐된다 — 상태 계층 유닛만으로 닫히고 편집 표면·레이아웃·패널 UI가 필요 없다. **이것이 M0을 맨 앞에 둘 수 있는 이유이며, 나머지 마일스톤 전부가 이 라우팅 계층 위에 선다.**
 
 > **주의**: M0의 GREEN은 `shared/reconciliation.ts`·`src/editor/applyExternalChange.ts`를 **건드리지 않는다**. `reduceReconciliation(state, event, policy)` 시그니처와 `applyExternalChange(target, nextContent)` arity 2가 그대로 유지되며, 라우팅은 그 호출자에 생긴다. 코어를 고치려는 충동이 들면 C-12와 `design.md` §6.2a의 기각된 대안 표를 읽는다.
@@ -629,6 +650,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 3. **축은 붕괴시키지 않는다** — v0.3이 1:1로만 쓰더라도 저장은 "문서 단위", 폐기 확인은 "마지막 참조 패널인가"로 표현한다(REQ-PANEL-012/013). v0.4의 dual-open이 재작성이 되지 않게 하는 조건이다.
 
 대상 요구: REQ-PANEL-001, 010, 011, 011a, 012, 013, 014, 015
+대상 AC: AC-PANEL-001 / 010 / 010b / 011 / 011a / 011b / 012 / 013 / 013b / 014
 **밀폐성**: 스토어 계층 유닛으로 전부 닫힌다. 편집 표면 없이 검증 가능.
 
 ### M2 — 레이아웃 셸과 단일 패널 축퇴 (Priority: High, 번복 가능성 상)
@@ -644,6 +666,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 2. **프로젝트 트리는 신뢰 범위로 좁혀 표시한다 (OQ-5)** — 클릭 시 `PathNotAllowedError`가 날 대상을 제시하지 않는다(REQ-PANEL-036b, AC-PANEL-036c). 신뢰 IPC·동의 배너를 **추가하지 않는다**. 마찰은 수용된 비용이며 폴더 열기 다이얼로그가 문서화된 경로다.
 
 대상 요구: REQ-PANEL-002, 003, 004, 005, 007, 036, 036b, 036c, 065
+대상 AC: AC-PANEL-002 / 002b / 002c / 003 / 003b / 004 / 005 / 007 / 036 / 036b / 036c / 036d / 065
 **밀폐성**: 레이아웃·사이드바 보존·축퇴·재배선·트리 범위는 컴포넌트 테스트로 닫힌다. REQ-PANEL-006(배치 persist)은 M8로 미룬다 — persist 형태가 최종 레이아웃과 OQ-9에 의존한다.
 
 ### M3 — 조정 계층의 문서 축 (Priority: High, 정확성 핵심)
@@ -655,6 +678,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 `tests/hooks/useExternalChangeWiring.test.tsx`의 "이전 파일 감시를 먼저 푼다" 단언을 뒤집는 재작성이 이 마일스톤의 산출물이다(§B.8).
 
 대상 요구: REQ-PANEL-050, 051, 052, 055, 056, 057
+대상 AC: AC-PANEL-050 / 050b / 051 / 051b / 052 / 055 / 055b / 056 / 057 / 057b
 **밀폐성**: 상태 기계·라우팅·감시 등록은 유닛으로 닫힌다. REQ-PANEL-053(패널별 배너 표면)과 REQ-PANEL-054(IME 게이트 합류)는 편집 표면과 조합 관찰이 필요하므로 M4로 미룬다.
 
 ### M4 — 포커스·라우팅과 패널별 배너·IME 게이트 (Priority: High, 위험 최상)
@@ -666,6 +690,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 **e2e 패널 지목 수단이 이 마일스톤의 계약 산출물이다**(§B.8) — 없으면 IME·배너 AC가 공허하게 통과한다.
 
 대상 요구: REQ-PANEL-020, 021, 022, 023, 024, 030, 031, 032, 033, 034, 035, 053, 054, 058
+대상 AC: AC-PANEL-020 / 021 / 022 / 023 / 024 / 030 / 030b / 031 / 032 / 032b / 033 / 034 / 035 / 053 / 053b / 053c / 053d / 054 / 054b / 058 / **095**(e2e `.cm-content` 셀렉터 이관 — 패널 지목 수단과 같은 작업)
 **밀폐성**: 라우팅·모드·게이트는 유닛으로, 배너 동시 표시와 포커스 불변식은 컴포넌트 테스트로 닫힌다. 실제 macOS 한글 IME 검증은 릴리스 게이트로 이관한다(C-8).
 
 ### M5 — 비마크다운 편집 표면: 열기와 extension 조립 (Priority: High)
@@ -673,6 +698,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 파일 종류 판정을 `shared/`에 순수 함수로 정의한다(B.2의 방향 뒤집기 적용). extension 조립을 3층으로 재구성하고 보조 패널에서 마크다운 전용 확장 전부가 로드되지 않음을 단언한다. `@codemirror/language-data`로 `.py`/`.bib`/`.json`/`.yaml` 문법을 조달하고 `.csv`·미지 확장자는 평문 폴백한다. 열기 경로에 엄격 디코드를 적용해 바이너리를 편집 패널로 열지 않는다.
 
 대상 요구: REQ-PANEL-040, 041, 042, 045, 046
+대상 AC: AC-PANEL-040 / 041 / 042 / 045 / 046
 **밀폐성**: 종류 판정·조립 목록·폴백·디코드는 유닛으로 닫힌다. REQ-PANEL-043/044(바이트 무결성·저장 변환 배제)는 저장 경로가 필요하므로 M6.
 
 ### M6 — 비마크다운 저장 경로와 바이트 무결성 (Priority: High)
@@ -690,6 +716,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 `useAppCloseGuard.ts:24-33`은 채널 라우팅과 revision 기반 저장 **두 이유로** 손대야 하므로 M1의 revision 작업과 조율한다.
 
 대상 요구: REQ-PANEL-043, 044, 044a, 047, 048, 048a
+대상 AC: AC-PANEL-043 / 043b / 044 / 044b / 044c / 047 / 048 / 048a / 048b
 **밀폐성**: 저장 경로·3겹 검증·왕복 무결성·EOL 복원·조정 계층 불변·문서 무변경은 유닛과 명령 종료 코드로 닫힌다.
 
 ### M7 — 메타데이터·보조 표면의 활성 원고 패널 종속 (Priority: Medium)
@@ -699,6 +726,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 메타데이터·메모 사이드카·서지 해석을 활성 원고 패널 종속으로 바꾼다. 활성 패널이 보조 패널일 때 직전 활성 원고 패널을 유지한다. 목차·검색 히트의 패널 귀속을 정한다. SPEC-1이 남긴 두 표면을 처리한다 — `open-diff` effect의 문서 식별 가능화(표시 UI는 SPEC-4), `BibliographyResolution.fallback`의 활성 원고 패널 종속 표시. `projectDiscover`를 렌더러에 처음 배선한다(§A.4).
 
 대상 요구: REQ-PANEL-060, 061, 062, 063, 064
+대상 AC: AC-PANEL-060 / 061 / 062 / 062b / 063 / 064 / 064b
 **밀폐성**: 활성 원고 패널 종속·유지·귀속은 스토어·컴포넌트 테스트로 닫힌다.
 
 ### M8 — 패널 배치 persist와 통합 (Priority: Medium, 기계적)
@@ -706,6 +734,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 패널 배치(패널 수·상대 크기·바인딩 경로)를 별개 prefs 키로 persist하고 복원한다. 복원 시 신뢰 경계 검증 실패 경로는 빈 버퍼 + 오류 표시로 처리한다(조용히 건너뛰지 않는다). 신규 IPC 채널이 있으면 `shared/ipc-contract.ts` 선언 + 구독 해제 클로저 계약 + 전 채널 `assertAllowedPath` 단언을 통과시킨다(C-3).
 
 대상 요구: REQ-PANEL-006, C-3 (전 요구 횡단)
+대상 AC: AC-PANEL-006 / 006b / 006c
 **밀폐성**: persist·복원·실패 경로·IPC 계약은 유닛으로 닫힌다.
 
 ---
@@ -748,7 +777,7 @@ main 절반(`getAllWindows()` 브로드캐스트가 미등록 창에도 전달)�
 5. 커버리지 85% 목표 / 커밋당 80% 최소. `perFile: true`가 게이트를 실제로 작동하게 만드는 설정임에 유의 (SPEC-1 `research.md` §7.0)
 6. **단일 패널 축퇴 회귀**: 패널 1개 상태에서 오늘의 레이아웃·툴바·상태바가 관측상 동일
 7. **사이드바 무변경**: `tests/store/{sidebarStore,rightSidebarStore}.test.ts` + `tests/sidebar/*.test.tsx` (841줄) 무변경 통과
-7a. **조정 코어 무변경 (C-12)**: `tests/electron/extensionIndependence.test.ts` 무변경 통과 + 5파일에 대한 `git diff --quiet -- electron/changeConfirmation.ts electron/watchScope.ts shared/reconciliation.ts src/editor/minimalDiff.ts src/editor/applyExternalChange.ts` exit 0. 단 `applyExternalChange.ts`는 `registerReconciliationExecutor` 변경(REQ-PANEL-055)이 필요하면 예외이며, 그 경우 `applyExternalChange.length === 2` 단언 통과를 별도 증거로 제시한다
+7a. **조정 코어 무변경 (C-12)**: `tests/electron/extensionIndependence.test.ts` 무변경 통과 + **다섯 파일 전부**에 대한 `git diff --quiet -- electron/changeConfirmation.ts electron/watchScope.ts shared/reconciliation.ts src/editor/minimalDiff.ts src/editor/applyExternalChange.ts` **exit 0**. **예외 없다** — `design.md` §6.2a의 주입된 setter 클로저 형태가 `applyExternalChange.ts`를 무변경으로 남기기 때문이다. 그 파일을 손대야 한다면 **예외가 아니라 설계 재검토 신호이며 blocker report로 되돌린다**(AC-PANEL-082와 동일 문구)
 7b. **M0 재현 테스트가 수정 전에 실패했음이 기록됨** (REQ-PANEL-073) — 실패 출력과 통과 출력 양쪽을 증거로 남긴다
 8. `git diff --quiet -- docs/DOCUMENT_MODE_PRINCIPLES.md` exit 0
 9. `git status --porcelain`에 §A.5의 하네스 스캐폴딩 항목이 커밋되지 않았음
