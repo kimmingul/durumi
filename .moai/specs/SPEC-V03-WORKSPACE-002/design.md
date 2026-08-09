@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.3"
+version: "0.3.4"
 status: draft
 created: 2026-08-08
 updated: 2026-08-09
