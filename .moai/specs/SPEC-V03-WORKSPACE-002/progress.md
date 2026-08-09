@@ -57,6 +57,8 @@ plan_artifact_commits:
   - aaacd35  # 판 0.3.7 — revision 메커니즘 정정 + 등급 승격 2건 (M1 되먹임, 기록 전용)
   - d1b3866  # progress.md 커밋 SHA 백필
   - 9f5c3da  # 판 0.3.8 — 규약에 분석적 귀결/전제 구분 추가
+  - ddeae2d  # progress.md 커밋 SHA 백필
+  - 9321b0a  # 판 0.3.9 — 앵커 만료(003b) + §C.0 세 번째 조항(판정 대상의 생산자)
 blocking_decisions:
   total: 10
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
