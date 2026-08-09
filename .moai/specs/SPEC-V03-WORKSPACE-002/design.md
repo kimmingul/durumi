@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.7"
+version: "0.3.8"
 status: in-progress
 created: 2026-08-08
 updated: 2026-08-09
@@ -118,7 +118,7 @@ const isDirty = (doc) => doc.currentRevision !== doc.savedRevision;
 | 성질 | 근거 |
 |---|---|
 | 원복하면 clean으로 돌아온다 | 같은 문자열 → 같은 revision → 부등식 거짓. `AC-PANEL-010b` 세 번째 단언 충족 |
-| clean을 dirty로 오보하지 않는다 | **해시가 아니므로 충돌 경로가 없다.** 다른 내용이 같은 revision을 가질 수 없다 |
+| dirty를 clean으로 오보하지 않는다 | **전제(코드 직독)**: 구현이 내용 동일성이며 해시가 아니다 — `revisionOf = (content) => content as Revision`(`workspaceStore.ts:56`). **귀결(분석적, 등급 없음)**: 그 전제 아래 "충돌"은 서로 다른 내용이 같은 문자열이라는 뜻이므로 정의상 성립 불가다. **등급이 붙는 것은 전제이지 귀결이 아니다** — 누군가 메모리를 이유로 해시로 바꾸면 전제가 무너지고 귀결도 함께 무너진다 |
 | 내용을 두 벌 들고 있지 않다 | JS 문자열은 불변이라 저장 직후 두 필드가 **같은 참조**를 공유한다 |
 | await 창이 닫힌다 | `markDocumentSaved(documentId, revision)`이 **저장을 시작할 때 붙잡은 revision**을 받는다(`workspaceStore.ts:407-441`). await 중의 편집은 `currentRevision`을 갈라놓으므로 dirty로 남는다 |
 
