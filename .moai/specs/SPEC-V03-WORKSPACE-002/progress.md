@@ -63,6 +63,7 @@ plan_artifact_commits:
   - 15456c9  # 판 0.3.10 — REQ-005a 진입점 + AC-005a/005b + §C.0 네 번째 조항(도달)
   - 1b64c86  # progress.md 커밋 SHA 백필
   - ef7dfcf  # 판 0.3.11 — OQ-3·OQ-4 확정 + 계획 인용 정정 2건 (정정 A·B)
+  - cc61048  # 판 0.3.11 보완 — OQ 개수 자기모순 3곳 + research.md 판 표기 (판 수 미상승)
 blocking_decisions:
   total: 10
   confirmed: [OQ-1, OQ-2, OQ-5, OQ-6, OQ-3, OQ-4]   # OQ-1·2·5·6: 외부 검토 2인 + 사용자 승인 (2026-08-08) / OQ-3·4: 사용자 결정 (2026-08-10, 판 0.3.11)
