@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "진행 기록 — v0.3 멀티패널 셸"
-version: "0.3.10"
+version: "0.3.11"
 status: in-progress
 created: 2026-08-08
-updated: 2026-08-09
+updated: 2026-08-10
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -61,15 +61,16 @@ plan_artifact_commits:
   - 9321b0a  # 판 0.3.9 — 앵커 만료(003b) + §C.0 세 번째 조항(판정 대상의 생산자)
   - 2543ea0  # progress.md 커밋 SHA 백필
   - 15456c9  # 판 0.3.10 — REQ-005a 진입점 + AC-005a/005b + §C.0 네 번째 조항(도달)
+  - 1b64c86  # progress.md 커밋 SHA 백필
 blocking_decisions:
   total: 10
-  confirmed: [OQ-1, OQ-2, OQ-5, OQ-6]       # 외부 검토 2인 + 사용자 승인 (2026-08-08)
-  open: [OQ-3, OQ-4, OQ-7, OQ-8, OQ-9, OQ-10]
+  confirmed: [OQ-1, OQ-2, OQ-5, OQ-6, OQ-3, OQ-4]   # OQ-1·2·5·6: 외부 검토 2인 + 사용자 승인 (2026-08-08) / OQ-3·4: 사용자 결정 (2026-08-10, 판 0.3.11)
+  open: [OQ-7, OQ-8, OQ-9, OQ-10]
   m0_blocked_by: none          # M0은 결정 무의존 — 즉시 착수 가능
   m1_blocked_by: none          # OQ-1·OQ-2 확정으로 해제
   m2_blocked_by: [OQ-7]        # 탭 축이 레이아웃 형태를 규정
   m3_blocked_by: [OQ-8]        # 창 축 AC 범위 (핵 결함은 M0이 닫음)
-  m4_blocked_by: [OQ-3, OQ-4]
+  m4_blocked_by: none          # 판 0.3.11에서 OQ-3(후보 1)·OQ-4(후보 1) 확정으로 해제
   m5_blocked_by: [OQ-10]       # OQ-6은 해제됐으나 REQ-042 allowlist 전환으로 24항목 전수 분류가 새 전제
   m6_blocked_by: none          # OQ-6 확정으로 해제
   m7_blocked_by: none          # OQ-5 확정으로 해제
@@ -87,7 +88,7 @@ reproduction_first_milestone: M0
 | 요구사항 | **62개** (`REQ-PANEL-070~073` + `070a`·`070b`·`071a` = 출하 중인 결함, `001~065` = 기능. 판 0.3.10에서 `005a` 신설) |
 | 수용 기준 | **97개** (`AC-PANEL-001~095` + 판 0.3.10 신설 `005a`·`005b`) |
 | 마일스톤 | **M0**(출하 중인 결함 재현 우선) → M1~M8 |
-| 결정 | **확정 4건**(OQ-1·2·5·6) / 미해결 6건(OQ-3·4·7·8·9·**10**) — `plan.md` §A.2. OQ-10은 판 0.3.6 전수 실측에서 파생(extension 3항목의 층 귀속, M5 진입 전 확정) |
+| 결정 | **확정 6건**(OQ-1·2·**3**·**4**·5·6) / 미해결 4건(OQ-7·8·9·**10**) — `plan.md` §A.2. OQ-3·OQ-4는 판 0.3.11에서 확정(둘 다 후보 1)되어 M4가 차단 해제되었다. OQ-10은 판 0.3.6 전수 실측에서 파생(extension 3항목의 층 귀속, M5 진입 전 확정) |
 | 제약 | 13건 (`spec.md` §C C-1~C-13) |
 
 ### §E.1b M0을 최우선에 둔 근거 (plan 단계 확정 사항)

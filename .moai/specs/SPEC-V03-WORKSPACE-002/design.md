@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.10"
+version: "0.3.11"
 status: in-progress
 created: 2026-08-08
-updated: 2026-08-09
+updated: 2026-08-10
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -288,9 +288,11 @@ REQ-PANEL-032가 "아무 일도 하지 않는다"를 택한 근거는 대안의 
 
 **설계 방향(구조 수준)**: 이벤트 payload에 발신 패널 식별자를 실어 수신 측이 자기 것만 처리하게 한다(REQ-PANEL-034). 대안으로 "이벤트 버스를 없애고 직접 호출로 바꾼다"가 있으나, 이 버스는 CodeMirror 데코레이션(비-React DOM)이 React 계층에 신호를 보내는 유일한 경로이므로 제거는 데코레이션 계층 재작성을 뜻한다 — 범위를 크게 넘는다. 식별자 추가가 최소 변경이다.
 
-### 4.4 미해결: 라우팅 배선의 형태
+### 4.4 확정: 라우팅 배선의 형태 — 활성 뷰 접근자 1개 (OQ-4 후보 1, 판 0.3.11)
 
-`useMenuCommandRouter`가 단수 `editorViewRef`를 받는 것(`:34`)과 `useCitationInsertFlow`/`useAiPalette`/`usePickAndInsertImage`/`useMemoCaretFocus`가 같은 ref를 캡처하는 것(`App.tsx:97, 102-103, 119`)은 **5개 지점의 동일한 축**이다. "활성 패널의 뷰를 돌려주는 하나의 접근자"로 대체할지, 각 훅에 패널 인자를 추가할지는 `plan.md` §A OQ-4가 소유한다.
+`useMenuCommandRouter`가 단수 `editorViewRef`를 받는 것(`:34`)과 `useCitationInsertFlow`/`useAiPalette`/`usePickAndInsertImage`가 같은 ref를 캡처하는 것(`App.tsx:102-103, 119` — HEAD `e9c5059`에서는 `:127-128, :144`)은 **4개 지점의 동일한 축**이다. `plan.md` §A.2 OQ-4가 이 축을 **"활성 패널의 뷰를 돌려주는 하나의 접근자"**(`panelStore.getActiveView(): EditorView | null`)로 대체하는 것으로 확정했다 — 각 훅에 패널 인자를 추가하는 대안은 REQ-PANEL-030의 단일 정의를 호출부마다 분산시키므로 기각되었다.
+
+> **정정 (판 0.3.11) — 이 절은 판 0.1.0에서 `useMemoCaretFocus`를 포함해 "5개 지점"이라고 적었고, 그것은 틀렸다.** 그 훅은 ref가 아니라 **값**을 받는다 — `src/App.tsx:114`가 `useMemoCaretFocus(editorView, content)`로 호출한다. 그리고 이것은 M0~M3가 만든 드리프트가 **아니다**: `git show 040df4a:src/App.tsx`의 `:97`에서도 이미 값 전달이었으므로, **이 인용은 작성 시점에 트리와 대조된 적이 없다.** 더 정확히는 **인용된 앵커 자체가 오류의 자리였다** — 옛 목록 `App.tsx:97, 102-103, 119`의 선두 `:97`이 바로 그 값 전달 호출이고, ref를 캡처하는 셋은 `:102-103`(citation·ai)과 `:119`(pickAndInsertImage)다. 진단과 귀결은 `plan.md` §A.2 OQ-4 (d) 정정 B에 있다.
 
 ---
 
