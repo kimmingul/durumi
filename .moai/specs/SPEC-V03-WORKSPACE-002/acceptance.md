@@ -846,7 +846,7 @@ tags: "acceptance, multipanel, degeneracy, routing, nonmarkdown, reconciliation"
 ## §J 참조
 
 - `spec.md` — 요구사항 **62개** (REQ-PANEL-070~073 + 070a·070b·071a + 001~065, 005a 포함)
-- `plan.md` §A.2 — 미해결 결정 9건, §A.5 — PRESERVE 목록, §C M0 — 출하 중인 결함의 재현 우선 해소, §B.8 — 재작성 대상 테스트 + e2e 34파일 이관
+- `plan.md` §A.2 — 결정 10건(확정 6 / 미해결 4 — OQ-7·8·9·10), §A.5 — PRESERVE 목록, §C M0 — 출하 중인 결함의 재현 우선 해소, §B.8 — 재작성 대상 테스트 + e2e 34파일 이관
 - `design.md` §6.3(조합 OR 합류), §6.4(배너 동시 표시 근거), §5.2(extension 3층)
 - `research.md` §7.3(미검증 결함 가설), §8(기존 테스트 불변식)
 - `.moai/specs/SPEC-V03-WORKSPACE-001/acceptance.md` — AC-WS-024(수동 IME 스모크), AC-WS-037(원칙 문서 무변경), AC-WS-057b(data 안 열린 파일)

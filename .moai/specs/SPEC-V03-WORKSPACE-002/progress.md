@@ -31,7 +31,7 @@ plan_complete_at: 2026-08-08
 tier: L
 artifacts:
   - spec.md         # 요구사항 62개 (REQ-PANEL-070~073 + 070a·070b·071a + 001~065, 005a 포함)
-  - plan.md         # 확정 결정 + 미해결 결정 10건(OQ-1~OQ-10) + 마일스톤 M0~M8
+  - plan.md         # 결정 10건 OQ-1~OQ-10 (확정 6 / 미해결 4) + 마일스톤 M0~M8
   - acceptance.md   # Given/When/Then AC 97개 (AC-PANEL-001~095 + 005a·005b)
   - design.md       # 설계 결정 + 기각된 대안 (Tier L)
   - research.md     # 코드베이스 조사 8영역 + 위험 목록 (Tier L)
