@@ -1,10 +1,10 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "설계 — v0.3 멀티패널 셸"
-version: "0.3.11"
+version: "0.3.12"
 status: in-progress
 created: 2026-08-08
-updated: 2026-08-10
+updated: 2026-08-11
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -318,34 +318,42 @@ function decorationsForMode(mode: EditMode) {
 `research.md` §5.3의 분류를 그대로 층으로 굳힌다:
 
 ```
-공통층 (모든 패널)
+공통층 (모든 패널) — 11항목
   history() · 기본 keymap · autoPair() · viewModes() · makeTheme()
   highlightActiveLine() · lineWrapping · updateListener
   editModeStateExtension() · docPathStateExtension()
+  macroCompartment(buildMacroKeymap)            ← 판 0.3.12 확정
         │
-        ├─ 마크다운층 (원고 패널만)
+        ├─ 마크다운층 (원고 패널만) — 13항목
         │    markdown({base, codeLanguages, extensions:[GFM + 7개 확장]})
         │    editModeCompartment(liveDecorations)
         │    atomicMedia · atomicInlineMarks · wysiwygEscapeFilter
         │    citationAutocomplete · citationHoverTooltip
         │    headingHintPlugin · markdownKeymap
         │    emojiAutocomplete · handlePaste/handleDrop
+        │    spellcheckExclusion()                ← 판 0.3.12 확정 (기술 근거)
+        │    ghostTextExtension({refs})           ← 판 0.3.12 확정 (제품 판단)
         │
         └─ 보조층 (보조 패널만)
              언어 문법 (LanguageDescription → @codemirror/language-data)
              (그 외 없음 — REQ-PANEL-042가 마크다운층 전부를 배제)
-
-미분류 3항목 (OQ-10 — M5 진입 전 확정 필요)
-  spellcheckExclusion() · ghostTextExtension() · macroCompartment
 ```
 
-**이 분류는 전수여야 한다** (판 0.3.6 실측). REQ-PANEL-042의 판정이 금지 목록에서 **allowlist**로 바뀌었으므로(공통층 ∪ 보조층 밖 항목 = 실패), 오늘 조립되는 최상위 항목이 **하나도 빠짐없이** 어느 한 층에 속해야 판정이 성립한다. 실측: `MarkdownEditor.tsx:88-147` 최상위 **24항목**. 위 공통층 10 + 마크다운층 11 = 21이므로 **3항목이 어느 층에도 없었다** — 이 표가 그 사실을 처음 기록한다.
+**이 분류는 전수여야 한다** (판 0.3.6 실측). REQ-PANEL-042의 판정이 금지 목록에서 **allowlist**로 바뀌었으므로(공통층 ∪ 보조층 밖 항목 = 실패), 오늘 조립되는 최상위 항목이 **하나도 빠짐없이** 어느 한 층에 속해야 판정이 성립한다. 실측: `extensions:` 배열 최상위 **24항목**.
 
-| 미분류 항목 | 정의 위치 | 실측 성질 | 잠정 분류 |
+**전수가 성립했다 (판 0.3.12).** 판 0.3.6 시점에는 공통층 10 + 마크다운층 11 = 21이어서 **3항목이 어느 층에도 없었고**(아래 표가 그 사실을 처음 기록했다), 그것이 OQ-10이었다. `plan.md` §A.2 OQ-10의 확정으로 세 항목이 모두 귀속되어 이제 **공통층 11 + 마크다운층 13 = 24**이며 실측 최상위 항목 수와 **일치한다**. `AC-PANEL-042`의 allowlist 집합은 이 절이 정의하는 **공통층 ∪ 보조층**이다.
+
+> **인용 앵커는 커밋 기준이다** (판 0.3.6 ⑧ 교훈). 위 배열은 **`040df4a:88-147` = HEAD `6d2fd0c:91-150`**이다 — M0이 배열 **위쪽**에 `useEffect` 블록(라우팅 등록 + 조합 게이트)을 삽입해 줄 번호가 3줄 밀렸고, **배열 블록 자체는 두 커밋에서 바이트 동일**하다(`diff` 무출력, 판 0.3.12 실측). 판 0.3.6이 적은 `:88-147`은 그 시점(`040df4a`)에서는 정확했으므로 정정이 아니라 **기준 커밋의 명시**다.
+
+**확정 기록 — 세 항목의 귀속과 그 근거** (판 0.3.6에 실측하고 판 0.3.12에 확정)
+
+| 항목 | 정의 위치 | 실측 성질 | 확정 분류 |
 |---|---|---|---|
-| `spellcheckExclusion()` | `src/editor/spellcheckExclusion.ts:1,4` | `syntaxTree`의 **FencedCode·InlineCode·FrontMatter lezer 노드**에 의존한다(파일 상단 주석이 대상 노드를 열거). 마크다운 언어층이 없으면 그 노드 타입이 생기지 않아 데코레이션이 비고, 남는 것은 `$…$` 정규식 스캔이 `.py` 소스를 훑는 낭비다 | **마크다운층** — 기술적 근거가 명확하다 |
-| `ghostTextExtension({refs})` | `src/editor/ai/ghostText.ts:118` | 트리거 로직은 **언어 무관**이다(`ViewPlugin.update`가 `docChanged`/`selectionSet`에만 반응 — `:125-126`). 마크다운 특화 코드가 없다 | **결정 사항** — 기술 제약이 아니라 제품 판단. 잠정 **마크다운층**: 보조 패널은 원고 저작 도구가 아니고, 세션 호출 상한(`GHOST_TEXT_BOUNDS.sessionCap`)이 공유 예산이라 `.py` 패널의 타이핑이 원고의 예산을 소모한다 |
-| `macroCompartment` (`buildMacroKeymap(macros)`) | `src/editor/keymap/macros.ts:61` | 순수 텍스트 삽입 keymap이다(`:63-75`, `view.dispatch({changes, selection})`). 마크다운 의존이 없다 | **결정 사항**. 잠정 **공통층**: 사용자 정의 매크로는 `.py`/`.bib` 패널에서도 동일하게 유용하고, 배제할 기술적 이유가 없다 |
+| `spellcheckExclusion()` | `src/editor/spellcheckExclusion.ts:1,4` | `syntaxTree`의 **FencedCode·InlineCode·FrontMatter lezer 노드**에 의존한다(파일 상단 주석이 대상 노드를 열거). 마크다운 언어층이 없으면 그 노드 타입이 생기지 않아 데코레이션이 비고, 남는 것은 `$…$` 정규식 스캔이 `.py` 소스를 훑는 낭비다 | **마크다운층 (확정)** — 기술적 근거가 명확하며 질문이 아니었다 |
+| `ghostTextExtension({refs})` | `src/editor/ai/ghostText.ts:118` | 트리거 로직은 **언어 무관**이다(`ViewPlugin.update`가 `docChanged`/`selectionSet`에만 반응 — `:125-126`). 마크다운 특화 코드가 없다. **판 0.3.12 추가 실측**: 세션 호출 상한 카운터 `sessionTriggerCount`(`:95`)는 **모듈 스코프**이며 `EditorView`별이 아니다(`:155` 대조, `:174` 증가, 기본 상한 100 — `electron/preferences.ts:95`) | **마크다운층 (확정 — 사용자 결정, 판 0.3.12)**. 기술 제약이 아니라 **제품 판단**이다: 보조 패널은 원고 저작 도구가 아니고, 공통층에 두면 `.py` 패널의 타이핑이 **창 전역 단일 예산**을 소모해 원고 작업을 침식한다. **동작 불가가 아니라 비용이 근거다** |
+| `macroCompartment` (`buildMacroKeymap(macros)`) | `src/editor/keymap/macros.ts:61` | 순수 텍스트 삽입 keymap이다(`:61-77`, `expandMacro` → `view.dispatch({changes, selection})`). **마크다운 의존 0건**(판 0.3.12 재확인) | **공통층 (확정 — 사용자 결정, 판 0.3.12)**. 사용자 정의 매크로는 `.py`/`.bib` 패널에서도 동일하게 유용하고, 배제할 기술적 이유가 없으며, 배제하면 "왜 여기선 안 되나"라는 설명 부담만 남는다 |
+
+**번복 조건은 살아 있다**: 보조 패널에서의 AI 보조를 명시적으로 원하면 `ghostTextExtension`은 공통층으로 뒤집힌다 — 그 경우 `ghostText.ts:95`의 모듈 스코프 카운터를 **패널 종류별로 분리**하는 것이 함께 필요하다(`plan.md` §A.2 OQ-10).
 
 `viewModes()`가 공통층에 남는 것은 아래 문단의 `editModeStateExtension()` 근거와 같은 계열이다 — 3-모드의 **관측 가능한 효과**는 데코레이션 컴파트먼트가 담당하고, REQ-PANEL-022가 요구하는 "3-모드 미적용"은 컴파트먼트를 비우는 것으로 달성된다.
 
@@ -366,6 +374,19 @@ function decorationsForMode(mode: EditMode) {
 | `.bib` / `.bibtex` | **부재** (카탈로그 전체 "bib" 문자열 0건) | REQ-PANEL-045 — 초판이 REQ-041에 넣은 것이 **틀렸다** |
 
 확인 방법: `require('@codemirror/language-data').languages` 순회 + `extensions` 조회. **설치 버전 시점 측정**이며 M5 진입 시 재측정한다.
+
+**M5 진입 재측정 (판 0.3.12, 2026-08-11, HEAD `6d2fd0c`).** 위 문단이 지시한 재측정을 수행했다. **위 판 0.3.6 측정은 고치지 않는다** — 관측 시점을 사후에 옮기면 기록이 아니게 되므로, 새 관측을 그 옆에 병기한다.
+
+| 축 | 판 0.3.6 (2026-08-09) | 판 0.3.12 (2026-08-11) | 판정 |
+|---|---|---|---|
+| 설치 버전 | `^6.5.2` | **6.5.2** (`node_modules/@codemirror/language-data/package.json`) | 동일 |
+| 카탈로그 크기 | 143개 언어 | **143개 언어** | 동일 |
+| `.py` / `.json` / `.yaml` / `.yml` | Python / JSON / YAML / YAML | **Python / JSON / YAML / YAML** | 동일 |
+| `.csv` | 부재 | **부재** | 동일 |
+| `.bib` / `.bibtex` | 부재 ("bib" 문자열 0건) | **부재** (카탈로그 이름+확장자 전체에서 "bib" 0건) | 동일 |
+| `.txt` | (미측정) | **부재** | 신규 관측 — 미지 확장자 폴백 경로(REQ-PANEL-045)에 해당 |
+
+**변화 없음.** REQ-PANEL-041(조달 대상: `.py`/`.json`/`.yaml`/`.yml`)과 REQ-PANEL-045(폴백 대상: `.csv`·`.bib`/`.bibtex`·미지 확장자)의 전제가 그대로 유효하다 — 요구·AC를 고칠 이유가 없다. **측정 범위** (과잉주장 금지 규약): 확인한 것은 **확장자 조회가 문법 정의를 공급하는가**이며, 하이라이팅 결과의 품질은 이번에도 측정하지 않았다.
 
 기각된 대안:
 

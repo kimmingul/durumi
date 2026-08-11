@@ -1,7 +1,7 @@
 ---
 id: SPEC-V03-WORKSPACE-002
 title: "진행 기록 — v0.3 멀티패널 셸"
-version: "0.3.11"
+version: "0.3.12"
 status: in-progress
 created: 2026-08-08
 updated: 2026-08-11
@@ -31,7 +31,7 @@ plan_complete_at: 2026-08-08
 tier: L
 artifacts:
   - spec.md         # 요구사항 62개 (REQ-PANEL-070~073 + 070a·070b·071a + 001~065, 005a 포함)
-  - plan.md         # 결정 10건 OQ-1~OQ-10 (확정 6 / 미해결 4) + 마일스톤 M0~M8
+  - plan.md         # 결정 10건 OQ-1~OQ-10 (확정 7 / 미해결 3) + 마일스톤 M0~M8
   - acceptance.md   # Given/When/Then AC 97개 (AC-PANEL-001~095 + 005a·005b)
   - design.md       # 설계 결정 + 기각된 대안 (Tier L)
   - research.md     # 코드베이스 조사 8영역 + 위험 목록 (Tier L)
@@ -66,14 +66,14 @@ plan_artifact_commits:
   - cc61048  # 판 0.3.11 보완 — OQ 개수 자기모순 3곳 + research.md 판 표기 (판 수 미상승)
 blocking_decisions:
   total: 10
-  confirmed: [OQ-1, OQ-2, OQ-5, OQ-6, OQ-3, OQ-4]   # OQ-1·2·5·6: 외부 검토 2인 + 사용자 승인 (2026-08-08) / OQ-3·4: 사용자 결정 (2026-08-10, 판 0.3.11)
-  open: [OQ-7, OQ-8, OQ-9, OQ-10]
+  confirmed: [OQ-1, OQ-2, OQ-5, OQ-6, OQ-3, OQ-4, OQ-10]   # OQ-1·2·5·6: 외부 검토 2인 + 사용자 승인 (2026-08-08) / OQ-3·4: 사용자 결정 (2026-08-10, 판 0.3.11) / OQ-10: 사용자 결정 (2026-08-11, 판 0.3.12)
+  open: [OQ-7, OQ-8, OQ-9]
   m0_blocked_by: none          # M0은 결정 무의존 — 즉시 착수 가능
   m1_blocked_by: none          # OQ-1·OQ-2 확정으로 해제
   m2_blocked_by: [OQ-7]        # 탭 축이 레이아웃 형태를 규정
   m3_blocked_by: [OQ-8]        # 창 축 AC 범위 (핵 결함은 M0이 닫음)
   m4_blocked_by: none          # 판 0.3.11에서 OQ-3(후보 1)·OQ-4(후보 1) 확정으로 해제
-  m5_blocked_by: [OQ-10]       # OQ-6은 해제됐으나 REQ-042 allowlist 전환으로 24항목 전수 분류가 새 전제
+  m5_blocked_by: none          # 판 0.3.12에서 OQ-10 확정 — 3층 분류 전수(공통층 11 + 마크다운층 13 = 24)로 allowlist 집합 정의됨
   m6_blocked_by: none          # OQ-6 확정으로 해제
   m7_blocked_by: none          # OQ-5 확정으로 해제
   m8_blocked_by: [OQ-9]
@@ -90,7 +90,7 @@ reproduction_first_milestone: M0
 | 요구사항 | **62개** (`REQ-PANEL-070~073` + `070a`·`070b`·`071a` = 출하 중인 결함, `001~065` = 기능. 판 0.3.10에서 `005a` 신설) |
 | 수용 기준 | **97개** (`AC-PANEL-001~095` + 판 0.3.10 신설 `005a`·`005b`) |
 | 마일스톤 | **M0**(출하 중인 결함 재현 우선) → M1~M8 |
-| 결정 | **확정 6건**(OQ-1·2·**3**·**4**·5·6) / 미해결 4건(OQ-7·8·9·**10**) — `plan.md` §A.2. OQ-3·OQ-4는 판 0.3.11에서 확정(둘 다 후보 1)되어 M4가 차단 해제되었다. OQ-10은 판 0.3.6 전수 실측에서 파생(extension 3항목의 층 귀속, M5 진입 전 확정) |
+| 결정 | **확정 7건**(OQ-1·2·**3**·**4**·5·6·**10**) / 미해결 3건(OQ-7·8·9) — `plan.md` §A.2. OQ-3·OQ-4는 판 0.3.11에서 확정(둘 다 후보 1)되어 M4가 차단 해제되었다. **OQ-10은 판 0.3.12에서 확정**(`ghostText` = 마크다운층 / `macroCompartment` = 공통층, 둘 다 잠정 권고와 일치)되어 3층 분류가 전수(11 + 13 = 24)가 되었고 **M5가 차단 해제**되었다 |
 | 제약 | 13건 (`spec.md` §C C-1~C-13) |
 
 ### §E.1b M0을 최우선에 둔 근거 (plan 단계 확정 사항)
