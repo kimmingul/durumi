@@ -1168,6 +1168,46 @@ M2 이전 `App.setContent`는 `useCallback([])`이면서 호출 시점에 `activ
 
 **M4-2에 인계**: `REQ-PANEL-054`가 같은 게이트를 문서 축으로 넓히면 새로 생기는 "조합 중" 단언들이 **같은 전제 결손을 물려받는다**. `starts >= 1` + `ends === 0` 관문을 처음부터 붙일 것.
 
+### M5 (2026-08-11) — OQ-10 확정 + 분할 착수 결정 + Phase 4 모드
+
+**선행 결정 해제**: OQ-10이 판 0.3.12에서 확정되었다(`ghostTextExtension` = 마크다운층 / `macroCompartment` = 공통층, 사용자 결정 2건, 둘 다 판 0.3.6 잠정 권고와 일치). 3층 분류가 전수 성립(공통층 11 + 마크다운층 13 = 24)하여 `AC-PANEL-042`의 allowlist 집합이 정의되었다. `m5_blocked_by: none`.
+
+**착수 승인 (Implementation Kickoff Approval)**: 사용자 승인 완료 — 4단계 순차 진행. 함께 확정된 범위 결정 1건: **엄격 디코드(AC-PANEL-046)는 보조 파일 열기 경로에만 적용하고 마크다운 경로는 오늘 동작을 유지한다**(C-10 준수). 귀결 — 손상 마크다운의 U+FFFD 치환은 이 SPEC이 닫지 않는 기존 결함으로 존속하며, 열기 경로에 종류별 분기가 생긴다.
+
+**입력 파라미터**
+
+| 항목 | 값 |
+|---|---|
+| tier | L |
+| 예상 파일 수 | 8~12 (`shared/fileKind.ts` 신설 · `electron/ipc/files.ts` · extension 조립 모듈 신설 · `src/editor/MarkdownEditor.tsx` · 패널 열기 경로 + 테스트 4~6) |
+| 도메인 수 | 2 (main 프로세스 열기·디코드 / 렌더러 extension 조립) — 3 미만 |
+| 언어 구성 | TypeScript 100% |
+| 병렬 이득 | LOW — 단계 간 순서 의존(종류 판정 → 디코드 → 조립 → 문법 조달)이 있고 단계 3·4가 같은 파일(`MarkdownEditor.tsx`)을 만진다 |
+
+**모드 평가**
+
+| 모드 | 선택 | 근거 |
+|---|---|---|
+| 1 trivial | 미선택 | 의미 변경이 있는 다중 파일 구현 |
+| 2 background | 미선택 | 쓰기 작업 |
+| 3 agent-team | 미선택 | RETIRED (톰스톤) |
+| 4 parallel | 미선택 | 도메인 2개(<3), 파일 12개 이하(<10 경계 근처이나 상한 추정). 단계 3·4의 쓰기 대상이 겹치므로 병렬 팬아웃은 파일 쓰기 충돌을 만든다 |
+| 5 sub-agent | **선택** | 기본 폴백이며 순서 의존이 이것을 가리킨다 |
+| 6 workflow | 미선택 | ~30 파일 미만이고 기계적 단일 변환 규칙이 아니다 |
+
+**Decision: sub-agent**
+
+**정당화**: M5는 `MarkdownEditor.tsx`의 `extensions:` 배열을 3층으로 재구성한다 — M0~M4가 040df4a와 텍스트 동일하게 유지해 온 불변식이 **이 마일스톤에서 의도적으로 깨진다**. 그 재구성(단계 3)이 위험 중심이고 단계 4가 같은 파일에 문법 조달을 얹으므로 두 단계를 병렬로 돌리면 쓰기 충돌이 난다. 도메인 2개로 Mode 4 임계(3 도메인) 아래이며, Anthropic의 coding-task 병렬성 유보에 따라 구현 중심 작업은 순차 sub-agent가 기본값이다. Tier L이므로 Section A-E 전체 템플릿을 적용한다.
+
+**단계 분할 (위험 오름차순, 단계당 1커밋 + AC 판정 지점)**
+
+| 단계 | 내용 | 대상 AC | 위험 |
+|---|---|---|---|
+| 1 | `shared/fileKind.ts` 신설 + `electron/ipc/files.ts:34` 방향 뒤집기(§B.2) | AC-PANEL-040 | 낮음 |
+| 2 | 보조 파일 경로 엄격 디코드 (`files.ts:41`/`:48` 분기) | AC-PANEL-046 | 중간 |
+| 3 | extension 3층 조립 재구성 + allowlist 단언 | AC-PANEL-042 | **최상** |
+| 4 | `@codemirror/language-data` 문법 조달 + 평문 폴백 | AC-PANEL-041 / 045 | 중간 |
+
 ---
 
 ## §G 참조
