@@ -597,6 +597,97 @@ REQ-PANEL-053(패널별 배너 표면)·054(IME 게이트 합류)는 M4다 — �
 
 ---
 
+### M4-1 — 표시 모드의 패널 축 이관과 활성 뷰 접근자
+
+**증거**: `.moai/state/verify/m4-1/`. 커밋 `d5f84e9`.
+
+M4의 21개 AC를 둘로 나눈 앞쪽 13건(020~024, 030~035)이다. 판 0.3.11이 확정한 두 결정을 배선하는 일이며 요구를 신설하지도 재번호하지도 않았다.
+
+#### AC 판정 (13/13 PASS)
+
+| AC | 상태 | 판정 명령 | 실제 출력 |
+|---|---|---|---|
+| 020 | PASS | `pnpm vitest run tests/store/panelDisplayMode.test.ts tests/layout/panelModeSurface.test.tsx` | 원고 패널의 모드 집합 = `['wysiwyg','typora','markdown']` 정확히 3개, 상태바 라디오 3개. `tests/editor/editMode.test.ts` 무변경 통과 |
+| 021 | PASS | 동일 | A를 `markdown`으로 바꿔도 B는 `wysiwyg` 유지 + B의 `.cm-md-marker-hidden` 잔존 |
+| 022 | PASS | 동일 | 보조 패널 모드 집합 `[]`, 실효 모드 `markdown`, `.cm-md-marker-hidden` 0개, `editModeField` 등록됨(`'markdown'`), 패널 내부에 모드 컨트롤 부재 |
+| 023 | PASS | 동일 | 상태바 모드 변경 시 `prefsSet` **호출 0회**. `defaultMode`는 부트 패널 초기값 + 새 패널 초기값으로 계속 쓰임 |
+| 024 | PASS | 동일 | 활성 A(`markdown`)→`Source` 표시, B로 전환→`Document`. 보조 패널 활성 시 `aria-disabled="true"` + 버튼 전부 `disabled` + 선택 표시 없음 |
+| 030 | PASS | `pnpm vitest run tests/layout/panelFocusActivation.test.tsx` | B의 편집 표면 포커스 → 활성 패널 B. A로 되돌리면 A |
+| 030b | PASS | 동일 | 툴바·사이드바·상태바 포커스 후에도 활성 B 유지. 단일 패널에서는 어떤 포커스 이동 후에도 그 패널이 활성 |
+| 031 | PASS | `pnpm vitest run tests/layout/panelCommandRouting.test.tsx` | `bold`/`insertTable`/`toggleTask`/`{heading,2}` 4건 각각 A의 내용 바이트 동일, B만 변경 |
+| 032 | PASS | 동일 | 보조 패널 활성 시 `bold`/`italic`/`insertTable`/`{heading,1}` 4건 각각 **두 문서 모두** 바이트 동일 |
+| 032b | PASS | 동일 | 보조 패널 상자에 활성 버튼 0개, 상태바 모드 버튼 전부 `disabled`, 커맨드 발신 후 `[data-testid="cm-toast"]` 0개 |
+| 033 | PASS | 동일 | 패널 3개에서 `toggleTheme`·`toggleSidebar`·`quickOpen`·`openSettings`·`refreshProjectTree` 전부 동작. `save`는 활성 패널의 경로로 `fileSave` 1회 |
+| 034 | PASS | `pnpm vitest run tests/editor/panelEvents.test.ts tests/layout/panelEventScoping.test.tsx` | 6개 이벤트 각각 발신 패널 실림 + 패널 매인 수신기 A=1 / B=0. 실제 경로에서 링크 대화상자 **1개** |
+| 035 | PASS | `pnpm test:e2e e2e/panel-ime.spec.ts` | `starts>=1`, 분할·활성화·닫기 3단계 각각 `ends===0`, `role="dialog"` 0개, 커밋 텍스트 `한글` 일치 |
+
+#### 확정 두 건이 실제로 무엇을 바꿨나
+
+**OQ-3 후보 1.** M1이 만든 `PanelState.displayMode`는 **읽는 곳이 0곳**이었다. 살아 있는 모드는 `appStore.editMode` 하나였으므로 "패널별 독립"은 타입으로만 참이었다. M4-1이 그 배선을 뒤집었다 — 이제 `displayMode`가 살아 있는 값이고, `appStore.editMode`는 `defaultMode`로 이름과 역할이 좁아져 **새 원고 패널의 초기값**만 정한다.
+
+두 필드를 다 남긴 것은 절충이 아니다. 둘은 같은 것의 사본이 아니라 **서로 다른 것**이다 — `defaultMode`는 세션을 가로지르는 사용자 선호(`prefs`가 출처)이고 `displayMode`는 지금 이 패널이 무엇을 보여주는가다. 합치면 마지막으로 모드를 바꾼 패널이 다음 세션의 모든 패널을 규정한다(기각된 후보 2). `lastNonMarkdownMode`와 토글도 같은 근거로 패널 축으로 옮겼다.
+
+**OQ-4 후보 1.** `store/panelViews.ts`가 `getActiveView()`를 제공하고 훅 4개가 ref 대신 그것을 받는다. 레지스트리를 zustand 상태가 아니라 모듈에 둔 이유는 `EditorView`가 살아 있는 DOM 결속 객체이기 때문이다 — 상태에 넣으면 구독자가 뷰 교체마다 전부 재렌더되고, `workspaceStore`가 직렬화 가능한 상태만 담는다는 경계가 깨진다.
+
+#### 낡은 뷰 창이 실제로 닫혔는가 — 형태가 아니라 동작으로
+
+접근자를 만들어 놓고도 훅이 진입 시점에 한 번 뽑아 지역 변수에 담으면 이득이 사라진다. 그래서 `aiCitationSuggest`의 뷰 조회를 `await` **뒤로** 옮기고, 그 성질을 `tests/layout/panelStaleViewWindow.test.tsx`가 동작으로 판정한다 — 키 조회를 기다리는 동안 활성 패널을 바꾸고, 제안이 **새** 활성 패널의 문단에 대한 것인지 본다.
+
+판정력을 실측했다. 옛 형태(진입 시점 캡처)를 일시 복원하니 `expected 'A 문단입니다' to contain 'B 문단입니다'`로 실패했고, 되돌린 뒤 다시 통과했다.
+
+#### 판정력 검증 — 새 검사가 실제로 결함을 잡는가
+
+각 축마다 **기각된 후보를 일시 복원**해 실측했다. 되돌린 뒤 전 게이트를 다시 통과시켰다.
+
+| 반증 주입 | 실패한 검사 | 관측 |
+|---|---|---|
+| 상태바에 `prefsSet` 복원 + 패널이 창 전역 모드를 읽게 되돌림 (후보 2·3) | `panelModeSurface` 5/10 | `패널 모드 변경이 전역 기본값을 덮어썼다: expected "spy" to be called +0 times, but got 1 times` 외 4건 |
+| 라우터의 마크다운 전용 게이트 제거 | `panelCommandRouting` 4/15 | `expected '**print**(1)\n' to be 'print(1)\n'` — 보조 패널 버퍼에 마크다운 서식이 들어갔다 |
+| 툴바의 패널 필터 제거 | `panelEventScoping` 1/5 | `패널 수만큼 대화상자가 열렸다: expected 2 to be 1` |
+| 편집 포커스 배선 제거 | `panelFocusActivation` 2/4 | `편집 포커스가 활성 패널을 바꾸지 않았다` |
+| 포커스 배선을 패널 전체(툴바 포함)로 확대 | `panelFocusActivation` 1/4 | `툴바 포커스가 활성 패널을 바꿨다` — 반대 방향도 잡힌다 |
+| 라우터를 진입 시점 캡처로 되돌림 | `panelStaleViewWindow` 1/1 | `대기 중 전환하기 전의 패널 문단이 쓰였다` |
+
+#### 실측으로 갈라낸 것 — AC-PANEL-035의 "패널 B를 활성화하고"
+
+그 문언을 **"B의 편집 표면으로 DOM 포커스를 옮긴다"**로 읽으면 요구는 만족 불가능하다. 조합 중 다른 `.cm-content`로 포커스를 옮기면 `compositionend`가 1회 발생한다 — 마우스 클릭이든 `element.focus()`든 같고, **이 SPEC의 포커스 배선을 통째로 제거하고 측정해도 같다.** 원인은 앱이 아니라 플랫폼이며, 조합 중인 요소에서 포커스가 떠나면 IME는 조합을 커밋한다.
+
+그 읽기는 AC 자신의 다음 절과도 모순된다 — "패널 A의 조합을 정상 종료하면"은 그 시점에 A의 조합이 살아 있어야 성립하는데, B로 포커스를 옮기는 순간 A의 조합은 이미 커밋되어 있다.
+
+그래서 e2e가 검사하는 활성화는 **패널 관리 연산이 수행하는 활성화**다: `splitPanel`이 새 패널을 활성으로 만들고 `closePanel`이 남는 패널을 되돌린다. 둘 다 DOM 포커스를 옮기지 않는다. 활성화가 실제로 일어났다는 것은 그 다음 모드 커맨드가 **B에만** 적용되는 것(툴바 2→1)으로 확인한다 — 그러지 않으면 "아무 일도 일어나지 않았다"와 구분되지 않는다.
+
+**남는 것**: "사용자가 조합 중 다른 패널을 클릭하면 조합이 커밋된다"는 이 SPEC이 바꾸지 않는 플랫폼 동작이며, AC-PANEL-035는 그 경우를 덮지 않는다. 과잉주장 금지 규약에 따라 적어 둔다.
+
+#### 설계 긴장 2건
+
+**(1) AC-PANEL-032b의 "비활성(disabled)" vs 부재.** 요구 문언은 마크다운 전용 툴바 버튼이 "비활성 상태로 제시된다"고 적는다. 그러나 보조 패널의 실효 모드가 `markdown`이므로 툴바 자체가 렌더되지 않는다 — REQ-PANEL-022의 "선택 수단을 제시하지 않는다"가 그것을 요구한다.
+
+**부재를 택했다.** 근거: 부재는 비활성보다 강한 형태이고(활성으로 보이는 컨트롤이 0개), `.py` 패널 위에 회색 마크다운 버튼 20여 개를 띄우는 것은 REQ-PANEL-022가 막으려는 것에 가깝다. 다만 **창 하나뿐인 모드 컨트롤(상태바)은 비활성으로 제시한다** — 그것은 사라지면 창의 레이아웃이 흔들리는 상시 표면이고, AC-PANEL-024가 "비활성 **또는** 부재"로 두 형태를 모두 허용한다. 판정도 두 형태를 각각 단언한다(패널 상자 안 활성 버튼 0개 + 상태바 버튼 전부 `disabled`).
+
+**(2) M2의 통과용 노드와 M3의 라우팅 키.** 두 성질이 동시에 성립하지 않는 지점은 **만나지 않았다.** M4-1은 `PanelContainer`의 래퍼 구조를 바꾸지 않았고(포커스 핸들러를 기존 편집 표면 상자에 붙였을 뿐 노드를 추가하지 않았다), `reconciliationStore`의 대조 키 경로도 건드리지 않았다. 없었다고 적는다.
+
+#### 배선하지 않은 것
+
+`durumi:memo-focus`·`durumi:cm-focus`·`durumi:reference-open`·`durumi:memo-panel-toggle`의 **수신 측**은 여전히 창 단위 단일 인스턴스다(`useMemoEvents` → 오른쪽 사이드바). 발신 패널은 실리지만 필터하지 않는다 — 그 수신기에는 "자기 패널"이 없기 때문이다. 패널에 매인 수신기(`EditorToolbar`)만 필터한다. REQ-PANEL-034의 "shall not"은 패널에 매인 수신 측에 대한 것이므로 문언에 맞고, 사이드바를 패널별로 쪼개는 것은 소유자 없는 범위 확장이다.
+
+`resolveWatchScope`/`registerWatchScope`는 M3와 마찬가지로 프로덕션 호출부 0곳이다 — M4-1의 대상 요구에 그 배선을 생산하는 것이 없다.
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — `218 passed / 2390 passed`(기준선 211/2319 → **+7 파일 / +71 건**). 증감 대조: 신규 7파일 68건(모드 15 + 이벤트 계약 18 + 이벤트 배선 5 + 모드 표면 10 + 커맨드 라우팅 15 + 포커스 4 + 낡은 뷰 1) + `panelDocumentBinding` 순증 4건 − `appStore` 순감 1건(모드 전환 3건이 패널 축으로 이관되며 2건으로 재구성) = **+71**로 일치한다.
+
+`typecheck`·`lint` exit 0(신규 경고 0). `coverage` exit 0 — All files **96.29%**(직전 96.24%). 신규 모듈 `panelEvents.ts` 100%, `panelViews.ts` 100%(lines). `pnpm test:e2e` **214 passed / 0 failed**(기준선 213 → +1, 신규 spec 1건). 추적 스크린샷 3장은 `git restore`로 복원했다.
+
+#### 불변식
+
+동결 7경로 + 보존 세트(`editMode.ts`·`editMode.test.ts`·사이드바 3파일) 전부 `git diff --quiet 040df4a` exit 0. `applyExternalChange` arity 2 유지. `MarkdownEditor.tsx`는 M4-1에서 **한 줄도 바뀌지 않았고**(`git diff HEAD` 출력 0줄) extension 배열은 `040df4a`와 같은 **42항목**이다 — 그 파일의 불변식은 파일 무변경이 아니라 배열 무변경이며, M0~M2가 정당하게 고친 부분은 그대로다.
+
+#### 범위 밖으로 남긴 것 (M4-2)
+
+REQ-PANEL-053(패널별 배너)·054(IME 게이트 합류)·058(모달 금지)과 AC-PANEL-053/053b/053c/053d/054/054b/058/095. 배너는 여전히 창 전역 1개이며 `ReconciliationSurface`를 건드리지 않았다. e2e의 `.cm-content` 셀렉터 이관도 하지 않았다.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
