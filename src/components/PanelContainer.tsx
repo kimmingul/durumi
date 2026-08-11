@@ -64,6 +64,7 @@ export function PanelContainer({
       {index > 0 ? <PanelResizer /> : null}
       <Panel
         panel={panel}
+        index={index}
         document={documentOfPanel(panel)}
         macros={macros}
         onViewReady={onPanelViewReady}
@@ -108,6 +109,8 @@ export const PANEL_RESIZER_WIDTH_PX = '4px';
 
 interface PanelProps {
   panel: PanelState;
+  /** 렌더 순서에서의 위치 (0-based). 지목 수단의 위치 축이다. */
+  index: number;
   document: DocumentState | null;
   macros: Macro[];
   onViewReady: (panelId: PanelId, view: EditorView | null) => void;
@@ -124,12 +127,17 @@ interface PanelProps {
  */
 function Panel({
   panel,
+  index,
   document: doc,
   macros,
   onViewReady,
   onOpenCitePalette,
   onPickImage,
 }: PanelProps) {
+  // 활성 여부는 **스토어가 진실**이다. prop으로 내리면 `PanelContainer`가
+  // `activePanelId`를 구독해야 하고, 그러면 활성 패널이 바뀔 때마다 모든 패널이
+  // 다시 렌더된다.
+  const isActive = useWorkspaceStore((s) => s.activePanelId === panel.panelId);
   // 표시 모드는 **이 패널의 것**이다(REQ-PANEL-021). 창 전역 값 하나를 읽으면 한
   // 패널의 모드 변경이 모든 패널을 규정한다.
   //
@@ -176,6 +184,21 @@ function Panel({
 
   return (
     <div
+      /*
+        패널 지목 수단 (REQ-PANEL-053·054의 계약 산출물, `plan.md` §B.8).
+
+        `panelId`는 런타임 생성 문자열이라 e2e가 예측할 수 없다. 그래서 지목 축은
+        **위치**(`data-panel-index`)와 **활성 여부**(`data-panel-active`) 둘이다.
+        표식은 패널의 **최외곽**에 붙는다 — 그래야 배너·툴바·편집 표면이 전부 그
+        하위에 들어와 "패널 A 영역 안"이라는 AC 문언이 판정 가능해진다.
+
+        세 속성 모두 스타일을 갖지 않는다. 이 노드는 M2가 이미 렌더하던 중앙 열
+        그대로이며 표식만 얹었다 — 노드를 새로 끼우면 1↔2 전환에서 재부모화가
+        일어나 캐럿·스크롤·실행 취소가 사라진다(AC-PANEL-005).
+      */
+      data-panel=""
+      data-panel-index={String(index)}
+      data-panel-active={isActive ? '' : undefined}
       style={{ flex: 1, overflow: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}
     >
       <EditorToolbar

@@ -35,7 +35,23 @@ import { useWorkspaceStore } from '../../src/store/workspaceStore';
  * 그래서 픽스처는 `bd62b80` 그대로 두고, 테스트가 **허용하는 델타를 이름으로
  * 명시**한다: 통과용 노드 한 겹을 걷어낸 뒤 기준선과 완전히 같아야 한다. 다른
  * 어떤 차이도 이 검사를 깨뜨린다.
+ *
+ * ## 허용 델타 둘 — M4-2가 더한 것
+ *
+ * M4-2는 패널 최외곽에 지목 표식 세 개(`data-panel`, `data-panel-index`,
+ * `data-panel-active`)를 얹는다. 그 세 개는 배치에도 시각에도 관여하지 않지만
+ * 다이제스트가 `data-*`를 전부 찍으므로 기준선과 어긋난다.
+ *
+ * 여기서도 같은 규율을 쓴다 — **픽스처를 다시 뜨지 않고, 걷어내는 것을 이름으로
+ * 못박는다**(`stripPanelMarkers`). 걷어내는 대상은 그 **세 이름뿐**이므로,
+ * 표식이 하나라도 더 늘거나 다른 `data-*`가 붙으면 이 검사가 그대로 깨진다.
+ * 그리고 세 표식이 실제로 무해하다는 것 — 배치 스타일을 갖지 않고 노드를 새로
+ * 끼우지 않는다는 것 — 은 아래 별도 검사가 적극적으로 고정한다. 걷어내기만
+ * 하고 끝내면 그 자리가 방어 공백이 된다.
  */
+
+/** M4-2의 패널 지목 표식. 이 세 이름만 다이제스트에서 걷어낸다. */
+const PANEL_MARKER_ATTRS = ['data-panel', 'data-panel-index', 'data-panel-active'] as const;
 
 interface DigestNode {
   tag: string;
@@ -55,6 +71,13 @@ function stripPanelContainer(node: DigestNode): DigestNode {
   };
 }
 
+/** 지목 표식 세 개를 걷어낸다 — 그 밖의 `data-*`는 그대로 남긴다. */
+function stripPanelMarkers(node: DigestNode): DigestNode {
+  const data = { ...node.data };
+  for (const attr of PANEL_MARKER_ATTRS) delete data[attr];
+  return { ...node, data, children: node.children.map(stripPanelMarkers) };
+}
+
 /** 기준선과 같은 깊이에서 비교하려고 다시 자른다. */
 function truncate(node: DigestNode, maxDepth: number, depth = 0): DigestNode {
   return {
@@ -69,7 +92,10 @@ function truncate(node: DigestNode, maxDepth: number, depth = 0): DigestNode {
  * 걷어내고 기준선 깊이로 자른다.
  */
 function comparableDigest(host: HTMLElement): DigestNode {
-  return truncate(stripPanelContainer(layoutDigest(host, 5) as unknown as DigestNode), 4);
+  return truncate(
+    stripPanelMarkers(stripPanelContainer(layoutDigest(host, 5) as unknown as DigestNode)),
+    4,
+  );
 }
 
 const FIXTURE = JSON.parse(
@@ -133,6 +159,27 @@ describe('AC-PANEL-003b — 단일 패널 축퇴가 오늘의 동작과 관측�
   it('편집 표면·상태바·조정 표면의 개수와 위치가 보존된다', () => {
     const app = mountApp();
     expect(layoutFacts(app.host)).toEqual(FIXTURE.facts);
+    app.unmount();
+  });
+
+  it('걷어낸 지목 표식은 노드를 늘리지도 배치를 바꾸지도 않는다', () => {
+    const app = mountApp();
+    // 표식은 **이미 있던** 중앙 열에 얹힌다 — 노드가 새로 끼워지지 않았다.
+    const wrapper = app.host.querySelector('[data-panel-container]') as HTMLElement;
+    const marked = app.host.querySelector('[data-panel]') as HTMLElement;
+    expect(marked, '지목 표식이 없다').not.toBeNull();
+    expect(marked.parentElement, '표식이 통과용 노드의 직계 자식이 아니다').toBe(wrapper);
+    // 그 노드는 픽스처가 고정한 중앙 열 그대로다.
+    expect(marked.style.display).toBe('flex');
+    expect(marked.style.flexDirection).toBe('column');
+    expect(marked.style.flex).toBe('1 1 0%');
+    // 표식이 시각을 만들지 않는다.
+    for (const painted of ['border', 'background', 'backgroundColor', 'padding', 'margin']) {
+      expect(marked.style[painted as 'border'], `지목 요소가 ${painted}를 갖는다`).toBe('');
+    }
+    // 걷어내는 세 이름 말고 다른 `data-*`가 늘지 않았다.
+    const dataNames = marked.getAttributeNames().filter((n) => n.startsWith('data-'));
+    expect(dataNames.sort()).toEqual([...PANEL_MARKER_ATTRS].sort());
     app.unmount();
   });
 
