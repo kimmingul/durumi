@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { EditorToolbar } from './EditorToolbar';
+import { ReconciliationSurface } from './ReconciliationSurface';
 import { MarkdownEditor } from '../editor/MarkdownEditor';
 import {
   displayModeOf,
@@ -207,6 +208,19 @@ function Panel({
         onOpenCitePalette={onOpenCitePalette}
         onPickImage={onPickImage}
       />
+      {/*
+        조정 배너는 **이 패널의 문서**의 것이다(REQ-PANEL-053). 창 전역 배너
+        하나로 두면 활성 문서에만 결속되어, 비활성 패널의 문서가 외부에서 바뀌어도
+        사용자가 알 수 없고 그 위에 저장하면 편집이 사라진다.
+
+        배너는 편집 표면을 감싸는 상자 **밖**에 둔다 — 그 상자의
+        `onFocusCapture`가 활성 패널을 바꾸므로, 안에 두면 배너 버튼을 누르는
+        것만으로 활성 패널이 옮겨간다(AC-PANEL-053c).
+
+        idle이면 `ReconciliationSurface`가 `null`을 돌려주므로 노드가 생기지
+        않는다 — 알림이 없는 평상시 DOM은 오늘과 같다.
+      */}
+      <ReconciliationSurface path={doc?.path ?? null} />
       {/*
         활성 패널은 **가장 최근에 편집 포커스를 받은 패널**이다(REQ-PANEL-030).
         그래서 이 핸들러는 편집 표면을 감싸는 상자에만 붙는다 — 툴바·사이드바·

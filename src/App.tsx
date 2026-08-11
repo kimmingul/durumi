@@ -4,7 +4,6 @@ import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { QuickOpen } from './components/QuickOpen';
 import { ToastHost } from './components/Toast';
-import { ReconciliationSurface } from './components/ReconciliationSurface';
 import { useExternalChangeWiring } from './hooks/useExternalChangeWiring';
 // Dialogs are lazy: they only mount when the user opens them, and the dialog
 // bundle (Settings panel alone is ~50 KB, plus the AI usage dashboard, the
@@ -200,7 +199,12 @@ export function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
       </div>
-      <ReconciliationSurface path={filePath} />
+      {/*
+        조정 배너는 여기 없다 — **그 문서를 표시하는 패널 안**에 산다
+        (REQ-PANEL-053, `PanelContainer.tsx`). 창 전역 배너 하나는 활성 문서에만
+        결속되므로 비활성 패널의 문서가 외부에서 바뀌어도 사용자가 알 수 없고,
+        그 위에 저장하면 편집이 사라진다.
+      */}
       <StatusBar />
       <ToastHost />
       <QuickOpen
