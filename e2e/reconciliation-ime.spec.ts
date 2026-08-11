@@ -115,6 +115,44 @@ const surfaceCounts = (page: Page): Promise<{ starts: number; ends: number }> =>
   });
 
 /**
+ * 조정 표면이 뜰 때까지 기다린다 — **고정 수면 대신 관측 가능한 조건**이다.
+ *
+ * 왜 `waitForTimeout(DEBOUNCE_SETTLE_MS)`로는 부족한가: 외부 변경은 확정
+ * 디바운스(`electron/changeConfirmation.ts`의 200ms) + IPC + 재검사를 거쳐
+ * 쓰기 후 **약 420ms**에 표면에 뜬다(실측). 900ms를 통째로 자면 그 뒤로
+ * ~480ms가 남고, 그 창 안에서 **창 비활성화 같은 환경 이벤트가 조합을 끝내면**
+ * 보류분이 규정대로 배너로 인계된다(AC-WS-020). 그러면 조합 중 보류를 단언하는
+ * 검사가 `held-notify`를 보고 **게이트 누수로 오인**한다. 표면이 뜨는 즉시 읽으면
+ * 그 노출 창이 절반 이하로 줄어든다.
+ *
+ * 표면이 끝내 뜨지 않으면(무성 자동 반영 등) 조용히 넘어가고, 호출부의
+ * `reconcileStatus` 단언이 `null`을 그대로 보고한다 — 여기서 던지면 진짜 원인이
+ * 대기 오류에 덮인다.
+ */
+const waitForReconcileSurface = (page: Page): Promise<void> =>
+  page
+    .locator('[data-reconcile-status]')
+    .waitFor({ state: 'attached', timeout: DEBOUNCE_SETTLE_MS })
+    .catch(() => {});
+
+/**
+ * 조합이 아직 열려 있음을 단언한다 — 보류 단언의 **전제**다.
+ *
+ * `held-composition`은 "조합 중"을 전제로만 참일 수 있는 상태다. 전제가 깨진
+ * 채로 결과만 단언하면 두 원인이 한 실패로 뭉개진다:
+ *   - 게이트가 보류를 걸지 못했다 (REQ-WS-028 계열 결함)
+ *   - 조합이 이미 끝났다 (환경 이벤트 — 조정 계층은 규정대로 동작한 것)
+ * 앞의 것만 결함이다. AC-WS-019가 이미 쓰는 관문을 같은 전제를 가진 검사들로
+ * 넓힌다.
+ */
+function expectCompositionStillOpen(counts: { starts: number; ends: number }): void {
+  expect(
+    counts.ends,
+    '조합이 조기 종료됐다 — 게이트 누수가 아니라 조합 수명이 원인 (창 비활성화 등)',
+  ).toBe(0);
+}
+
+/**
  * 채널이 살아 있음을 확인한다. 이 함수가 실패하면 아래 AC들의 "버퍼 불변"
  * 단언은 아무것도 증명하지 못한다 — 공허한 통과를 막는 관문이다.
  */
@@ -210,10 +248,17 @@ test('AC-WS-020b: 취소된 조합도 보류된 변경을 흘리지 않고 라�
   // 통과하면서 clean인 버퍼가 존재하지 않는다. 불변식은 유닛 계층이 고정한다.
   await withOpenDoc('원래 내용\n', async (f) => {
     await proveChannelLive(f);
+    await installSurfaceCounter(f.page);
 
     const handle = await startComposition(f.page, '한');
+    expect(
+      (await surfaceCounts(f.page)).starts,
+      '편집 표면에 compositionstart가 도달하지 않았다 — IME 게이트가 걸릴 수 없다',
+    ).toBeGreaterThanOrEqual(1);
+
     fs.writeFileSync(f.filePath, '보류된 외부 변경\n', 'utf8');
-    await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
+    await waitForReconcileSurface(f.page);
+    expectCompositionStillOpen(await surfaceCounts(f.page));
     expect(await reconcileStatus(f.page), '보류 표시가 뜨지 않았다').toBe('held-composition');
 
     await cancelComposition(handle);
@@ -260,10 +305,17 @@ test('AC-WS-021: 보류 중 다중 변경은 최종 상태 1건으로 합류되�
 test('AC-WS-023c: 보류 표시는 정책 결과로 인계된다 (무성 소실 금지)', async () => {
   await withOpenDoc('원래 내용\n', async (f) => {
     await proveChannelLive(f);
+    await installSurfaceCounter(f.page);
 
     const handle = await startComposition(f.page, '한');
+    expect(
+      (await surfaceCounts(f.page)).starts,
+      '편집 표면에 compositionstart가 도달하지 않았다 — IME 게이트가 걸릴 수 없다',
+    ).toBeGreaterThanOrEqual(1);
+
     fs.writeFileSync(f.filePath, '디스크 내용\n', 'utf8');
-    await f.page.waitForTimeout(DEBOUNCE_SETTLE_MS);
+    await waitForReconcileSurface(f.page);
+    expectCompositionStillOpen(await surfaceCounts(f.page));
 
     expect(await reconcileStatus(f.page), '보류 표시가 뜨지 않았다').toBe('held-composition');
     const beforeEnd = await bufferText(f.page);
