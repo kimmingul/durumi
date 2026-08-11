@@ -238,12 +238,17 @@ describe('linkHoverTooltip + dispatchEditLink', () => {
       title: '',
     };
     const handler = vi.fn();
+    const view = setup('click here\n');
     window.addEventListener('durumi:edit-link', handler as EventListener);
-    dispatchEditLink(detail);
+    dispatchEditLink(detail, view);
     expect(handler).toHaveBeenCalled();
     const ev = handler.mock.calls[0]![0] as CustomEvent;
-    expect(ev.detail).toEqual(detail);
+    // 발신 패널이 덧붙는다(REQ-PANEL-034). 등록되지 않은 뷰는 null이며 그
+    // 이벤트는 모든 수신기가 처리한다 — 식별 불가는 "누구의 것도 아니다"가
+    // 아니라 "모두의 것"이다.
+    expect(ev.detail).toEqual({ ...detail, panelId: null });
     window.removeEventListener('durumi:edit-link', handler as EventListener);
+    view.destroy();
   });
 });
 

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { isDirty as isDirty_, useActiveDocument } from '../store/workspaceStore';
+import {
+  availableModesOf,
+  displayModeOf,
+  isDirty as isDirty_,
+  useActiveDocument,
+  useWorkspaceStore,
+} from '../store/workspaceStore';
 import { useDocComments } from '../hooks/useDocComments';
 import { useDocCriticMarkup } from '../hooks/useDocCriticMarkup';
 import { useLanguage, t } from '../i18n/t';
@@ -33,9 +39,18 @@ export function StatusBar() {
   const filePath = useActiveDocument((d) => d?.path ?? null);
   const content = useActiveDocument((d) => d?.content ?? '');
   const isDirty = useActiveDocument((d) => (d ? isDirty_(d) : false));
-  const editMode = useAppStore((s) => s.editMode);
+  // 모드 컨트롤은 **활성 패널**의 모드를 표시하고 그 패널에 작용한다
+  // (REQ-PANEL-024). 활성 패널이 보조 패널이면 제시할 모드가 없으므로
+  // (`availableModesOf`가 빈 집합) 컨트롤 전체가 비활성으로 제시된다 — 적용
+  // 대상이 없는 컨트롤을 활성으로 보이게 하지 않는다.
+  const editMode = useWorkspaceStore((s) =>
+    s.activePanelId === null ? null : displayModeOf(s, s.activePanelId),
+  );
+  const modesEnabled = useWorkspaceStore((s) =>
+    s.activePanelId !== null && availableModesOf(s, s.activePanelId).length > 0,
+  );
+  const setPanelDisplayMode = useWorkspaceStore((s) => s.setPanelDisplayMode);
   const headingHint = useAppStore((s) => s.headingHint);
-  const setEditMode = useAppStore((s) => s.setEditMode);
   // Subscribe to language so labels re-render on switch.
   useLanguage();
   const name = filePath ? basenameOf(filePath) : t('status.untitled');
@@ -78,18 +93,32 @@ export function StatusBar() {
           {t('status.hint.headingSpace')}
         </span>
       )}
-      <span className="status-bar-mode" role="radiogroup" aria-label={t('status.editMode.group')} data-testid="status-edit-mode">
+      <span
+        className="status-bar-mode"
+        role="radiogroup"
+        aria-label={t('status.editMode.group')}
+        aria-disabled={!modesEnabled}
+        data-testid="status-edit-mode"
+      >
         {MODES.map(({ mode, labelKey, icon, titleKey }) => (
           <button
             key={mode}
             type="button"
             role="radio"
-            aria-checked={editMode === mode}
-            className={`status-bar-mode-btn${editMode === mode ? ' status-bar-mode-btn-active' : ''}`}
+            disabled={!modesEnabled}
+            aria-checked={modesEnabled && editMode === mode}
+            className={`status-bar-mode-btn${modesEnabled && editMode === mode ? ' status-bar-mode-btn-active' : ''}`}
             title={`${t(titleKey)} (${t(labelKey)})`}
             onClick={() => {
-              setEditMode(mode);
-              void window.api.prefsSet({ editor: { defaultMode: mode } });
+              // **`prefs`에 쓰지 않는다**(REQ-PANEL-023, AC-PANEL-023의 호출 횟수
+              // 0 단언). 여기서 쓰면 마지막으로 모드를 바꾼 패널이 전역 기본값을
+              // 결정해 다음 세션의 모든 패널을 규정한다 — 기각된 후보 2다.
+              //
+              // 활성 패널은 **누를 때** 다시 읽는다. 렌더 시점의 값을 닫으면
+              // 렌더와 클릭 사이에 활성 패널이 바뀐 경우 남의 패널 모드를 바꾼다.
+              const target = useWorkspaceStore.getState().activePanelId;
+              if (target === null) return;
+              setPanelDisplayMode(target, mode);
             }}
           >
             <span className="status-bar-mode-icon">{icon}</span>

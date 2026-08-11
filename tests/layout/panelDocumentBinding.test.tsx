@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act } from 'react-dom/test-utils';
 import { EditorView } from '@codemirror/view';
 import { installFakeApi, mountApp, type MountedApp } from '../_helpers/appHarness';
-import { useWorkspaceStore, activeDocument, isDirty } from '../../src/store/workspaceStore';
+import {
+  useWorkspaceStore,
+  activeDocument,
+  displayModeOf,
+  isDirty,
+} from '../../src/store/workspaceStore';
+import { getPanelView, panelIdOfView } from '../../src/store/panelViews';
+import { dispatchPanelEvent, panelIdOfEvent } from '../../src/editor/panelEvents';
 
 /**
  * 패널의 편집이 **그 패널의 현재 문서**에 도달하는가 (REQ-PANEL-010, REQ-WS-028).
@@ -116,5 +123,86 @@ describe('패널 편집은 그 패널의 현재 문서로 간다', () => {
     expect(doc.path, '활성 문서가 바뀌지 않았다').toBe('/w/b.md');
     expect(doc.content, '편집이 이전 문서로 갔다').toBe('ZB\n');
     expect(isDirty(doc), '재바인딩 뒤 편집이 dirty를 만들지 못했다').toBe(true);
+  });
+});
+
+/**
+ * ## 같은 위험이 `onChange` 하나에만 있는 것이 아니다
+ *
+ * 위 검사가 고정하는 것은 `onChange` 하나다. 그러나 위험의 원인은 콜백의
+ * 이름이 아니라 **편집 표면이 문서를 갈아타며 재사용된다**는 성질이다 —
+ * `MarkdownEditor`는 `key`를 받지 않고 그 마운트 이펙트의 deps는 `[]`다(뷰를
+ * 다시 만들면 캐럿·스크롤·실행 취소를 잃으므로 의도된 설계다).
+ *
+ * M4는 그 표면에 콜백과 구독을 더 붙였다(활성 뷰 레지스트리 등록, 편집 포커스에
+ * 의한 활성 패널 판정, 패널별 모드). 그래서 같은 성질을 **계열 전체**에 대해
+ * 고정한다: 문서를 갈아탄 뒤에도 각 배선이 마운트 시점이 아니라 **지금**의
+ * 패널·문서를 가리키는가.
+ */
+describe('문서를 갈아탄 뒤에도 패널 배선 전체가 최신을 가리킨다', () => {
+  it('뷰 레지스트리가 같은 패널을 계속 가리킨다', () => {
+    app = mountApp();
+    const panelId = store().activePanelId!;
+    const viewBefore = getPanelView(panelId);
+    expect(viewBefore, '편집 표면이 등록되지 않았다').not.toBeNull();
+
+    act(() => {
+      store().openInActivePanel('/w/a.md', 'A\n');
+    });
+
+    // 표면은 재사용되므로 같은 인스턴스여야 하고, 귀속도 그대로여야 한다.
+    expect(getPanelView(panelId), '재바인딩이 레지스트리를 끊었다').toBe(viewBefore);
+    expect(panelIdOfView(viewBefore!), '뷰가 다른 패널로 귀속됐다').toBe(panelId);
+  });
+
+  it('편집 포커스에 의한 활성 패널 판정이 계속 그 패널을 가리킨다', () => {
+    app = mountApp();
+    const panelA = store().activePanelId!;
+    act(() => {
+      store().openInNewPanel('/w/b.md', 'B\n');
+    });
+    const panelB = store().activePanelId!;
+
+    // 패널 A가 다른 문서로 갈아탄다.
+    act(() => {
+      store().setActivePanel(panelA);
+      store().openInActivePanel('/w/a2.md', 'A2\n');
+      store().setActivePanel(panelB);
+    });
+
+    const surfaces = [...app.host.querySelectorAll('.cm-content')] as HTMLElement[];
+    act(() => {
+      surfaces[0]!.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    expect(store().activePanelId, '갈아탄 패널의 포커스가 옛 패널을 활성으로 만들었다').toBe(panelA);
+  });
+
+  it('창 전역 이벤트의 발신 패널이 계속 그 패널이다', () => {
+    app = mountApp();
+    const panelId = store().activePanelId!;
+    act(() => {
+      store().openInActivePanel('/w/a.md', 'A\n');
+    });
+
+    let seen: string | null | undefined;
+    const onEvent = (e: Event) => { seen = panelIdOfEvent(e); };
+    window.addEventListener('durumi:memo-panel-toggle', onEvent);
+    try {
+      dispatchPanelEvent(getPanelView(panelId)!, 'durumi:memo-panel-toggle');
+    } finally {
+      window.removeEventListener('durumi:memo-panel-toggle', onEvent);
+    }
+    expect(seen, '재바인딩 뒤 발신 패널이 어긋났다').toBe(panelId);
+  });
+
+  it('표시 모드가 계속 그 패널의 것이다', () => {
+    app = mountApp();
+    const panelId = store().activePanelId!;
+    act(() => {
+      store().setPanelDisplayMode(panelId, 'typora');
+      store().openInActivePanel('/w/a.md', 'A\n');
+    });
+    // 문서를 갈아타도 패널의 모드는 패널에 남는다 — 모드는 문서 축이 아니다.
+    expect(displayModeOf(store(), panelId)).toBe('typora');
   });
 });

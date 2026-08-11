@@ -3,6 +3,7 @@ import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
 import { isWysiwygMode, setEditMode } from '../editMode';
+import { withPanelId } from '../panelEvents';
 
 /**
  * Live decoration for `%%` memos.
@@ -42,7 +43,7 @@ class ChatIconWidget extends WidgetType {
       other.memoFrom === this.memoFrom
     );
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     const tagClass = tagClassFragment(this.tag);
     const btn = document.createElement('span');
     btn.className = `cm-memo-chat-icon cm-memo-chat-icon-${tagClass}`;
@@ -60,8 +61,11 @@ class ChatIconWidget extends WidgetType {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // 버블링 형태는 그대로 둔다 — `window` 직접 발신으로 바꾸면 뷰 DOM에서
+      // 듣는 기존 수신부·테스트가 끊긴다. 덧붙이는 것은 발신 패널뿐이다
+      // (REQ-PANEL-034).
       const ev = new CustomEvent('durumi:memo-focus', {
-        detail: { from: this.memoFrom },
+        detail: withPanelId(view, { from: this.memoFrom }),
         bubbles: true,
       });
       btn.dispatchEvent(ev);

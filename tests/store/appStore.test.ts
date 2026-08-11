@@ -5,9 +5,13 @@ import { useAppStore } from '../../src/store/appStore';
  * 창 전역 상태만 남은 `appStore`의 계약.
  *
  * 문서 축(경로·내용·미저장 여부)은 `workspaceStore`로 이관되었고
- * (SPEC-V03-WORKSPACE-002 REQ-PANEL-010) 여기 남은 것은 테마와 편집 모드다.
- * 모드 전환 두 갈래는 그동안 스토어 수준 검사가 없었다 — 문서 필드가 빠지면서
- * 드러난 공백이므로 여기서 메운다.
+ * (SPEC-V03-WORKSPACE-002 REQ-PANEL-010), **표시 모드는 M4에서 패널 축으로**
+ * 이관되었다(REQ-PANEL-021). 여기 남은 것은 테마와 `defaultMode` — 새 원고
+ * 패널의 초기값이라는 좁은 역할이다(REQ-PANEL-023).
+ *
+ * 모드 전환 두 갈래(`setPanelDisplayMode`·`togglePanelSourceMode`)의 검사는
+ * `tests/store/panelDisplayMode.test.ts`로 옮겨갔다 — 삭제가 아니라 이관이며,
+ * 거기서는 "한 패널의 변경이 다른 패널로 새지 않는가"까지 함께 본다.
  */
 
 beforeEach(() => {
@@ -15,8 +19,7 @@ beforeEach(() => {
     theme: 'light',
     themePreference: 'system',
     systemTheme: 'light',
-    editMode: 'wysiwyg',
-    lastNonMarkdownMode: 'wysiwyg',
+    defaultMode: 'wysiwyg',
     headingHint: false,
   });
 });
@@ -42,28 +45,17 @@ describe('테마 해석', () => {
   });
 });
 
-describe('편집 모드 전환', () => {
-  it('markdown이 아닌 모드로 바꾸면 그것이 마지막 비-markdown 모드가 된다', () => {
-    useAppStore.getState().setEditMode('typora');
-    expect(useAppStore.getState().editMode).toBe('typora');
-    expect(useAppStore.getState().lastNonMarkdownMode).toBe('typora');
+describe('기본 표시 모드', () => {
+  it('설정하면 그대로 남는다 — 새 원고 패널이 읽어갈 값이다', () => {
+    useAppStore.getState().setDefaultMode('typora');
+    expect(useAppStore.getState().defaultMode).toBe('typora');
   });
 
-  it('markdown으로 바꿔도 마지막 비-markdown 모드는 보존된다', () => {
-    useAppStore.getState().setEditMode('typora');
-    useAppStore.getState().setEditMode('markdown');
-    expect(useAppStore.getState().editMode).toBe('markdown');
-    expect(useAppStore.getState().lastNonMarkdownMode, '되돌아갈 모드를 잃었다').toBe('typora');
-  });
-
-  it('토글은 markdown과 직전 모드를 오간다', () => {
-    useAppStore.getState().setEditMode('typora');
-
-    useAppStore.getState().toggleSourceMode();
-    expect(useAppStore.getState().editMode).toBe('markdown');
-
-    useAppStore.getState().toggleSourceMode();
-    expect(useAppStore.getState().editMode).toBe('typora');
+  it('되돌아갈 모드의 기억을 여기 두지 않는다', () => {
+    // 창 전역에 두면 패널 A의 토글이 패널 B의 목적지를 규정한다. 그 기억은
+    // `PanelState.lastNonMarkdownMode`에 있다(REQ-PANEL-021).
+    expect('lastNonMarkdownMode' in useAppStore.getState()).toBe(false);
+    expect('toggleSourceMode' in useAppStore.getState()).toBe(false);
   });
 });
 
@@ -71,6 +63,6 @@ describe('제목 안내 플래그', () => {
   it('표시용 플래그일 뿐 다른 상태를 건드리지 않는다', () => {
     useAppStore.getState().setHeadingHint(true);
     expect(useAppStore.getState().headingHint).toBe(true);
-    expect(useAppStore.getState().editMode).toBe('wysiwyg');
+    expect(useAppStore.getState().defaultMode).toBe('wysiwyg');
   });
 });

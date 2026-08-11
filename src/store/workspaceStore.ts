@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { pathKey, samePath as samePathIdentity } from '@shared/pathIdentity';
-import type { EditMode } from '../editor/editMode';
+import { EDIT_MODES, type EditMode } from '../editor/editMode';
 
 /**
  * 워크스페이스 상태 — **문서 축**과 **패널 축**의 분리 (SPEC-V03-WORKSPACE-002 M1).
@@ -99,7 +99,24 @@ export function isDirty(doc: DocumentState): boolean {
 export interface PanelState {
   readonly panelId: PanelId;
   readonly documentId: DocumentId;
+  /**
+   * 이 패널의 표시 모드 (REQ-PANEL-021).
+   *
+   * M1이 이 필드를 만들었으나 읽는 곳이 0곳이었고, 살아 있는 모드는 창 전역의
+   * `appStore.editMode` 하나였다. M4가 그 배선을 뒤집는다 — 이제 이 값이 살아
+   * 있는 모드이고 `appStore.defaultMode`는 **새 원고 패널의 초기값**으로만 쓰인다
+   * (REQ-PANEL-023).
+   *
+   * 보조 패널에서는 이 값이 쓰이지 않는다. 실효 모드는 `displayModeOf`가 준다.
+   */
   readonly displayMode: EditMode;
+  /**
+   * `Cmd+/`가 되돌아갈 모드. **패널마다 따로** 기억한다.
+   *
+   * 창 전역으로 두면 패널 A에서 토글한 기억이 패널 B의 목적지를 규정한다 —
+   * REQ-PANEL-023이 `defaultMode`에 대해 금지한 것과 같은 형태의 결함이다.
+   */
+  readonly lastNonMarkdownMode: Exclude<EditMode, 'markdown'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +166,45 @@ export function activePanel(s: WorkspaceSnapshot): PanelState | null {
 
 export function activeDocument(s: WorkspaceSnapshot): DocumentState | null {
   return s.activePanelId === null ? null : documentOf(s, s.activePanelId);
+}
+
+// ---------------------------------------------------------------------------
+// 표시 모드 조회 (REQ-PANEL-020·021·022·024)
+// ---------------------------------------------------------------------------
+
+/** 이 패널이 마크다운 원고를 보고 있는가. 판정의 근거는 **문서의 종류**다. */
+export function isMarkdownPanel(s: WorkspaceSnapshot, panelId: PanelId): boolean {
+  return documentOf(s, panelId)?.kind === 'markdown';
+}
+
+/**
+ * 그 패널에 제시할 수 있는 모드 집합 (REQ-PANEL-020·022).
+ *
+ * 원고 패널은 3-모드를 그대로 제공하고, 보조 패널은 **빈 집합**이다 — 마크다운
+ * 마커를 숨기거나 드러내는 개념이 `.py` 문서에 존재하지 않으므로 선택 수단을
+ * 제시하지 않는다. 없는 패널도 빈 집합이다(제시할 대상이 없다).
+ */
+export function availableModesOf(s: WorkspaceSnapshot, panelId: PanelId): readonly EditMode[] {
+  return isMarkdownPanel(s, panelId) ? EDIT_MODES : [];
+}
+
+/**
+ * 그 패널의 **실효** 표시 모드 — 편집 표면에 실제로 넘어가는 값.
+ *
+ * 보조 패널은 `panel.displayMode`가 무엇이든 `markdown`이다. 그 한 줄이
+ * AC-PANEL-022의 "라이브 데코레이션 집합이 비어 있다"를 만든다 —
+ * `MarkdownEditor`의 `decorationsForMode('markdown')`가 빈 배열이기 때문이다.
+ * 데코레이션을 끄는 별도 축을 새로 만들지 않은 이유가 이것이다: 이미 있는 축이
+ * 정확히 그 뜻을 갖고 있고, 축을 하나 더 두면 둘이 어긋날 자리가 생긴다.
+ *
+ * `editModeField` 자체는 여전히 등록된다(`editModeStateExtension`은 모드
+ * 컴파트먼트 **밖**에 있다) — 필드가 없으면 `currentEditMode`의 `typora` 폴백이
+ * 흘러든다(`design.md` §5.2).
+ */
+export function displayModeOf(s: WorkspaceSnapshot, panelId: PanelId): EditMode {
+  const panel = panelById(s, panelId);
+  if (!panel) return 'wysiwyg';
+  return isMarkdownPanel(s, panelId) ? panel.displayMode : 'markdown';
 }
 
 /** 그 문서를 참조하는 패널 전부. v0.3에서는 언제나 0개 또는 1개다. */
@@ -239,8 +295,30 @@ interface WorkspaceStore extends WorkspaceSnapshot {
    * 그 패널을 활성화한다. 사용자에게는 금지가 아니라 그 패널로의 이동이다.
    */
   openInActivePanel: (path: string | null, content: string, kind?: FileKind) => OpenResult;
-  /** 새 패널을 만들어 연다. 같은 경로가 이미 열려 있으면 그 패널로 이동한다. */
-  openInNewPanel: (path: string | null, content: string, kind?: FileKind) => OpenResult;
+  /**
+   * 새 패널을 만들어 연다. 같은 경로가 이미 열려 있으면 그 패널로 이동한다.
+   *
+   * `initialMode`는 **새 원고 패널의 초기 모드**다(REQ-PANEL-023). 스토어가
+   * `prefs`를 읽지 않고 호출부가 넘기는 이유: 그래야 이 스토어가 preload 브리지에
+   * 의존하지 않고, 기본값의 출처가 호출부에서 눈에 보인다.
+   */
+  openInNewPanel: (
+    path: string | null,
+    content: string,
+    kind?: FileKind,
+    initialMode?: EditMode,
+  ) => OpenResult;
+
+  /**
+   * 그 패널의 표시 모드를 바꾼다 (REQ-PANEL-021·023).
+   *
+   * **`prefs`에 쓰지 않는다.** 마지막으로 모드를 바꾼 패널이 전역 기본값을
+   * 결정하면 다음 세션의 모든 패널이 그 선택에 규정된다(기각된 후보 2).
+   * AC-PANEL-023이 `prefsSet` 호출 횟수 0으로 이 성질을 판정한다.
+   */
+  setPanelDisplayMode: (panelId: PanelId, mode: EditMode) => void;
+  /** `Cmd+/` — 그 패널을 markdown과 직전 비-markdown 모드 사이에서 오간다. */
+  togglePanelSourceMode: (panelId: PanelId) => void;
 
   /** 버퍼 편집. `currentRevision`이 내용을 따라가고 미저장 여부는 파생된다. */
   editDocument: (documentId: DocumentId, content: string) => void;
@@ -284,7 +362,12 @@ function initialState(): WorkspaceData {
   // 창은 언제나 패널을 하나 이상 담는다. 시작 상태는 빈 untitled 버퍼 하나이며
   // 이것이 오늘의 단일 패널 동작과 관측상 같다.
   const doc = emptyDocument();
-  const panel: PanelState = { panelId: nextId('panel'), documentId: doc.id, displayMode: 'wysiwyg' };
+  const panel: PanelState = {
+    panelId: nextId('panel'),
+    documentId: doc.id,
+    displayMode: 'wysiwyg',
+    lastNonMarkdownMode: 'wysiwyg',
+  };
   return {
     documents: new Map([[doc.id, doc]]),
     panels: [panel],
@@ -338,7 +421,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       return { panelId, reused: false };
     },
 
-    openInNewPanel: (path, content, kind = 'markdown') => {
+    openInNewPanel: (path, content, kind = 'markdown', initialMode = 'wysiwyg') => {
       const s = get();
       const existing = panelShowingPath(s, path);
       if (existing) {
@@ -349,7 +432,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       const panel: PanelState = {
         panelId: nextId('panel'),
         documentId: doc.id,
-        displayMode: 'wysiwyg',
+        displayMode: initialMode,
+        lastNonMarkdownMode: initialMode === 'markdown' ? 'wysiwyg' : initialMode,
       };
       set({
         documents: new Map(s.documents).set(doc.id, doc),
@@ -385,6 +469,34 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     setActivePanel: (panelId) => {
       if (!panelById(get(), panelId)) return;
       set({ activePanelId: panelId });
+    },
+
+    setPanelDisplayMode: (panelId, mode) => {
+      const s = get();
+      // 그 패널이 제시하지 않는 모드는 설정되지 않는다 — 보조 패널의 모드 집합은
+      // 비어 있으므로(REQ-PANEL-022) 여기서 걸러진다. 저장해 두고 실효값에서만
+      // 무시하면 필드가 조용히 드리프트하고, 그 패널이 나중에 원고로 재바인딩될 때
+      // 사용자가 고른 적 없는 모드가 되살아난다.
+      if (!availableModesOf(s, panelId).includes(mode)) return;
+      set({
+        panels: s.panels.map((p) =>
+          p.panelId === panelId
+            ? {
+                ...p,
+                displayMode: mode,
+                lastNonMarkdownMode: mode === 'markdown' ? p.lastNonMarkdownMode : mode,
+              }
+            : p,
+        ),
+      });
+    },
+
+    togglePanelSourceMode: (panelId) => {
+      const s = get();
+      const panel = panelById(s, panelId);
+      if (!panel) return;
+      const next = panel.displayMode === 'markdown' ? panel.lastNonMarkdownMode : 'markdown';
+      get().setPanelDisplayMode(panelId, next);
     },
 
     closePanel: (panelId) => {

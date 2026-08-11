@@ -1,6 +1,7 @@
 import { EditorView, hoverTooltip, type Tooltip } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { Extension, EditorState } from '@codemirror/state';
+import { dispatchPanelEvent } from '../panelEvents';
 
 /**
  * v0.2.19 - interactive overlay for inline markdown links.
@@ -100,8 +101,14 @@ export interface EditLinkDetail {
   title: string;
 }
 
-export function dispatchEditLink(detail: EditLinkDetail): void {
-  window.dispatchEvent(new CustomEvent<EditLinkDetail>('durumi:edit-link', { detail }));
+/**
+ * 링크 편집 요청을 셸로 올린다.
+ *
+ * `view`는 **발신 패널의 식별자**를 만들기 위해 받는다(REQ-PANEL-034). 없으면
+ * 패널마다 마운트된 툴바가 모두 반응해 링크 대화상자가 패널 수만큼 열린다.
+ */
+export function dispatchEditLink(detail: EditLinkDetail, view: EditorView): void {
+  dispatchPanelEvent(view, 'durumi:edit-link', detail);
 }
 
 function openUrl(url: string): void {
@@ -357,13 +364,16 @@ export function linkContextMenu(): Extension {
           testid: 'link-ctx-edit',
           label: 'Edit link…',
           onSelect: () =>
-            dispatchEditLink({
-              from: link.from,
-              to: link.to,
-              text: link.text,
-              url: link.url,
-              title: link.title,
-            }),
+            dispatchEditLink(
+              {
+                from: link.from,
+                to: link.to,
+                text: link.text,
+                url: link.url,
+                title: link.title,
+              },
+              view,
+            ),
         },
       ]);
       return true;

@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import type { RefObject } from 'react';
 import type { EditorView } from '@codemirror/view';
 import type { BibEntry } from '@shared/bibtex';
 import { insertCitationSmart } from '@shared/citationMerge';
@@ -60,7 +59,7 @@ export interface CitationInsertFlow {
  * helper, and the post-rename atomic citation key migration.
  */
 export function useCitationInsertFlow(
-  editorViewRef: RefObject<EditorView | null>,
+  getActiveView: () => EditorView | null,
 ): CitationInsertFlow {
   const [citationDialogOpen, setCitationDialogOpen] = useState(false);
   const [citePaletteOpen, setCitePaletteOpen] = useState(false);
@@ -105,7 +104,7 @@ export function useCitationInsertFlow(
 
   const insertCitationAtCaret = useCallback(
     (citation: string) => {
-      const view = editorViewRef.current;
+      const view = getActiveView();
       if (!view) return;
       const single = citation.match(/^\[@([^\]\s;,]+)\]$/);
       if (single && single[1]) {
@@ -134,16 +133,16 @@ export function useCitationInsertFlow(
       });
       view.focus();
     },
-    [editorViewRef],
+    [getActiveView],
   );
 
   const migrateCitationsInDoc = useCallback(
     (oldKey: string, newKey: string) => {
-      const view = editorViewRef.current;
+      const view = getActiveView();
       if (!view) return;
       // Lazy import keeps the boot path lean.
       void import('@shared/citationKey').then(({ renameCitationKeyChanges }) => {
-        const v = editorViewRef.current;
+        const v = getActiveView();
         if (!v) return;
         const changes = renameCitationKeyChanges(
           v.state.doc.toString(),
@@ -154,7 +153,7 @@ export function useCitationInsertFlow(
         v.dispatch({ changes });
       });
     },
-    [editorViewRef],
+    [getActiveView],
   );
 
   return {

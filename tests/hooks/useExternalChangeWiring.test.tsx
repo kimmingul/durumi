@@ -179,7 +179,7 @@ describe('AC-PANEL-050b — 같은 문서의 등록·해제는 참조 카운트�
    */
   const addPanelSharing = (panelId: string, documentId: string): void => {
     act(() => {
-      const extra: PanelState = { panelId, documentId, displayMode: 'wysiwyg' };
+      const extra: PanelState = { panelId, documentId, displayMode: 'wysiwyg', lastNonMarkdownMode: 'wysiwyg' };
       useWorkspaceStore.setState({ panels: [...workspace().panels, extra] });
     });
   };
@@ -257,6 +257,7 @@ describe('참조 카운트의 한 사례 — 단일 패널이 문서를 갈아�
         panelId: 'panel-shadow',
         documentId: first.documentId,
         displayMode: 'wysiwyg',
+        lastNonMarkdownMode: 'wysiwyg',
       };
       useWorkspaceStore.setState({ panels: [...workspace().panels, extra] });
     });

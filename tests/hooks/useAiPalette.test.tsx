@@ -19,8 +19,10 @@ interface CapturedHook {
 }
 
 function HookProbe(props: { capture: CapturedHook; view: EditorView }) {
-  const viewRef = useRef<EditorView | null>(props.view);
-  const palette = useAiPalette(viewRef);
+  // 훅은 이제 ref가 아니라 **접근자**를 받는다(REQ-PANEL-031, OQ-4 후보 1) —
+  // 사용 시점에 활성 패널을 읽어야 낡은 뷰 창이 닫힌다.
+  const getView = useRef(() => props.view as EditorView | null).current;
+  const palette = useAiPalette(getView);
   props.capture.current = palette;
   return null;
 }

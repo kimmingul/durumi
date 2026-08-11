@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import type { RefObject } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { currentParagraph } from '../editor/paragraphContext';
 import { showToast } from '../store/toastStore';
@@ -37,7 +36,7 @@ export interface AiPalette {
  * `<AiCommandPalette>` component — but it exposes the state and the three
  * imperative actions the dialog needs.
  */
-export function useAiPalette(editorViewRef: RefObject<EditorView | null>): AiPalette {
+export function useAiPalette(getActiveView: () => EditorView | null): AiPalette {
   const [state, setState] = useState<AiPaletteState>({
     open: false,
     selection: '',
@@ -48,7 +47,7 @@ export function useAiPalette(editorViewRef: RefObject<EditorView | null>): AiPal
   });
 
   const open = useCallback(async () => {
-    const v = editorViewRef.current;
+    const v = getActiveView();
     if (!v) return;
     const sel = v.state.selection.main;
     const selection = v.state.sliceDoc(sel.from, sel.to);
@@ -80,7 +79,7 @@ export function useAiPalette(editorViewRef: RefObject<EditorView | null>): AiPal
       to: sel.to,
       hasKey: hasA || hasO,
     });
-  }, [editorViewRef]);
+  }, [getActiveView]);
 
   const close = useCallback(() => {
     setState((s) => ({ ...s, open: false }));
@@ -88,7 +87,7 @@ export function useAiPalette(editorViewRef: RefObject<EditorView | null>): AiPal
 
   const accept = useCallback(
     (rewritten: string) => {
-      const v = editorViewRef.current;
+      const v = getActiveView();
       if (!v) return;
       v.dispatch({
         changes: { from: state.from, to: state.to, insert: rewritten },
@@ -96,7 +95,7 @@ export function useAiPalette(editorViewRef: RefObject<EditorView | null>): AiPal
       });
       v.focus();
     },
-    [editorViewRef, state.from, state.to],
+    [getActiveView, state.from, state.to],
   );
 
   return { state, open, close, accept };

@@ -2,8 +2,8 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { EditorToolbar } from './EditorToolbar';
 import { MarkdownEditor } from '../editor/MarkdownEditor';
-import { useAppStore } from '../store/appStore';
 import {
+  displayModeOf,
   documentOf,
   useWorkspaceStore,
   type DocumentState,
@@ -130,7 +130,13 @@ function Panel({
   onOpenCitePalette,
   onPickImage,
 }: PanelProps) {
-  const editMode = useAppStore((s) => s.editMode);
+  // 표시 모드는 **이 패널의 것**이다(REQ-PANEL-021). 창 전역 값 하나를 읽으면 한
+  // 패널의 모드 변경이 모든 패널을 규정한다.
+  //
+  // 보조 패널의 실효 모드는 `markdown`이 되고(REQ-PANEL-022) 그 한 줄이
+  // `decorationsForMode('markdown') === []`를 통해 라이브 데코레이션 집합을
+  // 비운다 — 데코레이션을 끄는 축을 따로 만들지 않았다.
+  const editMode = useWorkspaceStore((s) => displayModeOf(s, panel.panelId));
   // 툴바는 **자기 패널의** 뷰에 작용한다. 전역 뷰 하나를 겨냥하면 활성 패널이
   // 아닌 패널의 툴바가 남의 문서를 고친다.
   const [view, setView] = useState<EditorView | null>(null);
@@ -178,7 +184,19 @@ function Panel({
         onOpenCitePalette={onOpenCitePalette}
         onPickImage={onPickImage}
       />
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      {/*
+        활성 패널은 **가장 최근에 편집 포커스를 받은 패널**이다(REQ-PANEL-030).
+        그래서 이 핸들러는 편집 표면을 감싸는 상자에만 붙는다 — 툴바·사이드바·
+        상태바로 포커스가 옮겨가는 것은 활성 패널을 바꾸지 않는다(AC-PANEL-030b).
+        툴바 버튼을 누르려고 포커스가 떠나는 것이 활성 패널을 잃는 것이어서는
+        안 된다.
+
+        핸들러는 렌더 스코프를 닫지 않고 **호출 시점에** 스토어를 읽는다.
+      */}
+      <div
+        style={{ flex: 1, overflow: 'auto', minHeight: 0 }}
+        onFocusCapture={() => useWorkspaceStore.getState().setActivePanel(panel.panelId)}
+      >
         <MarkdownEditor
           value={doc?.content ?? ''}
           onChange={handleChange}

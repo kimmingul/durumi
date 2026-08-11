@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
+import { useWorkspaceStore } from '../store/workspaceStore';
 import { useSidebarStore } from '../store/sidebarStore';
 import { useRightSidebarStore } from '../store/rightSidebarStore';
 import { useMemoPanelStore } from '../store/memoPanelStore';
@@ -55,7 +56,13 @@ export function usePreferencesInit(): void {
         useMemoSidecarStore.getState().setAuthor(prefs.author.name);
       }
       if (prefs.editor?.defaultMode) {
-        useAppStore.getState().setEditMode(prefs.editor.defaultMode);
+        const mode = prefs.editor.defaultMode;
+        useAppStore.getState().setDefaultMode(mode);
+        // 부트 패널에도 적용한다. 부팅 시점에는 패널이 하나뿐이고 사용자가 아직
+        // 아무것도 바꾸지 않았으므로, 기본값이 곧 그 패널의 **초기** 모드다
+        // (REQ-PANEL-023). 이후의 패널별 변경은 이 값을 되짚지 않는다.
+        const ws = useWorkspaceStore.getState();
+        for (const panel of ws.panels) ws.setPanelDisplayMode(panel.panelId, mode);
       }
       // v0.1.11 Phase 3 — inject the persisted journal-style preset into
       // the document so the editor + export pipeline pick it up without

@@ -20,6 +20,8 @@ import {
 } from '../editor/keymap/wrapCriticMarkup';
 import { inlineMarksAt, type InlineMarkActiveSet } from '../editor/markdownExt/inlineMarkDetection';
 import { useActiveDocument } from '../store/workspaceStore';
+import { panelIdOfView } from '../store/panelViews';
+import { addPanelScopedListener } from '../editor/panelEvents';
 import { t, useLanguage } from '../i18n/t';
 import { TableSizePopover } from './TableSizePopover';
 import { ToolbarMenu, type ToolbarMenuItem } from './ToolbarMenu';
@@ -375,6 +377,12 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
   // overlay fires `durumi:edit-link` with the existing link's range +
   // current text/url/title; we pre-fill the dialog and remember the range
   // so confirmLink replaces it instead of inserting at the current caret.
+  // 툴바는 **패널마다 하나씩** 마운트된다. 그래서 이 두 리스너는 자기 패널이
+  // 발신자가 아닌 이벤트를 건너뛴다(REQ-PANEL-034) — 걸러내지 않으면 패널이 N개일
+  // 때 링크 대화상자가 N개 열린다. 자기 패널은 **호출 시점에** 뷰로부터 되찾는다;
+  // 값으로 붙들면 뷰가 준비되기 전의 null을 리스너가 영구히 붙든다.
+  const myPanelId = useCallback(() => (view ? panelIdOfView(view) : null), [view]);
+
   useEffect(() => {
     function onEdit(event: Event): void {
       const detail = (event as CustomEvent<{ from: number; to: number; text: string; url: string; title: string }>).detail;
@@ -385,9 +393,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
       setLinkInitialTitle(detail.title ?? '');
       setLinkOpen(true);
     }
-    window.addEventListener('durumi:edit-link', onEdit as EventListener);
-    return () => window.removeEventListener('durumi:edit-link', onEdit as EventListener);
-  }, []);
+    return addPanelScopedListener('durumi:edit-link', myPanelId, onEdit);
+  }, [myPanelId]);
 
   // v0.2.21 — listen for the menu/right-click "Insert link" path. The
   // native context menu (`electron/contextMenu.ts → 'link'`), the Cmd+K
@@ -410,9 +417,8 @@ export function EditorToolbar({ view, visible, onOpenCitePalette, onPickImage }:
       setLinkInitialTitle('');
       setLinkOpen(true);
     }
-    window.addEventListener('durumi:open-link-dialog', onOpen as EventListener);
-    return () => window.removeEventListener('durumi:open-link-dialog', onOpen as EventListener);
-  }, [view]);
+    return addPanelScopedListener('durumi:open-link-dialog', myPanelId, onOpen);
+  }, [view, myPanelId]);
 
   if (!visible) return null;
 

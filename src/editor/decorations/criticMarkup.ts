@@ -3,6 +3,7 @@ import { EditorState, Extension, Range, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { getActiveLineRange, hasActiveLine, userActiveField } from './activeLine';
 import { isWysiwygMode, setEditMode } from '../editMode';
+import { withPanelId } from '../panelEvents';
 
 /**
  * Live decorations for CriticMarkup track-changes operators.
@@ -77,7 +78,7 @@ class CommentPillWidget extends WidgetType {
       other.preview === this.preview
     );
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     const btn = document.createElement('span');
     btn.className = 'cm-cm-comment-pill';
     btn.setAttribute('role', 'button');
@@ -93,8 +94,9 @@ class CommentPillWidget extends WidgetType {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // comment.ts와 같은 규정: 버블링 형태는 그대로 두고 발신 패널만 덧붙인다.
       const ev = new CustomEvent('durumi:cm-focus', {
-        detail: { from: this.cmFrom },
+        detail: withPanelId(view, { from: this.cmFrom }),
         bubbles: true,
       });
       btn.dispatchEvent(ev);

@@ -1,6 +1,7 @@
-import { hoverTooltip, type Tooltip } from '@codemirror/view';
+import { hoverTooltip, type EditorView, type Tooltip } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { useBibliographyStore } from '../../store/bibliographyStore';
+import { withPanelId } from '../panelEvents';
 import type { BibEntry } from '@shared/bibtex';
 
 /**
@@ -41,7 +42,7 @@ export function citationHoverTooltip(): Extension {
           const dom = document.createElement('div');
           dom.className = 'cm-citation-tooltip';
           for (const entry of resolved) {
-            dom.appendChild(renderEntry(entry, view.dom));
+            dom.appendChild(renderEntry(entry, view));
           }
           return { dom };
         },
@@ -81,7 +82,7 @@ export function findCitationSpan(line: string, col: number): CitationSpan | null
   return null;
 }
 
-function renderEntry(entry: BibEntry, _viewDom: HTMLElement): HTMLElement {
+function renderEntry(entry: BibEntry, view: EditorView): HTMLElement {
   const f = entry.fields;
   const card = document.createElement('div');
   card.className = 'cm-citation-tooltip-card';
@@ -137,7 +138,7 @@ function renderEntry(entry: BibEntry, _viewDom: HTMLElement): HTMLElement {
       // decoupled from the IPC surface.
       window.dispatchEvent(
         new CustomEvent('durumi:reference-open', {
-          detail: { relPath: f.file, citationKey: entry.key },
+          detail: withPanelId(view, { relPath: f.file, citationKey: entry.key }),
         }),
       );
     });

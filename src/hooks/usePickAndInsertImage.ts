@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import type { RefObject } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { useActiveDocument } from '../store/workspaceStore';
 
@@ -17,11 +16,11 @@ import { useActiveDocument } from '../store/workspaceStore';
  * `migratePendingInContent` in `electron/pendingAssets.ts`).
  */
 export function usePickAndInsertImage(
-  editorViewRef: RefObject<EditorView | null>,
+  getActiveView: () => EditorView | null,
 ): () => Promise<void> {
   const filePath = useActiveDocument((d) => d?.path ?? null);
   return useCallback(async () => {
-    const view = editorViewRef.current;
+    const view = getActiveView();
     if (!view) return;
     const result = await window.api.imagePickAndSave(filePath);
     if (!result.ok) {
@@ -44,5 +43,5 @@ export function usePickAndInsertImage(
       selection: { anchor: cursor + md.length },
     });
     view.focus();
-  }, [editorViewRef, filePath]);
+  }, [getActiveView, filePath]);
 }

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { StatusBar } from './components/StatusBar';
 import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
@@ -46,6 +46,7 @@ import {
   useActiveDocument,
   useWorkspaceStore,
 } from './store/workspaceStore';
+import { getActiveView, setPanelView } from './store/panelViews';
 import { PanelContainer } from './components/PanelContainer';
 import { useMemoCaretFocus } from './hooks/useMemoCaretFocus';
 import type { Macro } from '@shared/ipc-contract';
@@ -64,12 +65,10 @@ import { useMenuCommandRouter } from './hooks/useMenuCommandRouter';
 import { usePickAndInsertImage } from './hooks/usePickAndInsertImage';
 
 export function App() {
-  const editorViewRef = useRef<EditorView | null>(null);
-  // Mirror the ref in React state so consumers that JSX-render against the
-  // EditorView (the toolbar's active-mark detection, sidebars, etc.) re-render
-  // when the editor mounts. Callbacks fetched from a ref still see the latest
-  // view without an extra render pass — the ref stays the source of truth for
-  // event handlers, and `editorView` is the source of truth for JSX.
+  // JSX가 뷰를 직접 받는 소비자(툴바의 활성 마크 판정, 사이드바)를 위해 활성 뷰를
+  // React 상태로도 들고 있다. **이벤트 핸들러는 이 상태를 쓰지 않는다** — 그쪽은
+  // `getActiveView()` 접근자로 사용 시점에 읽는다(REQ-PANEL-031, OQ-4 후보 1).
+  // 상태를 핸들러가 닫으면 낡은 뷰 창이 되살아난다.
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const filePath = useActiveDocument((d) => d?.path ?? null);
   const content = useActiveDocument((d) => d?.content ?? '');
@@ -81,14 +80,16 @@ export function App() {
   }, []);
   const panels = useWorkspaceStore((s) => s.panels);
   const activePanelId = useWorkspaceStore((s) => s.activePanelId);
-  // 패널 식별자 → 그 패널의 편집 표면. 사이드바는 **활성 패널**의 뷰를 겨냥한다
-  // (REQ-PANEL-065) — "가장 왼쪽 패널"이 아니다. 레이아웃 순서가 데이터 귀속을
-  // 결정하면 패널을 재배치할 때 서지·메모가 조용히 다른 원고를 가리킨다.
-  const panelViewsRef = useRef<Map<string, EditorView>>(new Map());
+  // 패널 식별자 → 그 패널의 편집 표면. 대응은 `store/panelViews.ts`가 소유한다 —
+  // 사이드바는 **활성 패널**의 뷰를 겨냥하고(REQ-PANEL-065) "가장 왼쪽 패널"이
+  // 아니다. 레이아웃 순서가 데이터 귀속을 결정하면 패널을 재배치할 때 서지·메모가
+  // 조용히 다른 원고를 가리킨다.
+  //
+  // epoch는 **렌더 트리거**일 뿐 진실의 출처가 아니다. 진실은 레지스트리에 있고
+  // JSX만 이 숫자를 보고 다시 읽는다.
   const [panelViewEpoch, setPanelViewEpoch] = useState(0);
   const handlePanelViewReady = useCallback((panelId: string, view: EditorView | null) => {
-    if (view) panelViewsRef.current.set(panelId, view);
-    else panelViewsRef.current.delete(panelId);
+    setPanelView(panelId, view);
     setPanelViewEpoch((n) => n + 1);
   }, []);
   const [macros, setMacros] = useState<Macro[]>([]);
@@ -113,24 +114,22 @@ export function App() {
   // Auto-focus the matching card when the caret lands on a memo's line.
   useMemoCaretFocus(editorView, content);
 
-  // 활성 패널의 뷰가 곧 사이드바·커맨드의 대상이다. 활성 패널이 바뀌거나 그
-  // 패널의 뷰가 준비/파기되면 갱신된다.
+  // 활성 패널의 뷰가 곧 사이드바의 대상이다. 활성 패널이 바뀌거나 그 패널의 뷰가
+  // 준비/파기되면 갱신된다.
   useEffect(() => {
-    const next = activePanelId ? (panelViewsRef.current.get(activePanelId) ?? null) : null;
-    editorViewRef.current = next;
-    setEditorView(next);
+    void activePanelId;
+    setEditorView(getActiveView());
   }, [activePanelId, panelViewEpoch]);
 
   // Feature slices — each owns a coherent slice of menu-command behaviour.
   const fileCommands = useFileMenuCommands();
   const exportFlow = useExportFlow({ maybeDiscard: fileCommands.maybeDiscard });
-  const citationFlow = useCitationInsertFlow(editorViewRef);
-  const aiPalette = useAiPalette(editorViewRef);
+  const citationFlow = useCitationInsertFlow(getActiveView);
+  const aiPalette = useAiPalette(getActiveView);
   const workspace = useWorkspaceMenu();
 
   // Wire all slices into the menu command dispatcher.
   useMenuCommandRouter({
-    editorViewRef,
     fileCommands,
     exportFlow,
     citationFlow,
@@ -141,7 +140,7 @@ export function App() {
     setShortcutsOpen,
   });
 
-  const pickAndInsertImage = usePickAndInsertImage(editorViewRef);
+  const pickAndInsertImage = usePickAndInsertImage(getActiveView);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -155,7 +154,7 @@ export function App() {
             await fileCommands.doOpenPath(absPath);
             // Defer line jump until after the editor mounts the new doc.
             setTimeout(() => {
-              const view = editorViewRef.current;
+              const view = getActiveView();
               if (!view) return;
               const safeLine = Math.min(Math.max(line, 1), view.state.doc.lines);
               const info = view.state.doc.line(safeLine);
@@ -182,7 +181,7 @@ export function App() {
           onCitationRenamed={citationFlow.migrateCitationsInDoc}
           onOpenAiPalette={() => { void aiPalette.open(); }}
           onSuggestCitations={() => {
-            const v = editorViewRef.current;
+            const v = getActiveView();
             if (!v) return;
             const para = currentParagraph(v.state);
             void Promise.all([
@@ -297,7 +296,7 @@ export function App() {
             hasKey={citationFlow.citeSuggestState.hasKey}
             onClose={citationFlow.closeCiteSuggest}
             onAccept={(key) => {
-              const v = editorViewRef.current;
+              const v = getActiveView();
               if (!v) return;
               // Insert `[@key]` right after the paragraph (at insertAt).
               // Putting it at paragraph end avoids guessing intra-sentence

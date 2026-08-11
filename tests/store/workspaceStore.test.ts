@@ -62,7 +62,12 @@ describe('AC-PANEL-010 — 문서 상태와 패널 상태의 소유 축이 분�
     expect(documentFields).toEqual(
       ['content', 'currentRevision', 'id', 'kind', 'path', 'savedRevision'].sort(),
     );
-    expect(panelFields).toEqual(['displayMode', 'documentId', 'panelId'].sort());
+    // M4에서 `lastNonMarkdownMode`가 붙었다 — `Cmd+/`가 되돌아갈 모드의 기억은
+    // 표시 모드 축의 일부이므로 패널이 갖는다(REQ-PANEL-021). 창 전역에 두면
+    // 패널 A의 토글이 패널 B의 목적지를 규정한다.
+    expect(panelFields).toEqual(
+      ['displayMode', 'documentId', 'lastNonMarkdownMode', 'panelId'].sort(),
+    );
 
     // 문서가 패널 소유 개념을 갖지 않는다.
     for (const owned of ['caret', 'selection', 'scroll', 'history', 'displayMode', 'panelId']) {
@@ -161,7 +166,7 @@ describe('AC-PANEL-011a — 축은 붕괴되지 않는다, 구조는 1:N을 표�
 
     // 같은 문서를 두 패널이 참조하는 것을 구조가 막지 않는다. v0.3은 그러지
     // 않을 뿐이며, 막혀 있다면 v0.4의 dual-open이 재작성이 된다.
-    const second: PanelState = { panelId: 'panel-probe', documentId, displayMode: 'wysiwyg' };
+    const second: PanelState = { panelId: 'panel-probe', documentId, displayMode: 'wysiwyg', lastNonMarkdownMode: 'wysiwyg' };
     useWorkspaceStore.setState({ panels: [...store().panels, second] });
     expect(panelsReferencing(store(), documentId).map((p) => p.panelId)).toEqual([
       panelId,
@@ -180,7 +185,7 @@ describe('AC-PANEL-011a — 축은 붕괴되지 않는다, 구조는 1:N을 표�
     // v0.3에서 도달 불가한 분기: 참조 패널이 둘이면 확인을 요구하지 않는다.
     // 도달 불가한 채로 **표현되어 있다**는 것이 이 단언의 요점이다.
     useWorkspaceStore.setState({
-      panels: [...store().panels, { panelId: 'panel-probe', documentId, displayMode: 'wysiwyg' }],
+      panels: [...store().panels, { panelId: 'panel-probe', documentId, displayMode: 'wysiwyg', lastNonMarkdownMode: 'wysiwyg' }],
     });
     expect(isLastReferencingPanel(store(), panelId)).toBe(false);
     expect(needsDiscardConfirm(store(), panelId)).toBe(false);

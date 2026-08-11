@@ -1,15 +1,17 @@
 import { useEffect } from 'react';
-import type { RefObject } from 'react';
 import type { EditorView } from '@codemirror/view';
 import type { MenuCommand } from '@shared/ipc-contract';
 import { useAppStore } from '../store/appStore';
 import {
   activeDocument,
   isDirty as isDocumentDirty,
+  isMarkdownPanel,
   requestClosePanel,
   useActiveDocument,
   useWorkspaceStore,
 } from '../store/workspaceStore';
+import { getActiveView } from '../store/panelViews';
+import { dispatchPanelEvent } from '../editor/panelEvents';
 import { useSidebarStore } from '../store/sidebarStore';
 import { basenameOf } from '../utils/path';
 import { useRightSidebarStore } from '../store/rightSidebarStore';
@@ -38,8 +40,23 @@ import type { CitationInsertFlow } from './useCitationInsertFlow';
 import type { AiPalette } from './useAiPalette';
 import type { WorkspaceMenu } from './useWorkspaceMenu';
 
+/**
+ * 마크다운 전용 커맨드를 활성 패널에 적용한다 — 대상이 없으면 **무동작**.
+ *
+ * 뷰를 인자가 아니라 **접근자**로 받는 것이 요점이다. 호출부가 뷰를 먼저 꺼내
+ * 넘기면 그 순간 낡은 뷰 창이 다시 열린다.
+ */
+function applyToMarkdownView(
+  mdView: () => EditorView | null,
+  apply: (view: EditorView) => void,
+): void {
+  const v = mdView();
+  if (!v) return;
+  apply(v);
+  v.focus();
+}
+
 interface MenuCommandRouterDeps {
-  editorViewRef: RefObject<EditorView | null>;
   fileCommands: FileMenuCommands;
   exportFlow: ExportFlow;
   citationFlow: CitationInsertFlow;
@@ -62,10 +79,16 @@ interface MenuCommandRouterDeps {
  *
  * Every menu command in the renderer routes through here; if you add a new
  * `MenuCommand`, add its branch in this hook and not back in App.tsx.
+ *
+ * ## 뷰는 진입 시점이 아니라 **사용 시점**에 읽는다 (REQ-PANEL-031, OQ-4 후보 1)
+ *
+ * 예전에는 `const view = editorViewRef.current`가 이 `async` 핸들러의 첫 줄이었고
+ * 그 아래로 `await` 분기가 여럿이었다. 비동기 커맨드를 처리하는 동안 활성 패널이
+ * 바뀌면 그 지역 변수는 이미 활성이 아닌 패널의 뷰를 가리킨다 — 사용자가 보고
+ * 있지 않은 문서가 조용히 바뀐다. 뷰가 하나뿐일 때만 무해했다.
  */
 export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
   const {
-    editorViewRef,
     fileCommands,
     exportFlow,
     citationFlow,
@@ -81,8 +104,6 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
   const isDirty = useActiveDocument((d) => (d ? isDocumentDirty(d) : false));
   const themePreference = useAppStore((s) => s.themePreference);
   const setThemePreference = useAppStore((s) => s.setThemePreference);
-  const setEditModeStore = useAppStore((s) => s.setEditMode);
-  const toggleSourceMode = useAppStore((s) => s.toggleSourceMode);
   const toggleSidebarVisible = useSidebarStore((s) => s.toggleVisible);
   const showWith = useSidebarStore((s) => s.showWith);
   const toggleRightSidebarVisible = useRightSidebarStore((s) => s.toggleVisible);
@@ -104,7 +125,17 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
 
   useEffect(() => {
     return window.api.onMenuCommand(async (cmd: MenuCommand) => {
-      const view = editorViewRef.current;
+      // 뷰 의존 커맨드의 대상은 **활성 패널**이며, 매 사용마다 다시 읽는다.
+      const view = (): EditorView | null => getActiveView();
+      // 마크다운 전용 커맨드는 활성 패널이 보조 패널이면 **아무 일도 하지 않는다**
+      // (REQ-PANEL-032). 다른 패널로 우회 적용하지 않는다 — 사용자가 보고 있지
+      // 않은 문서를 조용히 바꾸는 것이 최악의 결과이므로 "마지막 마크다운 패널로
+      // 보낸다"는 대안은 채택되지 않는다.
+      const mdView = (): EditorView | null => {
+        const s = useWorkspaceStore.getState();
+        if (s.activePanelId === null || !isMarkdownPanel(s, s.activePanelId)) return null;
+        return getActiveView();
+      };
       // SPEC-V03-WORKSPACE-001 REQ-WS-047a: 수동 새로고침의 **호출 가능한**
       // 진입점. 시각적 어포던스(버튼 위치·단축키)는 SPEC-2 소유이므로
       // 여기서는 메뉴 커맨드로만 노출한다.
@@ -129,15 +160,18 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         void window.api.prefsSet({ theme: next });
         return;
       }
+      // 모드 커맨드는 **활성 패널**에 작용하고 `prefs`에 쓰지 않는다
+      // (REQ-PANEL-023·024). 예전에는 여기서 `prefs.editor.defaultMode`를
+      // 덮어썼고, 그래서 마지막으로 모드를 바꾼 패널이 다음 세션의 모든 패널을
+      // 규정했다 — 기각된 후보 2다.
       if (cmd === 'toggleSourceMode') {
-        toggleSourceMode();
-        // Persist the resulting mode so the menu radio + next session match.
-        void window.api.prefsSet({ editor: { defaultMode: useAppStore.getState().editMode } });
+        const panelId = useWorkspaceStore.getState().activePanelId;
+        if (panelId !== null) useWorkspaceStore.getState().togglePanelSourceMode(panelId);
         return;
       }
       if (typeof cmd === 'object' && cmd.type === 'setEditMode') {
-        setEditModeStore(cmd.mode);
-        void window.api.prefsSet({ editor: { defaultMode: cmd.mode } });
+        const panelId = useWorkspaceStore.getState().activePanelId;
+        if (panelId !== null) useWorkspaceStore.getState().setPanelDisplayMode(panelId, cmd.mode);
         return;
       }
       if (cmd === 'openFolder') { await workspace.openWorkspaceFolder(); return; }
@@ -147,7 +181,13 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         // 트랜잭션 동기화 프로토콜(`design.md` §2.5의 다섯 의무) 없이 중복 뷰를
         // 출하하면 한쪽의 키 입력이 다른 쪽에서 문서 전체 교체가 된다.
         // 따라서 v0.3의 분할은 "두 번째 파일을 열 자리를 만드는 것"이다.
-        useWorkspaceStore.getState().openInNewPanel(null, '');
+        //
+        // 새 원고 패널의 초기 모드는 `prefs.editor.defaultMode`다(REQ-PANEL-023).
+        // 분할한 패널의 현재 모드를 물려주지 않는다 — 기본값의 의미가 "새 패널이
+        // 어떻게 열리는가"이므로 출처는 언제나 그 하나여야 한다.
+        useWorkspaceStore
+          .getState()
+          .openInNewPanel(null, '', 'markdown', useAppStore.getState().defaultMode);
         return;
       }
       if (cmd === 'closePanel') {
@@ -176,14 +216,15 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
       if (cmd === 'showReferences') { rightSidebarShowWith('references'); return; }
       if (cmd === 'showAi') { rightSidebarShowWith('ai'); return; }
       if (cmd === 'openKeyboardShortcuts') { setShortcutsOpen(true); return; }
-      if (cmd === 'addMemo' && view) { wrapComment(view); view.focus(); return; }
-      if (cmd === 'cmInsert' && view) { wrapCmInsert(view); view.focus(); return; }
-      if (cmd === 'cmDelete' && view) { wrapCmDelete(view); view.focus(); return; }
-      if (cmd === 'cmSubstitute' && view) { wrapCmSubstitute(view); view.focus(); return; }
-      if (cmd === 'cmHighlight' && view) { wrapCmHighlight(view); view.focus(); return; }
-      if (cmd === 'cmComment' && view) { wrapCmComment(view); view.focus(); return; }
-      if (cmd === 'nextMemo' && view) { nextMemo(view); view.focus(); return; }
-      if (cmd === 'prevMemo' && view) { prevMemo(view); view.focus(); return; }
+      // 아래는 전부 마크다운 전용이다 — `mdView()`가 null이면 무동작으로 끝난다.
+      if (cmd === 'addMemo') { applyToMarkdownView(mdView, wrapComment); return; }
+      if (cmd === 'cmInsert') { applyToMarkdownView(mdView, wrapCmInsert); return; }
+      if (cmd === 'cmDelete') { applyToMarkdownView(mdView, wrapCmDelete); return; }
+      if (cmd === 'cmSubstitute') { applyToMarkdownView(mdView, wrapCmSubstitute); return; }
+      if (cmd === 'cmHighlight') { applyToMarkdownView(mdView, wrapCmHighlight); return; }
+      if (cmd === 'cmComment') { applyToMarkdownView(mdView, wrapCmComment); return; }
+      if (cmd === 'nextMemo') { applyToMarkdownView(mdView, nextMemo); return; }
+      if (cmd === 'prevMemo') { applyToMarkdownView(mdView, prevMemo); return; }
       if (cmd === 'toggleExportIncludeComments') {
         const prefs = await window.api.prefsGet();
         await window.api.prefsSet({ exportIncludeComments: !prefs.exportIncludeComments });
@@ -210,13 +251,16 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         return;
       }
       if (cmd === 'aiCitationSuggest') {
-        const v = view;
-        if (!v) return;
-        const para = currentParagraph(v.state);
         const [hasA, hasO] = await Promise.all([
           window.api.aiHasKey('anthropic'),
           window.api.aiHasKey('openai-compatible'),
         ]);
+        // 뷰는 **await 이후**에 읽는다. 키 조회를 기다리는 동안 사용자가 다른
+        // 패널로 옮겨갔다면 제안은 그 패널의 문단에 대한 것이어야 한다 —
+        // 진입 시점의 뷰를 붙들면 보고 있지 않은 문서의 문단을 제안한다.
+        const v = mdView();
+        if (!v) return;
+        const para = currentParagraph(v.state);
         citationFlow.setCiteSuggestState({
           open: true,
           paragraph: para?.text ?? '',
@@ -227,14 +271,20 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
       }
       if (cmd === 'openCitePalette') { citationFlow.setCitePaletteOpen(true); return; }
       if (cmd === 'openAiPalette') { await aiPalette.open(); return; }
-      if (cmd === 'toggleFocusMode' && view) {
-        const cur = view.state.field(focusModeField, false);
-        view.dispatch({ effects: setFocusMode.of(!cur) });
+      // 포커스/타이프라이터 모드는 마크다운 전용이 아니다 — 어떤 버퍼에서도
+      // 의미가 있으므로 활성 패널의 뷰에 그대로 작용한다.
+      if (cmd === 'toggleFocusMode') {
+        const v = view();
+        if (!v) return;
+        const cur = v.state.field(focusModeField, false);
+        v.dispatch({ effects: setFocusMode.of(!cur) });
         return;
       }
-      if (cmd === 'toggleTypewriterMode' && view) {
-        const cur = view.state.field(typewriterModeField, false);
-        view.dispatch({ effects: setTypewriterMode.of(!cur) });
+      if (cmd === 'toggleTypewriterMode') {
+        const v = view();
+        if (!v) return;
+        const cur = v.state.field(typewriterModeField, false);
+        v.dispatch({ effects: setTypewriterMode.of(!cur) });
         return;
       }
       if (cmd === 'languageChanged') {
@@ -244,18 +294,19 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         setLang(resolveRendererLang(prefs.language));
         return;
       }
-      if (cmd === 'bold' && view) { applyInlineFormat(view, 'bold'); view.focus(); return; }
-      if (cmd === 'italic' && view) { applyInlineFormat(view, 'italic'); view.focus(); return; }
-      if (cmd === 'code' && view) { applyInlineFormat(view, 'code'); view.focus(); return; }
-      if (cmd === 'strikethrough' && view) { applyInlineFormat(view, 'strike'); view.focus(); return; }
-      if (cmd === 'insertTable' && view) { insertTableHelper(view); view.focus(); return; }
-      if (cmd === 'toggleTask' && view) { toggleTaskHelper(view); view.focus(); return; }
-      if (cmd === 'codeBlock' && view) { insertCodeBlockHelper(view); view.focus(); return; }
-      if (cmd === 'find' && view) { openSearch(view); return; }
-      if (cmd === 'findAndReplace' && view) { openSearchAndReplace(view); return; }
-      if (cmd === 'findNext' && view) { gotoNext(view); view.focus(); return; }
-      if (cmd === 'findPrev' && view) { gotoPrev(view); view.focus(); return; }
-      if (cmd === 'link' && view) {
+      if (cmd === 'bold') { applyToMarkdownView(mdView, (v) => applyInlineFormat(v, 'bold')); return; }
+      if (cmd === 'italic') { applyToMarkdownView(mdView, (v) => applyInlineFormat(v, 'italic')); return; }
+      if (cmd === 'code') { applyToMarkdownView(mdView, (v) => applyInlineFormat(v, 'code')); return; }
+      if (cmd === 'strikethrough') { applyToMarkdownView(mdView, (v) => applyInlineFormat(v, 'strike')); return; }
+      if (cmd === 'insertTable') { applyToMarkdownView(mdView, insertTableHelper); return; }
+      if (cmd === 'toggleTask') { applyToMarkdownView(mdView, toggleTaskHelper); return; }
+      if (cmd === 'codeBlock') { applyToMarkdownView(mdView, insertCodeBlockHelper); return; }
+      // 검색은 마크다운 전용이 아니다 — 보조 패널의 버퍼에서도 의미가 있다.
+      if (cmd === 'find') { const v = view(); if (v) openSearch(v); return; }
+      if (cmd === 'findAndReplace') { const v = view(); if (v) openSearchAndReplace(v); return; }
+      if (cmd === 'findNext') { const v = view(); if (v) { gotoNext(v); v.focus(); } return; }
+      if (cmd === 'findPrev') { const v = view(); if (v) { gotoPrev(v); v.focus(); } return; }
+      if (cmd === 'link') {
         // v0.2.21 — route to the InsertLinkDialog (the same surface as the
         // toolbar's Link button) instead of inserting literal `[]()` text.
         // Pre-v0.2.21 the native menu's "링크 삽입" / Cmd+K / right-click
@@ -271,12 +322,21 @@ export function useMenuCommandRouter(deps: MenuCommandRouterDeps): void {
         // The event payload is empty by convention — the dialog reads the
         // current selection itself. The contract matches the existing
         // `durumi:edit-link` listener wiring.
-        window.dispatchEvent(new CustomEvent('durumi:open-link-dialog'));
-        view.focus();
+        //
+        // 발신 패널을 실어 보낸다(REQ-PANEL-034) — 그러지 않으면 패널마다 마운트된
+        // 툴바가 모두 반응해 대화상자가 패널 수만큼 열린다.
+        const v = mdView();
+        if (!v) return;
+        dispatchPanelEvent(v, 'durumi:open-link-dialog');
+        v.focus();
         return;
       }
       if (typeof cmd === 'object' && cmd !== null && 'type' in cmd) {
-        if (cmd.type === 'heading' && view) { setHeading(view, cmd.level); view.focus(); return; }
+        if (cmd.type === 'heading') {
+          const level = cmd.level;
+          applyToMarkdownView(mdView, (v) => setHeading(v, level));
+          return;
+        }
         if (cmd.type === 'openRecent') { await fileCommands.doOpenPath(cmd.path); return; }
         if (cmd.type === 'openRecentFolder') { await workspace.openRecentFolder(cmd.path); return; }
         if (cmd.type === 'closeFolder') { workspace.closeWorkspaceFolder(cmd.path); return; }
