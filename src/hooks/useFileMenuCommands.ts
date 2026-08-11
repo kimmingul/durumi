@@ -8,6 +8,9 @@ import {
   useWorkspaceStore,
 } from '../store/workspaceStore';
 import { basenameOf } from '../utils/path';
+import { showToast } from '../store/toastStore';
+import { t } from '../i18n/t';
+import { decodeFailedPathOf, type FileResult } from '@shared/ipc-contract';
 
 export interface FileMenuCommands {
   /**
@@ -35,6 +38,39 @@ export interface FileMenuCommands {
   doOpenPath: (path: string) => Promise<void>;
   /** Replace buffer with template content (with dirty-discard guard). */
   loadTemplate: (markdown: string) => Promise<void>;
+}
+
+/**
+ * 열기 IPC 거부 중 **디코드 실패만** 골라 사용자에게 사유를 보고하고 `null`을
+ * 돌려준다 (SPEC-V03-WORKSPACE-002 AC-PANEL-046 `Then`).
+ *
+ * `null`을 받은 호출부는 `openInActivePanel`을 부르지 않는다 — 그것이 "편집
+ * 가능한 패널이 만들어지지 않는다"의 구현이다. 손상된 내용은 애초에 main을
+ * 떠나지 않으므로 버퍼에 U+FFFD가 담길 경로 자체가 없다.
+ *
+ * ## 왜 비모달 토스트인가
+ *
+ * AC-PANEL-058이 패널 알림에 모달을 금지했고 M4가 배너를 패널 안으로 옮겼다.
+ * 열기 실패는 같은 규율을 따르는 패널 범위 사건이므로 이미 있는 비모달 표면
+ * (`toastStore` → `Toast.tsx`, `role="status"`/`aria-live`)을 재사용한다.
+ *
+ * ## 왜 모든 거부를 삼키지 않는가
+ *
+ * 경로 가드 거부(`PathNotAllowedError`)까지 "디코드 실패"로 보고하면 사용자가
+ * 틀린 사유를 읽는다. 디코드 실패가 아닌 거부는 **그대로 다시 던져** 오늘의
+ * 전역 그물(`src/utils/errorSurface.ts`)에 맡긴다 — 그쪽 동작은 바뀌지 않는다.
+ */
+async function openOrReportDecodeFailure(
+  invoke: () => Promise<FileResult | null>,
+): Promise<FileResult | null> {
+  try {
+    return await invoke();
+  } catch (e) {
+    const failedPath = decodeFailedPathOf(e);
+    if (failedPath === null) throw e;
+    showToast({ message: t('file.open.decodeError', { name: basenameOf(failedPath) }) });
+    return null;
+  }
 }
 
 /**
@@ -101,7 +137,7 @@ export function useFileMenuCommands(): FileMenuCommands {
 
   const doOpen = useCallback(async () => {
     if (!(await maybeDiscard())) return;
-    const r = await window.api.fileOpen();
+    const r = await openOrReportDecodeFailure(() => window.api.fileOpen());
     // 이미 그 경로를 열고 있는 패널이 있으면 새 뷰를 만들지 않고 그 패널을
     // 활성화한다 (REQ-PANEL-011 — v0.3에서 dual-open은 금지된다).
     if (r) useWorkspaceStore.getState().openInActivePanel(r.path, r.content);
@@ -123,8 +159,8 @@ export function useFileMenuCommands(): FileMenuCommands {
   const doOpenPath = useCallback(
     async (path: string) => {
       if (!(await maybeDiscard())) return;
-      const r = await window.api.fileOpenPath(path);
-      useWorkspaceStore.getState().openInActivePanel(r.path, r.content);
+      const r = await openOrReportDecodeFailure(() => window.api.fileOpenPath(path));
+      if (r) useWorkspaceStore.getState().openInActivePanel(r.path, r.content);
     },
     [maybeDiscard],
   );

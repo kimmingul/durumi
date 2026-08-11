@@ -22,6 +22,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
       'The editor hit an unexpected error and stopped rendering this view. Your file on disk is unchanged.',
     'app.error.reload': 'Reload the editor',
     'app.error.unhandled': 'Operation failed: {message}',
+    'file.open.decodeError':
+      'Cannot open {name} — it is not valid UTF-8 text. The file on disk is unchanged.',
     'reconcile.pending': 'The file changed on disk. Applying after you finish typing.',
     'reconcile.external': 'This file changed on disk. Your unsaved edits are kept.',
     'reconcile.awaitingApproval': 'An external change is waiting for approval.',
@@ -596,6 +598,8 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
       '에디터에 예기치 못한 오류가 발생해 이 화면을 그리지 못했습니다. 디스크의 파일은 그대로입니다.',
     'app.error.reload': '에디터 다시 불러오기',
     'app.error.unhandled': '작업 실패: {message}',
+    'file.open.decodeError':
+      '{name}을(를) 열 수 없습니다 — 유효한 UTF-8 텍스트가 아닙니다. 디스크의 파일은 그대로입니다.',
     'reconcile.pending': '디스크에서 파일이 바뀌었습니다. 입력이 끝나면 반영합니다.',
     'reconcile.external': '이 파일이 디스크에서 바뀌었습니다. 저장하지 않은 편집은 그대로 있습니다.',
     'reconcile.awaitingApproval': '외부 변경이 승인을 기다리고 있습니다.',

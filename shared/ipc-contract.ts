@@ -6,6 +6,51 @@ export interface FileResult {
   content: string;
 }
 
+/**
+ * 열기 경로의 디코드 실패를 IPC 경계 너머에서 알아보기 위한 코드
+ * (SPEC-V03-WORKSPACE-002 REQ-PANEL-046).
+ *
+ * ## 왜 `FileResult`를 유니온으로 넓히지 않았는가
+ *
+ * `fileOpenPath`에는 **이미 실패 채널이 있다** — `assertAllowedPath`가 던지면
+ * `ipcRenderer.invoke`가 거부된다. 디코드 실패도 같은 채널을 쓰면 계약의
+ * 모양이 그대로 유지되고, 실패할 수 없는 마크다운 경로의 호출부까지 유니온을
+ * 좁히게 만들지 않는다. 더 좁은 선택지가 실제로 통했으므로 그것을 택했다.
+ *
+ * ## 왜 코드가 문자열인가
+ *
+ * Electron은 main의 오류를 렌더러로 넘길 때 `Error` 하위 타입을 잃고 메시지
+ * 문자열만 남긴다(`Error invoking remote method '...': Error: <원본 메시지>`).
+ * 그래서 판정 가능한 것은 메시지뿐이고, 그 메시지에 실을 값을 **한 곳에서**
+ * 정의한다. main과 렌더러가 각자 리터럴을 박으면 그 둘은 갈라진다.
+ */
+export const DECODE_FAILED_CODE = 'DURUMI_E_DECODE_FAILED';
+
+/**
+ * 디코드 실패라면 실패한 경로, 아니면 `null`.
+ *
+ * 경로 가드 거부(`PathNotAllowedError`)처럼 **다른 이유의 거부를 디코드 실패로
+ * 오인하면** 사용자에게 틀린 사유가 보고된다. 그래서 호출부는 이 함수가
+ * `null`이 아닐 때만 디코드 사유를 말한다.
+ *
+ * 한계: 코드 뒤를 전부 경로로 읽으므로, 경로 자체에 `': '`가 들어 있으면
+ * 잘린 경로를 돌려준다. 반환값은 토스트의 파일명 표시에만 쓰이고 판정에는
+ * `null` 여부만 쓰이므로 영향은 표시 품질에 그친다.
+ */
+export function decodeFailedPathOf(reason: unknown): string | null {
+  const message =
+    reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : null;
+  if (message === null) return null;
+  const at = message.indexOf(`${DECODE_FAILED_CODE}: `);
+  if (at < 0) return null;
+  return message.slice(at + DECODE_FAILED_CODE.length + 2);
+}
+
+/** 이 거부가 디코드 실패인가 (REQ-PANEL-046). */
+export function isDecodeFailedError(reason: unknown): boolean {
+  return decodeFailedPathOf(reason) !== null;
+}
+
 export interface Macro {
   name: string;
   keybind: string;

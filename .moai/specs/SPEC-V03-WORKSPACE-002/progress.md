@@ -867,6 +867,113 @@ M5의 네 단계 중 첫 번째이며 AC-PANEL-040 한 건만 다룬다. 요구�
 - **saveAs 필터 확장** — AC-PANEL-044c, M6.
 - **`fileKindOf`의 프로덕션 배선** — 이 단계는 판정 함수와 다이얼로그 방향만 세운다. 패널 바인딩 시점의 호출은 후속 단계 소관이며, 현재 유일한 프로덕션 소비자는 다이얼로그 필터다.
 
+### M5 단계2 — 보조 파일 열기에 엄격 디코드를 적용하다
+
+**증거**: `.moai/state/verify/m5-step2/`. 커밋 `<pending-backfill>`.
+
+M5의 두 번째 단계이며 AC-PANEL-046 한 건만 다룬다. 요구를 신설하지도 재번호하지도 않았다. 단계1이 세운 `fileKindOf`가 여기서 **첫 프로덕션 소비자**를 얻는다.
+
+#### AC 판정 (1건, 네 갈래를 각각 반증 가능하게 나눔)
+
+| AC | 갈래 | 상태 | 판정 명령 | 실제 출력 |
+|---|---|---|---|---|
+| 046 | Then 패널 미생성 + 사유 보고 | PASS | `npx vitest run tests/electron/filesStrictDecode.test.ts tests/hooks/useFileMenuCommands.test.tsx` | main: `file:openPath`·`file:open` 양쪽이 `isDecodeFailedError`를 만족하는 오류로 거부. 렌더러: 경로 바인딩 문서 0개 + 토스트 1건(`broken.csv` 포함). 20 passed |
+| 046 | And U+FFFD 부재 | PASS | 같은 명령 | 함정 고정(`readFileSync(broken.csv,'utf8')`이 U+FFFD 포함) 후, 핸들러 산출물·문서 내용 양쪽에 U+FFFD 0건 |
+| 046 | And SHA-256 불변 | PASS | 같은 명령 | 실패 열기 2회(`openPath`+다이얼로그) 시도 전후 해시 동일. 성공 열기(`bom.csv`)도 동일 |
+| 046 | 양성 대조 | PASS | 같은 명령 | `.py`·`.csv`·BOM `.csv` 모두 정상 열림. 렌더러도 문서 1개 바인딩 + 토스트 0건 |
+
+#### 설계 질문 세 건 — 무엇을 골랐고 왜인가
+
+**(1) 사유는 어떻게 사용자에게 닿는가 — IPC 계약을 넓히지 않았다.**
+
+`fileOpenPath`에는 **이미 실패 채널이 있다**: `assertAllowedPath`가 던지면 `ipcRenderer.invoke`가 거부된다. 디코드 실패도 같은 채널을 쓰면 `FileResult` 모양이 유지되고, 실패할 수 없는 마크다운 경로의 호출부까지 유니온을 좁히게 만들지 않는다. 더 좁은 선택지가 실제로 통했으므로 유니온 확장은 기각했다.
+
+Electron은 main의 오류에서 `Error` 하위 타입을 잃고 메시지 문자열만 남기므로, 판정 가능한 값은 메시지뿐이다. 그 값을 `shared/ipc-contract.ts` 한 곳에 `DECODE_FAILED_CODE`로 두고 `decodeFailedPathOf`/`isDecodeFailedError`가 판정한다 — main과 렌더러가 각자 리터럴을 박으면 갈라진다. **계약 변경분은 런타임 export 3개 추가뿐이며 기존 타입은 무변경**이다(그 파일은 지금까지 타입 전용이었다).
+
+표면은 **이미 있던 비모달 토스트**(`toastStore` → `Toast.tsx`, `role="status"`/`aria-live`)를 재사용했다. AC-PANEL-058의 모달 금지와 M4의 배너 패널 내 이관이 세운 규율을 따른다 — 새 표면을 만들지 않았다(단순성 사다리 2단).
+
+디코드 실패가 **아닌** 거부는 그대로 다시 던진다. 모든 거부를 삼키면 경로 가드 거부(`PathNotAllowedError`)까지 "디코드 실패"로 보고되어 사용자가 틀린 사유를 읽는다. 그 경계를 테스트가 고정한다.
+
+**(2) BOM — 실측으로 함정을 확인하고 `ignoreBOM: true`를 골랐다.**
+
+`TextDecoder`의 `ignoreBOM` 기본값은 `false`이고, **이름과 반대로 기본이 BOM을 먹는다**. 바이트 `EF BB BF 61`에 대한 실측:
+
+```
+Buffer.toString('utf8')                              → "<U+FEFF>a"  (보존)
+new TextDecoder('utf-8').decode(..)                  → "a"          (제거)
+new TextDecoder('utf-8',{ignoreBOM:true}).decode(..) → "<U+FEFF>a"  (보존)
+```
+
+즉 `{ fatal: true }`만 켜고 옮겼다면 BOM 있는 보조 파일의 첫 문자가 조용히 사라지고 **열기→저장 왕복에서 3바이트가 증발**한다. M6 AC-PANEL-043이 BOM을 바이트 무결성 대상으로 명시하므로 그 실패는 M6에서 터지되 원인은 여기 묻혔을 것이다. `{ fatal: true, ignoreBOM: true }`를 골라 오늘의 `readFile(path,'utf8')`과 **문자열 동일성**을 유지했고, 그 동일성을 테스트로 직접 단언했다.
+
+이것이 `electron/externalWatch.ts`의 `decodeUtf8Strict`를 재사용하지 **않은** 이유다 — 그 함수는 `{ fatal: true }`만 쓴다. 조정 경로의 BOM 동작 변경은 이 SPEC 범위 밖이라 그 함수는 손대지 않고 열기 전용 디코더를 `electron/openDecode.ts`에 따로 두었다. 빌드 산출물에서 두 디코더가 **각각 다른 형태로 공존**함을 확인했다(아래 §빌드 확인).
+
+**(3) "디코드 불가"의 경계 — 휴리스틱 없음.**
+
+`fatal: true`가 거부하는 것은 형식이 잘못된 UTF-8 바이트열뿐이다. 실측한 판정:
+
+| 바이트열 | 엄격 | lossy가 U+FFFD 생성 |
+|---|---|---|
+| 고립 서로게이트 `ED A0 80` | 거부 | 예 |
+| 잘린 선두 `C3` / 맨 연속 `80` / 과장 `C0 80` | 거부 | 예 |
+| Latin-1 `café`(`E9`) | 거부 | 예 |
+| UTF-16LE BOM `FF FE` | 거부 | 예 |
+| **내장 NUL `61 00 62`** | **통과** | 아니오 |
+| 빈 파일 / 임의 크기 | 통과 | 아니오 |
+
+**통과시키는 것**: 내장 NUL(유효 UTF-8이다)과 임의 크기 파일. 바이너리 판별 휴리스틱은 의도적으로 넣지 않았다 — REQ-PANEL-046이 말하는 것은 "디코드 불가"이고, 휴리스틱은 유효 UTF-8인 정상 `.csv`를 거부해 REQ-PANEL-045(평문 폴백)를 어길 수 있다. 그 대가로 **유효 UTF-8인 바이너리는 열린다**.
+
+부수 관측: Latin-1로 저장된 레거시 `.csv`/`.bib`는 이제 거부된다. REQ-PANEL-046의 문자 그대로의 귀결이며(유효 UTF-8이 아니다) 오늘은 U+FFFD로 열려 저장 시 파괴되던 파일이다. 인코딩 선택 UI는 이 SPEC 범위 밖이다.
+
+#### C-10 — 마크다운 경로는 손대지 않았다 (사용자 결정)
+
+구현 착수 승인에서 사용자가 확정한 범위: *엄격 디코드는 보조 파일 열기 경로에만 적용하고 마크다운 경로는 오늘 동작을 유지한다*. `readTextForOpen`이 `fileKindOf(path)`로 갈리며, 마크다운은 `fs.readFile(path,'utf8')` 그대로다.
+
+**남는 결함을 닫지 않고 기록한다**: 손상된 마크다운은 여전히 U+FFFD로 치환되어 열리고 그 버퍼를 저장하면 원본이 파괴된다. 분기점에 `@MX:DEBT` + `@MX:CEILING`(보조 파일에 한해 방어) + `@MX:UPGRADE`(마크다운 엄격화 SPEC이 서면 분기를 없애고 합친다)로 적었다. 비대칭 자체는 테스트가 박아 둔다 — 같은 바이트를 `.md`/`.csv` 두 확장자로 열어 `[true, false]`를 단언하므로, 나중에 "일관성"을 이유로 조용히 넓히면 그 테스트가 깨진다.
+
+#### 반증 (E2) — 네 건 주입, 전부 적출 확인 후 원복
+
+| 주입 | 실패한 검사 | 실제 출력 |
+|---|---|---|
+| 보조 경로를 `readFile(path,'utf8')`로 되돌림 | 5건 (Then 3 + U+FFFD 1 + 확장자 분기 1) | `Tests 5 failed \| 15 passed (20)` |
+| 읽기 경로에 `appendFile(path,'\n')` 주입 | 4건 (SHA-256 2 + 내용 동일성 2) | `Tests 4 failed \| 10 passed (14)` |
+| `ignoreBOM: true` 제거 | 4건 (BOM 3 + 통합 BOM 1) | `Tests 4 failed \| 23 passed (27)` |
+| 토스트 호출 제거(조용히 삼킴) | 2건 (사유 보고 2) | `Tests 2 failed \| 4 passed (6)` |
+
+세 번째 주입이 (2)의 판단을 사후 검증한다: `decodeUtf8Strict`를 그대로 재사용했다면 이 4건이 즉시 적출했을 것이고, M6까지 묻히지 않는다. `git diff --stat` + `grep -rn FALSIFY` 무출력으로 전량 원복을 확인했다.
+
+#### 빌드 확인 — 배선이 산출물에 실렸는가
+
+`pnpm build`(electron-vite) exit 0. 빌드된 main 번들에서 두 디코더가 **서로 다른 형태로 공존**함을 확인했다:
+
+```
+$ grep -o 'TextDecoder("utf-8"[^)]*)' out/main/main.cjs
+TextDecoder("utf-8", { fatal: true, ignoreBOM: true })   ← 신규 열기 경로
+TextDecoder("utf-8", { fatal: true })                    ← externalWatch 조정 경로 (무변경)
+```
+
+`DURUMI_E_DECODE_FAILED`가 main·renderer 양쪽 번들에 존재 — 계약이 트리셰이킹되지 않았다. 유닛 테스트만으로는 "핸들러가 실제로 배선되었는가"를 증명하지 못하므로 이 확인을 남긴다.
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — **227 passed / 2474 passed**(기준선 224/2441 → **+3 파일 / +33 건**). 증감 대조: `openDecode.test.ts` 13 + `filesStrictDecode.test.ts` 14 + `useFileMenuCommands.test.tsx` 6 = **+33**로 일치. 감소 0건.
+
+`typecheck` exit 0(양쪽), `lint` exit 0, 신규 경고 0. `coverage` exit 0 — All files **96.29%**(기준선과 동일). 신규 `electron/openDecode.ts` per-file **100%**.
+
+**커버리지 게이트의 실제 적용 범위(정직한 기록)**: 수정한 4개 소스 중 `electron/ipc/files.ts`·`shared/ipc-contract.ts`·`src/hooks/useFileMenuCommands.ts` **셋 다 `vitest.legacy-coverage.ts` 제외 목록에 있다**(각 32·45·102행). 즉 그 세 파일의 추가분은 per-file 85% 게이트의 판정을 받지 않았다. 테스트가 그 코드를 실제로 실행하는 것은 위 AC 표와 반증 표가 보이지만, **게이트는 그 증거가 아니다**. 게이트가 실제로 건 것은 신규 `openDecode.ts` 하나다.
+
+#### 불변식
+
+PRESERVE 16파일 `git diff --quiet 040df4a` 전부 exit 0. `MarkdownEditor.tsx` extension 배열 본문(`040df4a:88-147` ↔ 현재 `:91-150`) 블록 대조 `INVARIANT-OK` — 이 단계에서 그 파일은 한 줄도 바뀌지 않았다.
+
+#### 범위 밖으로 남긴 것 (M5 단계2)
+
+- **saveAs 필터 `['md']`**(`files.ts:138`) — AC-PANEL-044c, M6. `git diff 040df4a -- electron/ipc/files.ts` 전량 확인 결과 저장 경로 코드는 한 줄도 바뀌지 않았다.
+- **저장 경로 채널 분리 / EOL 복원** — AC-PANEL-044 / 048, M6.
+- **extension 3층 조립** — 단계3. **언어 문법 조달** — 단계4.
+- **마크다운 열기의 엄격화** — 사용자 결정으로 이 SPEC 범위 밖(위 C-10 절).
+- **인코딩 선택 UI** — Latin-1 파일을 열 수단. 별개 SPEC 사안이다.
+
 ---
 
 ## §E.3 Run-phase Audit-Ready Signal
@@ -886,10 +993,11 @@ m4_2_commit_shas:            # M4-2 다섯 단계 (§E.2 M4-2 절)
   - 7f6755e                  #   3) IME 게이트 문서축 고정 (생산 코드 무변경)
   - c6e3d7e                  #   4) 패널 알림 모달 금지
   - 7dbe31d                  #   5) e2e 셀렉터 이관 35파일
-m5_step1_commit_sha: <pending-backfill>   # M5 단계1 (AC-PANEL-040). 커밋은 자기 SHA를 모르므로 후속 백필
-run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5 단계1/4. M6~M8 미착수
-milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계1/4)
-ac_pass_count: 63               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5-단계1 1
+m5_step1_commit_sha: b16fd7e   # M5 단계1 (AC-PANEL-040). 단계2가 백필 — 커밋은 자기 SHA를 모른다
+m5_step2_commit_sha: <pending-backfill>   # M5 단계2 (AC-PANEL-046). 같은 이유로 후속 백필
+run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5 단계2/4. M6~M8 미착수
+milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계2/4)
+ac_pass_count: 64               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5-단계1 1 + M5-단계2 1
 ac_partial_count: 1             # AC-PANEL-058 — 5개 상태 중 4개 재현. 복원 실패는 M8 표면
 ac_fail_count: 0
 ac_scope: >-
@@ -901,6 +1009,7 @@ ac_scope: >-
   M4-1: AC-PANEL-020 / 021 / 022 / 023 / 024 / 030 / 030b / 031 / 032 / 032b / 033 / 034 / 035
   M4-2: AC-PANEL-053 / 053b / 053c / 053d / 054 / 054b / 058(부분) / 095
   M5 단계1: AC-PANEL-040 (Then·And 두 축 각각 PASS)
+  M5 단계2: AC-PANEL-046 (Then·U+FFFD·SHA-256·양성 대조 네 갈래 각각 PASS)
 reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
@@ -920,28 +1029,38 @@ dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2
 watch_registration_model: reference-counted-open-document-set  # M3 — 경로당 1회, 마지막 참조에서 해제
 path_identity: injectable-pure-function  # shared/pathIdentity.ts — 플랫폼을 인자로 받는다(C-7)
 reconciliation_policy_scope: window-single   # 문서별 정책 맵 없음 (REQ-PANEL-056)
-test_files: 224                  # … → M3 209 → M4-1 218 → M4-2 222 → M5-단계1 224 (신규 2파일)
-tests: 2441                      # … → M3 2315 → M4-1 2390 → M4-2 2417 → M5-단계1 2441 (+24, 감소 0)
+test_files: 227                  # … → M4-2 222 → M5-단계1 224 → M5-단계2 227 (신규 3파일)
+tests: 2474                      # … → M4-2 2417 → M5-단계1 2441 → M5-단계2 2474 (+33, 감소 0)
 e2e_tests: 214                   # 0 failed. skip 4건은 smoke-screenshot의 SMOKE=1 게이트(기존)
 e2e_smoke_gated_verified: true   # SMOKE=1로 따로 실행 — 4 passed. 손수정이 가장 많은 파일
 e2e_flaky_repeat_check: "조합 계열 4 spec × 3회 = 33/33 통과 (1회 초록을 결정성 증거로 쓰지 않음)"
 coverage_gate: pass              # per-file 85%, All files 96.29% (M4-1과 동일, 변동 없음)
                                  # M5-단계1 신규 shared/fileKind.ts per-file 100%
+                                 # M5-단계2 신규 electron/openDecode.ts per-file 100%
+coverage_gate_actual_scope: >-
+  M5-단계2가 수정한 소스 4개 중 3개(electron/ipc/files.ts, shared/ipc-contract.ts,
+  src/hooks/useFileMenuCommands.ts)는 vitest.legacy-coverage.ts 제외 목록(32·45·102행)에
+  있어 per-file 게이트의 판정을 받지 않았다. 그 코드가 실행된다는 증거는 AC 표와
+  반증 표이지 게이트가 아니다. 게이트가 실제로 건 신규 파일은 openDecode.ts 하나다.
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
   m3_mitigation: "경로 대조를 순수 함수로 떼고 양 플랫폼을 유닛에서 재현 (AC-PANEL-051b)"
-total_run_phase_files: 107       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
+total_run_phase_files: 112       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
                                  # 그중 M4-2 기여 43 (e2e 이관 35 + 소스 2 + 테스트 6)
                                  # M5-단계1 기여 4 신규 (files.ts + fileKind.ts + 테스트 2).
-                                 # workspaceStore.ts는 M1부터 집합에 있어 계수 증가 없음
+                                 # M5-단계2 기여 5 (신규 4: openDecode.ts + 테스트 3, 신규 진입 1: dict.ts).
+                                 # files.ts·ipc-contract.ts·useFileMenuCommands.ts는 이미 집합에 있어 증가 없음.
+                                 # 실측: 040df4a..b16fd7e = 107, 커밋 후 = 112
 m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4는 M4-1/M4-2 분할, M5~M8은 후속 위임"
 deferred_by_open_decision:
   - "AC-PANEL-058 복원 실패 상태 — 그 알림 표면이 M8(패널 배치 persist) 산출물이라 미재현"
   - ".cm-content 측정폭 조정 — design.md §3.2a (ii). 선행 조건(셀렉터 이관)은 M4-2가 충족"
   - "acceptance.md/design.md의 34→35 계수 정정 — sync 단계 소관(L46)"
   - "resolveWatchScope/registerWatchScope 프로덕션 배선 — 소유 요구 없음. 관측으로만 기록"
-  - "파일 종류 판정의 프로덕션 배선 — 판정 함수는 M5 단계1이 shared/fileKind.ts에 세웠고 다이얼로그 필터가 소비 중이다. 패널 바인딩 시점의 호출과 보조 패널 조립은 M5 단계2~4 소관. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
+  - "파일 종류 판정의 프로덕션 배선 — 단계1이 shared/fileKind.ts에 세우고 다이얼로그 필터가, 단계2가 열기 읽기 분기(readTextForOpen)가 소비한다. 패널 바인딩 시점의 kind 전달과 보조 패널 조립은 단계3~4 소관. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
+  - "마크다운 열기의 U+FFFD 치환 — 단계2가 보조 파일만 방어하도록 사용자가 범위를 확정(C-10). 분기점에 @MX:DEBT + CEILING + UPGRADE로 기록했고 비대칭을 테스트가 고정한다. 별개 SPEC 사안"
+  - "Latin-1 등 비UTF-8 인코딩 보조 파일을 여는 수단 — 단계2의 엄격 디코드가 거부한다(요구의 문자 그대로의 귀결). 인코딩 선택 UI는 이 SPEC 범위 밖"
   - "프로젝트 트리 표면 — M2 미착수분, 후속 위임 (AC-036/036b/036c/036d)"
   - "패널 폭 등식의 픽셀 단언 — jsdom 레이아웃 부재, e2e 이관 (AC-005)"
   - "같은 파일을 두 패널에 — v0.4 문서↔뷰 동기화 프로토콜 (REQ-PANEL-011이 v0.3에서 금지)"
