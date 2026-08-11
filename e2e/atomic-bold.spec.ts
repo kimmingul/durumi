@@ -1,5 +1,6 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { launchClean, shutdownClean, getEditorDoc } from './_helpers';
+import { ACTIVE_EDITOR, waitForActiveContent } from './_panels';
 
 /**
  * v0.2.24 — atomic boundary contract for `**bold**` and `__bold__`.
@@ -25,7 +26,7 @@ let page: Page;
 test.beforeAll(async () => {
   app = await launchClean();
   page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 });
 
 test.afterAll(async () => {
@@ -34,8 +35,8 @@ test.afterAll(async () => {
 
 async function seedDoc(text: string, cursor: number): Promise<void> {
   await page.evaluate(
-    ({ t, c }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ t, c, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       if (!root) return;
       const content = root.querySelector('.cm-content') as HTMLElement | null;
       const view = (
@@ -59,14 +60,13 @@ async function seedDoc(text: string, cursor: number): Promise<void> {
       });
       view.focus();
     },
-    { t: text, c: cursor },
-  );
+    { t: text, c: cursor, sel: ACTIVE_EDITOR });
 }
 
 /** Read the caret head out of the live EditorView. */
 async function getCaretHead(): Promise<number> {
-  return await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  return await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     const view = (
       content as unknown as {
@@ -74,7 +74,7 @@ async function getCaretHead(): Promise<number> {
       }
     )?.cmTile?.root?.view;
     return view ? view.state.selection.main.head : -1;
-  });
+  }, ACTIVE_EDITOR);
 }
 
 test('Backspace at node.to (just after closing **) deletes the whole `**bold**`', async () => {
@@ -194,8 +194,8 @@ test('Cmd+B on a `**bold**` selection still unwraps (toggleWrap unaffected)', as
   const labelStart = 'see **'.length;
   const labelEnd = labelStart + 'bold'.length;
   await page.evaluate(
-    ({ from, to }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ from, to, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       const content = root?.querySelector('.cm-content') as HTMLElement | null;
       const view = (
         content as unknown as {
@@ -218,8 +218,7 @@ test('Cmd+B on a `**bold**` selection still unwraps (toggleWrap unaffected)', as
       });
       view.focus();
     },
-    { from: labelStart, to: labelEnd },
-  );
+    { from: labelStart, to: labelEnd, sel: ACTIVE_EDITOR });
   const isMac = process.platform === 'darwin';
   await page.keyboard.press(isMac ? 'Meta+b' : 'Control+b');
   expect(await getEditorDoc(page)).toBe('see bold end');

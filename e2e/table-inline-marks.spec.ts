@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { getEditorDoc, launchClean, shutdownClean } from './_helpers';
+import { ACTIVE_EDITOR, activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -21,8 +22,8 @@ async function setEditorDoc(
   page: import('@playwright/test').Page,
   doc: string,
 ): Promise<void> {
-  await page.evaluate((markdown) => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  await page.evaluate(({ markdown, sel }) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     if (!root) return;
     const content = root.querySelector('.cm-content') as HTMLElement | null;
     const tileHolder = (content ?? root) as unknown as {
@@ -41,7 +42,7 @@ async function setEditorDoc(
       changes: { from: 0, to: view.state.doc.length, insert: markdown },
       userEvent: 'input.testReset',
     });
-  }, doc);
+  }, { markdown: doc, sel: ACTIVE_EDITOR });
   await page.waitForTimeout(80);
 }
 
@@ -136,7 +137,7 @@ test.describe('Phase 3.1.2 — inline marks in table cells', () => {
       await cell.click();
       await page.waitForTimeout(60);
       // Click outside the table to blur.
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       await page.waitForTimeout(80);
       const html = await getCellHtml(page, '.cm-table-row-header', 0);
       expect(html).toContain('<strong>bold</strong>');
@@ -224,7 +225,7 @@ test.describe('Phase 3.1.2 — inline marks in table cells', () => {
       const rawText = await getCellRawText(page, '.cm-table-row-header', 0);
       expect(rawText).toBe('**한글**');
       // Blur again — re-renders.
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       await page.waitForTimeout(80);
       const reRenderedHtml = await getCellHtml(page, '.cm-table-row-header', 0);
       expect(reRenderedHtml).toContain('<strong>한글</strong>');
@@ -259,7 +260,7 @@ test.describe('Phase 3.1.2 — inline marks in table cells', () => {
       const src = '| **bold** | *em* |\n| --- | --- |\n| `c` | ~~d~~ |\n';
       await setEditorDoc(page, src);
       // Click outside the table to ensure no cell is in raw mode.
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       await page.waitForTimeout(80);
       const doc = await getEditorDoc(page);
       // The markdown source must be unchanged — the render is purely
@@ -318,7 +319,7 @@ test.describe('Phase 3.1.2 — inline marks in table cells', () => {
         if (!ae) return;
         ae.dispatchEvent(new CompositionEvent('compositionend', { data: '안' }));
       });
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       await page.waitForTimeout(80);
       const finalDoc = await getEditorDoc(page);
       // After blur + sync, the source should contain the appended char.

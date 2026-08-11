@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { launchClean, setTyporaMode, shutdownClean } from './_helpers';
+import { activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -17,7 +18,7 @@ test('mermaid fence renders to a block widget when cursor is outside', async () 
   // Typed-markdown test: switch to Typora mode so the backticks aren't
   // escaped to `\`` by the WYSIWYG filter (see e2e/_helpers.ts).
   await setTyporaMode(app, page);
-  await page.click('.cm-content');
+  await activeContent(page).click();
   // Type a complete mermaid fence followed by a trailing newline so the
   // cursor lands outside the fence (active-block guard releases the
   // decoration).

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { launchClean, setTyporaMode, shutdownClean } from './_helpers';
+import { activeContent, waitForActiveContent } from './_panels';
 
 test('app launches and shows window', async () => {
   const app = await launchClean();
@@ -15,11 +16,11 @@ test('app launches and shows window', async () => {
 test('typing markdown applies live preview classes', async () => {
   const app = await launchClean();
   const win = await app.firstWindow();
-  await win.waitForSelector('.cm-content');
+  await waitForActiveContent(win);
   // Typed-markdown test: switch to Typora mode so the `#` heading marker
   // isn't escaped to `\#` by the WYSIWYG filter (see e2e/_helpers.ts).
   await setTyporaMode(app, win);
-  await win.click('.cm-content');
+  await activeContent(win).click();
   await win.keyboard.type('# Heading\n\nbody');
   // Wait for the live-preview class to land rather than racing a fixed
   // timeout — the markdown parser is incremental and may not have applied
@@ -33,7 +34,7 @@ test('typing markdown applies live preview classes', async () => {
 test('toggling theme flips data-theme attribute', async () => {
   const app = await launchClean();
   const win = await app.firstWindow();
-  await win.waitForSelector('.cm-content');
+  await waitForActiveContent(win);
   await win.waitForTimeout(150);
   const before = await win.evaluate(() => document.documentElement.dataset.theme);
   // Use getAllWindows() rather than getFocusedWindow(): in headless Playwright/Electron

@@ -7,6 +7,7 @@ import {
   endComposition,
   observeComposition,
 } from './_helpers';
+import { activeContent, panelCount } from './_panels';
 
 /**
  * 패널 조작이 IME 조합을 중단시키지 않는다 (AC-PANEL-035 ↔ REQ-PANEL-035).
@@ -56,7 +57,6 @@ async function sendMenu(app: ElectronApplication, command: unknown): Promise<voi
   }, command);
 }
 
-const panelCount = (page: Page): Promise<number> => page.locator('.cm-content').count();
 const toolbarCount = (page: Page): Promise<number> => page.locator('.editor-toolbar').count();
 
 test('패널 분할·활성화·닫기가 조합을 중단시키지 않는다', async () => {
@@ -64,7 +64,7 @@ test('패널 분할·활성화·닫기가 조합을 중단시키지 않는다', 
   try {
     const page = await app.firstWindow();
     await setWysiwygMode(app, page);
-    await page.locator('.cm-content').first().click();
+    await activeContent(page).click();
 
     expect(await panelCount(page), '시작 상태가 단일 패널이 아니다').toBe(1);
 
@@ -106,7 +106,7 @@ test('패널 분할·활성화·닫기가 조합을 중단시키지 않는다', 
     const counts = await endComposition(handle);
     expect(counts.ends, '조합이 종료되지 않았다').toBeGreaterThanOrEqual(1);
     await page.waitForTimeout(200);
-    const text = await page.locator('.cm-content').first().innerText();
+    const text = await activeContent(page).innerText();
     expect(text, '커밋된 텍스트가 입력한 바이트와 다르다').toContain('한글');
   } finally {
     await shutdownClean(app);

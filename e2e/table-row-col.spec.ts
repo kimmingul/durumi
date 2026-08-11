@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { getEditorDoc, launchClean, shutdownClean } from './_helpers';
+import { ACTIVE_EDITOR, activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -14,7 +15,7 @@ async function shutdown(app: ElectronApplication) {
 
 /** Insert a fresh 2x2 table at the caret via the keyboard shortcut. */
 async function insertTable(page: import('@playwright/test').Page): Promise<void> {
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('Meta+Shift+T');
   await page.waitForSelector('div[role="row"]');
 }
@@ -25,8 +26,8 @@ async function insertTable(page: import('@playwright/test').Page): Promise<void>
  * accessor for determinism: typing pipe chars triggers the WYSIWYG
  * escape filter in Document mode. */
 async function setEditorDoc(page: import('@playwright/test').Page, doc: string): Promise<void> {
-  await page.evaluate((markdown) => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  await page.evaluate(({ markdown, sel }) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     if (!root) return;
     const content = root.querySelector('.cm-content') as HTMLElement | null;
     const tileHolder = (content ?? root) as unknown as {
@@ -45,7 +46,7 @@ async function setEditorDoc(page: import('@playwright/test').Page, doc: string):
       changes: { from: 0, to: view.state.doc.length, insert: markdown },
       userEvent: 'input.testReset',
     });
-  }, doc);
+  }, { markdown: doc, sel: ACTIVE_EDITOR });
   await page.waitForTimeout(60);
 }
 

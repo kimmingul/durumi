@@ -11,6 +11,7 @@ import {
   observeCompositionEnd,
   composeKorean,
 } from './_helpers';
+import { activeContent } from './_panels';
 
 /**
  * 조합 유지형 프리미티브의 **self-test** — plan.md §D가 M5의 첫 산출물로
@@ -44,7 +45,7 @@ async function withEditor(fn: (page: Page) => Promise<void>): Promise<void> {
   try {
     const page = await app.firstWindow();
     await setWysiwygMode(app, page);
-    await page.locator('.cm-content').click();
+    await activeContent(page).click();
     await fn(page);
   } finally {
     await shutdownClean(app);
@@ -103,7 +104,7 @@ test('P3: endComposition이 조합을 닫고 커밋 텍스트가 남는다', asy
 
     expect(counts.ends).toBeGreaterThanOrEqual(1);
     // 이 단언이 첫 CI 실행에서 실패했다 — 조합은 끝났는데 문서가 비어 있었다.
-    await expect(page.locator('.cm-content')).toContainText('한');
+    await expect(activeContent(page)).toContainText('한');
   });
 });
 
@@ -114,7 +115,7 @@ test('P3b: 마지막 updateComposition 문자열이 그대로 커밋된다', asy
     await updateComposition(handle, '한');
     await endComposition(handle);
 
-    const text = await page.locator('.cm-content').innerText();
+    const text = await activeContent(page).innerText();
     expect(text).toContain('한');
     // 중간 조합 상태가 문서에 눌러앉지 않았다 (커밋이 조합을 교체한다).
     expect(text).not.toContain('ㅎ하');
@@ -129,7 +130,7 @@ test('P3c: cancelComposition은 커밋하지 않는다 (취소와 커밋의 구�
     // 취소도 compositionend를 발생시킨다 — 그래서 end 횟수만으로는
     // 커밋 여부를 알 수 없고, P3의 본문 단언이 반드시 필요하다.
     expect(counts.ends).toBeGreaterThanOrEqual(1);
-    expect(await page.locator('.cm-content').innerText()).not.toContain('한');
+    expect(await activeContent(page).innerText()).not.toContain('한');
   });
 });
 
@@ -149,6 +150,6 @@ test('P5: composeKorean의 시그니처와 동작이 보존된다', async () => 
     // 인자 3개, 반환 Promise<void> — 프리미티브 위의 얇은 래퍼로 재구현됐다.
     const result: void = await composeKorean(page, ['ㅎ', '하', '한'], '한');
     expect(result).toBeUndefined();
-    await expect(page.locator('.cm-content')).toContainText('한');
+    await expect(activeContent(page)).toContainText('한');
   });
 });

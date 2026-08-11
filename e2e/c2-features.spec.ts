@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { launchClean, shutdownClean } from './_helpers';
+import { waitForActiveContent } from './_panels';
 
 async function shutdown(app: ElectronApplication) {
   await shutdownClean(app);
@@ -20,7 +21,7 @@ test('renderer picks up custom.css from userData on launch', async () => {
   const app = await launchClean({ userDataDir: userData });
   try {
     const page = await app.firstWindow();
-    await page.waitForSelector('.cm-content');
+    await waitForActiveContent(page);
     // Wait for the renderer to fetch + inject the custom CSS.
     await page.waitForFunction(
       () => !!document.getElementById('custom-css'),

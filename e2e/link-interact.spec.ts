@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { launchClean, getEditorDoc, shutdownClean } from './_helpers';
+import { ACTIVE_CONTENT, activeContent, waitForActiveContent } from './_panels';
 
 /**
  * v0.2.20 — real Electron coverage of the v0.2.19 link interactivity
@@ -29,12 +30,12 @@ import { launchClean, getEditorDoc, shutdownClean } from './_helpers';
 test('hover tooltip mounts over a real `.cm-md-link` (programmatic insert)', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 
   // Bypass autoPair / escape filter the same way the toolbar Link
   // button does: dispatch the change without a `userEvent` annotation.
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement;
+  await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement;
     const view = (content as unknown as {
       cmTile?: {
         root?: { view?: { dispatch: (s: unknown) => void; state: { doc: { length: number } } } };
@@ -42,7 +43,7 @@ test('hover tooltip mounts over a real `.cm-md-link` (programmatic insert)', asy
     }).cmTile?.root?.view;
     if (!view) throw new Error('no view');
     view.dispatch({ changes: { from: 0, to: 0, insert: 'pre [click](https://example.com) post' } });
-  });
+  }, ACTIVE_CONTENT);
 
   // Move caret off the link line so the link renders in collapsed form
   // (label only). The .cm-md-link mark is emitted by linkDecoration on
@@ -71,10 +72,10 @@ test('hover tooltip mounts over a real `.cm-md-link` (programmatic insert)', asy
 test('right-click on a link opens the Open / Copy / Edit popup', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement;
+  await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement;
     const view = (content as unknown as {
       cmTile?: {
         root?: { view?: { dispatch: (s: unknown) => void; state: { doc: { length: number } } } };
@@ -82,7 +83,7 @@ test('right-click on a link opens the Open / Copy / Edit popup', async () => {
     }).cmTile?.root?.view;
     if (!view) throw new Error('no view');
     view.dispatch({ changes: { from: 0, to: 0, insert: 'see [click](https://example.com) end' } });
-  });
+  }, ACTIVE_CONTENT);
   await page.keyboard.press('End');
 
   await page.locator('.cm-md-link').first().click({ button: 'right' });
@@ -101,10 +102,10 @@ test('right-click on a link opens the Open / Copy / Edit popup', async () => {
 test('right-click Edit fires durumi:edit-link with the link payload', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement;
+  await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement;
     const view = (content as unknown as {
       cmTile?: {
         root?: { view?: { dispatch: (s: unknown) => void; state: { doc: { length: number } } } };
@@ -120,7 +121,7 @@ test('right-click Edit fires durumi:edit-link with the link payload', async () =
       (window as unknown as { __lastEditLink?: unknown }).__lastEditLink =
         (e as CustomEvent).detail;
     });
-  });
+  }, ACTIVE_CONTENT);
   await page.keyboard.press('End');
 
   await page.locator('.cm-md-link').first().click({ button: 'right' });
@@ -157,8 +158,8 @@ test('v0.2.20: typed `[text](url)` lands raw (escape no longer rewrites brackets
   // exercised by the three tests above, end-to-end.
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
-  await page.click('.cm-content');
+  await waitForActiveContent(page);
+  await activeContent(page).click();
 
   // autoPair pairs `[` → `[]` (v0.2.20 — was bailed pre-v0.2.20
   // because the escape filter was about to consume it). User types
@@ -180,10 +181,10 @@ test('v0.2.20: typed `[text](url)` lands raw (escape no longer rewrites brackets
 test('v0.2.20: shortcut `[Notes]` (no URL) stays as literal text', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement;
+  await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement;
     const view = (content as unknown as {
       cmTile?: {
         root?: { view?: { dispatch: (s: unknown) => void; state: { doc: { length: number } } } };
@@ -191,7 +192,7 @@ test('v0.2.20: shortcut `[Notes]` (no URL) stays as literal text', async () => {
     }).cmTile?.root?.view;
     if (!view) throw new Error('no view');
     view.dispatch({ changes: { from: 0, to: 0, insert: '[Your Department]' } });
-  });
+  }, ACTIVE_CONTENT);
   await page.keyboard.press('End');
   await page.waitForTimeout(200);
 

@@ -1,5 +1,6 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { launchClean, shutdownClean, getEditorDoc } from './_helpers';
+import { ACTIVE_EDITOR, waitForActiveContent } from './_panels';
 
 /**
  * v0.2.23 — atomic Image / Link widget deletion contract.
@@ -31,7 +32,7 @@ let page: Page;
 test.beforeAll(async () => {
   app = await launchClean();
   page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 });
 
 test.afterAll(async () => {
@@ -46,8 +47,8 @@ test.afterAll(async () => {
  */
 async function seedDoc(text: string, cursor: number): Promise<void> {
   await page.evaluate(
-    ({ t, c }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ t, c, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       if (!root) return;
       const content = root.querySelector('.cm-content') as HTMLElement | null;
       const view = (
@@ -71,8 +72,7 @@ async function seedDoc(text: string, cursor: number): Promise<void> {
       });
       view.focus();
     },
-    { t: text, c: cursor },
-  );
+    { t: text, c: cursor, sel: ACTIVE_EDITOR });
 }
 
 test('Backspace at the right edge of an image deletes the whole `![](url)`', async () => {

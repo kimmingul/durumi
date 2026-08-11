@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { getEditorDoc, launchClean, shutdownClean } from './_helpers';
+import { activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -17,7 +18,7 @@ async function shutdown(app: ElectronApplication) {
  * inserts a boilerplate `| Header N | Cell N |` table.
  */
 async function insertTable(page: import('@playwright/test').Page): Promise<void> {
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('Meta+Shift+T');
   await page.waitForSelector('div[role="row"]');
 }
@@ -52,7 +53,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await cell.click();
       await clearFocusedCell(page);
       await page.keyboard.type('hello');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toContain('| hello |');
     } finally {
@@ -71,7 +72,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await page.keyboard.press('Tab');
       await clearFocusedCell(page);
       await page.keyboard.type('b');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toMatch(/\|\s*a\s*\|\s*b\s*\|/);
     } finally {
@@ -89,7 +90,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await page.keyboard.press('Shift+Tab');
       await clearFocusedCell(page);
       await page.keyboard.type('back');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toContain('| back |');
     } finally {
@@ -106,7 +107,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await page.keyboard.press('ArrowDown');
       await clearFocusedCell(page);
       await page.keyboard.type('down');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toMatch(/\|\s*down\s*\|/);
     } finally {
@@ -124,7 +125,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await page.keyboard.press('ArrowUp'); // back to header row 0
       await clearFocusedCell(page);
       await page.keyboard.type('up');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       // Header row should now contain "up" in col 0.
       expect(doc.split('\n')[0]).toMatch(/\|\s*up\s*\|/);
@@ -142,7 +143,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await clearFocusedCell(page);
       // Cell is now empty; typing should populate it cleanly.
       await page.keyboard.type('fresh');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toContain('| fresh |');
     } finally {
@@ -158,7 +159,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await cell.click();
       await clearFocusedCell(page);
       await page.keyboard.type('a|b');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toContain('a\\|b');
       // And the row must still parse as 2 columns (no extra cell from
@@ -184,7 +185,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       // mutation path still goes through `beforeinput` + `input` + a
       // visible glyph in textContent. Our sync handler must capture it.
       await page.keyboard.type('가나다');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toContain('가나다');
     } finally {
@@ -218,7 +219,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
         if (!ae) return;
         ae.dispatchEvent(new CompositionEvent('compositionend', { data: '가' }));
       });
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const finalDoc = await getEditorDoc(page);
       expect(finalDoc).toContain('가');
     } finally {
@@ -235,7 +236,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await clearFocusedCell(page);
       await page.keyboard.type('first');
       await page.keyboard.press('Tab');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toContain('| first |');
     } finally {
@@ -252,7 +253,7 @@ test.describe('Phase 3.1.1 — in-place table cell editing', () => {
       await clearFocusedCell(page);
       await page.keyboard.type('row1');
       await page.keyboard.press('Enter');
-      await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+      await activeContent(page).click({ position: { x: 5, y: 200 } });
       const doc = await getEditorDoc(page);
       expect(doc).toContain('| row1 |');
       // Three pipe-bearing lines: header, delim, body. Enter must not

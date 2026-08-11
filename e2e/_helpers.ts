@@ -4,6 +4,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { ACTIVE_EDITOR } from './_panels';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -167,13 +168,13 @@ export async function setWysiwygMode(app: ElectronApplication, page: Page): Prom
  * `EditorView` instance through the CodeMirror 6 internal `cmTile` link that
  * `EditorView.findFromDOM` itself walks: `.cm-editor` → `cmTile.root.view`.
  *
- * Falls back to `.cm-content` innerText when the cmTile traversal is null
+ * Falls back to the panel's `.cm-content` innerText when the cmTile traversal is null
  * (e.g. a renderer that swapped out the view between the page.evaluate and
  * the DOM query) — that fallback is lossy but keeps tests from hanging.
  */
 export async function getEditorDoc(page: Page): Promise<string> {
-  return await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  return await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     if (!root) return '';
     // CM6 stashes its view on the .cm-content node via a `cmView` weakmap-ish
     // chain that goes (dom).cmTile.root.view. The `cmTile` symbol is internal
@@ -185,7 +186,7 @@ export async function getEditorDoc(page: Page): Promise<string> {
     const view = tileHolder.cmTile?.root?.view;
     if (view) return view.state.doc.toString();
     return content?.innerText ?? '';
-  });
+  }, ACTIVE_EDITOR);
 }
 
 /**

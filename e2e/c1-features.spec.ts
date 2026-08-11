@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { launchClean, shutdownClean } from './_helpers';
+import { waitForActiveContent } from './_panels';
 
 async function shutdown(app: ElectronApplication) {
   await shutdownClean(app);
@@ -27,7 +28,7 @@ test('language=ko renders sidebar tabs in Korean on launch', async () => {
   const app = await launchClean({ userDataDir: userData });
   try {
     const page = await app.firstWindow();
-    await page.waitForSelector('.cm-content');
+    await waitForActiveContent(page);
     // Wait for the sidebar to render (it's `visible: true` in prefs).
     await page.waitForSelector('.cm-sidebar-tab', { timeout: 10000 });
     // The prefsGet().then(...) chain in App.tsx applies the persisted

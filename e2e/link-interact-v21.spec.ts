@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { launchClean, shutdownClean } from './_helpers';
+import { ACTIVE_CONTENT, waitForActiveContent } from './_panels';
 
 /**
  * v0.2.21 — REAL-UI verification of three user-reported regressions that
@@ -23,16 +24,16 @@ import { launchClean, shutdownClean } from './_helpers';
 test('v0.2.21 fix #1: hover renders a visible (on-screen) tooltip', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement;
+  await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement;
     const view = (content as unknown as {
       cmTile?: { root?: { view?: { dispatch: (s: unknown) => void } } };
     }).cmTile?.root?.view;
     if (!view) throw new Error('no view');
     view.dispatch({ changes: { from: 0, to: 0, insert: 'pre [click](https://example.com) post' } });
-  });
+  }, ACTIVE_CONTENT);
   await page.keyboard.press('End');
 
   // Move the real mouse over the link label and wait for the hoverTime.
@@ -69,7 +70,7 @@ test('v0.2.21 fix #1: hover renders a visible (on-screen) tooltip', async () => 
 test('v0.2.23: click semantics — plain left = caret only, ⌘+Click = open, right = menu', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 
   // Intercept shell:openExternal in main so we can count actual calls.
   // Three distinct click flavours land here, each with a different
@@ -88,14 +89,14 @@ test('v0.2.23: click semantics — plain left = caret only, ⌘+Click = open, ri
     });
   });
 
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement;
+  await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement;
     const view = (content as unknown as {
       cmTile?: { root?: { view?: { dispatch: (s: unknown) => void } } };
     }).cmTile?.root?.view;
     if (!view) throw new Error('no view');
     view.dispatch({ changes: { from: 0, to: 0, insert: 'see [click](https://example.com) end' } });
-  });
+  }, ACTIVE_CONTENT);
   await page.keyboard.press('End');
 
   // Right-click → renderer context menu, no browser.
@@ -136,7 +137,7 @@ test('v0.2.23: click semantics — plain left = caret only, ⌘+Click = open, ri
 test('v0.2.21 fix #3: "Insert link" menu command opens the dialog (not raw `[]()`)', async () => {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 
   // Fire the same `menu:command` IPC that `electron/contextMenu.ts` sends
   // when the user clicks "링크 삽입" on a right-click over empty editor
@@ -155,13 +156,13 @@ test('v0.2.21 fix #3: "Insert link" menu command opens the dialog (not raw `[]()
   await expect(page.locator('[data-testid=insert-link-dialog]')).toBeVisible();
 
   // Document is unchanged — no raw `[]()` insertion.
-  const doc = await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement;
+  const doc = await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement;
     const view = (content as unknown as {
       cmTile?: { root?: { view?: { state: { doc: { toString(): string } } } } };
     }).cmTile?.root?.view;
     return view?.state.doc.toString() ?? '';
-  });
+  }, ACTIVE_CONTENT);
   expect(doc).toBe('');
 
   await page.screenshot({ path: 'e2e/screenshots/v0.2-smoke/51-link-dialog-from-menu.png' });

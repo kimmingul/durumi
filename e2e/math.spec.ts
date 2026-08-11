@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { launchClean, shutdownClean } from './_helpers';
+import { activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -14,7 +15,7 @@ async function shutdown(app: ElectronApplication) {
 
 test('inline math renders when cursor leaves the line', async () => {
   const { app, page } = await launch();
-  await page.click('.cm-content');
+  await activeContent(page).click();
   // Type inline math followed by an explicit newline so the cursor leaves the
   // first line, then move further away to ensure the math line is inactive.
   await page.keyboard.type('Inline $E=mc^2$.');

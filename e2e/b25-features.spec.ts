@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { launchClean, shutdownClean } from './_helpers';
+import { activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -15,7 +16,7 @@ async function shutdown(app: ElectronApplication) {
 test('Cmd+F opens search panel; typing query highlights matches; Cmd+G moves to next; Esc closes', async () => {
   const { app, page } = await launch();
   try {
-    await page.click('.cm-content');
+    await activeContent(page).click();
     await page.keyboard.type('hello world\nhello again\nbye');
     // Open search
     await page.keyboard.press('Meta+F');

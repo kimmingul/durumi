@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { launchClean, setMarkdownMode, setTyporaMode, setWysiwygMode, shutdownClean } from './_helpers';
+import { ACTIVE_EDITOR, activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -27,8 +28,8 @@ async function setMode(app: ElectronApplication, page: Page, mode: Mode): Promis
  */
 async function seed(page: Page, doc: string, anchor: number): Promise<void> {
   await page.evaluate(
-    ({ markdown, a }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ markdown, a, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       if (!root) return;
       const content = root.querySelector('.cm-content') as HTMLElement | null;
       type ViewSeed = {
@@ -48,8 +49,7 @@ async function seed(page: Page, doc: string, anchor: number): Promise<void> {
       // decoration-rebuild reordering that the change transaction triggers.
       view.dispatch({ selection: { anchor: a }, userEvent: 'select.test' });
     },
-    { markdown: doc, a: anchor },
-  );
+    { markdown: doc, a: anchor, sel: ACTIVE_EDITOR });
   await page.waitForTimeout(120);
 }
 
@@ -68,8 +68,8 @@ async function seed(page: Page, doc: string, anchor: number): Promise<void> {
  */
 async function imeComposeAtSelection(page: Page, syllable: string): Promise<void> {
   await page.evaluate(
-    (s) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ s, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       if (!root) return;
       const content = root.querySelector('.cm-content') as HTMLElement | null;
       type ViewLike = {
@@ -89,20 +89,20 @@ async function imeComposeAtSelection(page: Page, syllable: string): Promise<void
         userEvent: 'input.type',
       });
     },
-    syllable,
+    { s: syllable, sel: ACTIVE_EDITOR },
   );
   await page.waitForTimeout(40);
 }
 
 async function readDoc(page: Page): Promise<string> {
-  return await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  return await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     if (!root) return '';
     const content = root.querySelector('.cm-content') as HTMLElement | null;
     type ViewLike = { state: { doc: { toString(): string } } };
     const tile = (content ?? root) as unknown as { cmTile?: { root?: { view?: ViewLike } } };
     return tile.cmTile?.root?.view?.state.doc.toString() ?? '';
-  });
+  }, ACTIVE_EDITOR);
 }
 
 /**
@@ -215,7 +215,7 @@ test.describe('Korean IME composition mid-construct (v0.2.11 matrix)', () => {
               await page.waitForTimeout(80);
               // Blur the cell so the syncCell handler flushes the text back
               // into the markdown buffer.
-              await page.locator('.cm-content').click({ position: { x: 5, y: 200 } });
+              await activeContent(page).click({ position: { x: 5, y: 200 } });
               await page.waitForTimeout(80);
             } else {
               await imeCompose(page, SYLLABLE);

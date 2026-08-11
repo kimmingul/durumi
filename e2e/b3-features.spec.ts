@@ -3,11 +3,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { launchClean, setTyporaMode, shutdownClean } from './_helpers';
+import { activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -22,7 +23,7 @@ test('HTML export produces a valid file with rendered body', async () => {
     // Typed-markdown test: switch to Typora mode so the `#` heading marker
     // isn't escaped to `\#` by the WYSIWYG filter (see e2e/_helpers.ts).
     await setTyporaMode(app, page);
-    await page.click('.cm-content');
+    await activeContent(page).click();
     await page.keyboard.type('# Hello\n\nbody text');
     await app.evaluate(({ dialog }, p) => {
       (dialog as unknown as { showSaveDialog: (...args: unknown[]) => Promise<unknown> }).showSaveDialog =

@@ -1,5 +1,6 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { launchClean, shutdownClean, getEditorDoc } from './_helpers';
+import { ACTIVE_EDITOR, waitForActiveContent } from './_panels';
 
 /**
  * v0.2.26 — atomic boundary contract for `~~strike~~`.
@@ -17,7 +18,7 @@ let page: Page;
 test.beforeAll(async () => {
   app = await launchClean();
   page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 });
 
 test.afterAll(async () => {
@@ -26,8 +27,8 @@ test.afterAll(async () => {
 
 async function seedDoc(text: string, cursor: number): Promise<void> {
   await page.evaluate(
-    ({ t, c }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ t, c, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       if (!root) return;
       const content = root.querySelector('.cm-content') as HTMLElement | null;
       const view = (
@@ -51,13 +52,12 @@ async function seedDoc(text: string, cursor: number): Promise<void> {
       });
       view.focus();
     },
-    { t: text, c: cursor },
-  );
+    { t: text, c: cursor, sel: ACTIVE_EDITOR });
 }
 
 async function getCaretHead(): Promise<number> {
-  return await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  return await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     const view = (
       content as unknown as {
@@ -65,7 +65,7 @@ async function getCaretHead(): Promise<number> {
       }
     )?.cmTile?.root?.view;
     return view ? view.state.selection.main.head : -1;
-  });
+  }, ACTIVE_EDITOR);
 }
 
 test('Backspace at node.to (just after closing ~~) deletes the whole `~~strike~~`', async () => {
@@ -164,8 +164,8 @@ test('Strikethrough toggle (menu IPC) on `~~strike~~` selection still unwraps wi
   const labelEnd = labelStart + 'strike'.length;
   await seedDoc('see ~~strike~~ end', 0);
   await page.evaluate(
-    ({ from, to }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ from, to, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       const content = root?.querySelector('.cm-content') as HTMLElement | null;
       const view = (
         content as unknown as {
@@ -184,8 +184,7 @@ test('Strikethrough toggle (menu IPC) on `~~strike~~` selection still unwraps wi
       view.dispatch({ selection: { anchor: from, head: to }, userEvent: 'select' });
       view.focus();
     },
-    { from: labelStart, to: labelEnd },
-  );
+    { from: labelStart, to: labelEnd, sel: ACTIVE_EDITOR });
   // Trigger the strikethrough toggle via the production menu IPC path,
   // which is the same channel the Cmd+Shift+X accelerator and the toolbar
   // Strikethrough button both use. Direct page.keyboard.press('Meta+Shift+x')

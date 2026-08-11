@@ -1,5 +1,6 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { getEditorDoc, launchClean, setMarkdownMode, shutdownClean } from './_helpers';
+import { activeContent, waitForActiveContent } from './_panels';
 
 /**
  * End-to-end coverage for the Document-mode (WYSIWYG) editor toolbar that
@@ -30,11 +31,11 @@ import { getEditorDoc, launchClean, setMarkdownMode, shutdownClean } from './_he
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   // Make sure the toolbar mounted before we start clicking buttons —
   // editor + toolbar mount on different ticks under packaged Electron.
   await page.waitForSelector('[data-testid=editor-toolbar]', { timeout: 5000 });
-  await page.click('.cm-content');
+  await activeContent(page).click();
   return { app, page };
 }
 
@@ -200,7 +201,7 @@ test('B7: Bold button shows pressed state when caret is inside **…**', async (
   // for the refresh listener to re-detect inlineMarks at the caret. Pressing
   // ArrowLeft + ArrowRight keeps the caret inside `hi` and emits real
   // keydown/keyup events. The view must be focused for keyboard to land.
-  await page.click('.cm-content');
+  await activeContent(page).click();
   // Place caret inside `hi`: position 3 (between `*` and `h`) by pressing
   // Home then ArrowRight thrice.
   await page.keyboard.press('Home');
@@ -225,7 +226,7 @@ test('C1: Bullet list — pressing button on blank line inserts "- "', async () 
   const { app, page } = await launch();
   await page.click('[data-testid=toolbar-bullet]');
   // Caret is now after `- `. Type the item text.
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('End');
   await page.keyboard.type('item');
   expect(await getEditorDoc(page)).toBe('- item');
@@ -235,7 +236,7 @@ test('C1: Bullet list — pressing button on blank line inserts "- "', async () 
 test('C2: Numbered list — pressing button on blank line inserts "1. "', async () => {
   const { app, page } = await launch();
   await page.click('[data-testid=toolbar-numbered]');
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('End');
   await page.keyboard.type('item');
   expect(await getEditorDoc(page)).toBe('1. item');
@@ -245,7 +246,7 @@ test('C2: Numbered list — pressing button on blank line inserts "1. "', async 
 test('C3: Task list — pressing button on blank line inserts "- [ ] "', async () => {
   const { app, page } = await launch();
   await page.click('[data-testid=toolbar-task]');
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('End');
   await page.keyboard.type('item');
   expect(await getEditorDoc(page)).toBe('- [ ] item');
@@ -256,7 +257,7 @@ test('C4: Indent then outdent round-trips a bullet line', async () => {
   const { app, page } = await launch();
   // Set up `- a` first.
   await page.click('[data-testid=toolbar-bullet]');
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('End');
   await page.keyboard.type('a');
   expect(await getEditorDoc(page)).toBe('- a');

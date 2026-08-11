@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { launchClean, setTyporaMode, shutdownClean } from './_helpers';
+import { ACTIVE_CONTENT, waitForActiveContent } from './_panels';
 
 const PNG_FIXTURE = path.resolve(process.cwd(), 'e2e', 'fixtures', 'tiny.png');
 
@@ -36,7 +37,7 @@ const PANDOC = pandocBinary();
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -154,11 +155,11 @@ test.describe('Pandoc DOCX golden round-trip', () => {
       // unless the path is trusted; under DURUMI_E2E=1 the tmpdir bypass
       // (pathGuard.ts:18) accepts it for tests.
       await page.waitForFunction(
-        (expected: string) => {
-          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+        ({ expected, sel }: { expected: string; sel: string }) => {
+          const cm = document.querySelector(sel) as HTMLElement | null;
           return cm?.innerText.includes(expected) ?? false;
         },
-        'Round-trip kitchen sink',
+        { expected: 'Round-trip kitchen sink', sel: ACTIVE_CONTENT },
         { timeout: 5000 },
       );
 
@@ -317,11 +318,11 @@ test.describe('HTML export image inlining (v0.2.10)', () => {
       }, mdPath);
       await setTyporaMode(app, page);
       await page.waitForFunction(
-        (expected: string) => {
-          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+        ({ expected, sel }: { expected: string; sel: string }) => {
+          const cm = document.querySelector(sel) as HTMLElement | null;
           return cm?.innerText.includes(expected) ?? false;
         },
-        'inline test',
+        { expected: 'inline test', sel: ACTIVE_CONTENT },
         { timeout: 5000 },
       );
 

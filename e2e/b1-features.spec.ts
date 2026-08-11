@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { launchClean, setMarkdownMode, setTyporaMode, setWysiwygMode, shutdownClean } from './_helpers';
+import { ACTIVE_CONTENT, ACTIVE_EDITOR, activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -31,7 +32,7 @@ test('table insert + Tab adds row + click to render', async () => {
   // CM), we insert the boilerplate table, type a single cell value, then move
   // the caret out of the table area and assert the row widget is rendered.
   const { app, page } = await launch();
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('Meta+Shift+T');
   await page.keyboard.type('A');
   for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
@@ -41,7 +42,7 @@ test('table insert + Tab adds row + click to render', async () => {
 
 test('task list checkbox toggle', async () => {
   const { app, page } = await launchTypora();
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.type('- [ ] todo\n');
   // Move caret away from line 1 so the checkbox widget renders on it.
   await page.keyboard.press('ArrowUp');
@@ -60,7 +61,7 @@ test('task list checkbox toggle', async () => {
 
 test('strikethrough markers hide on inactive line', async () => {
   const { app, page } = await launchTypora();
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.type('~~strike~~\n');
   // After Enter, caret is on line 2 (empty); line 1 is inactive so its
   // `~~` markers are replaced by the hidden-marker widget.
@@ -73,7 +74,7 @@ test('strikethrough markers hide on inactive line', async () => {
 
 test('typescript fenced block highlights keyword', async () => {
   const { app, page } = await launchTypora();
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.type('```ts\nconst x = 1;\n```\n');
   // Lazy lang load may need a moment in packaged Electron, raise to 5s.
   await page.waitForSelector('.cm-tok-keyword', { timeout: 5000 });
@@ -108,8 +109,8 @@ test('Document mode collapses memos / CriticMarkup on the active line; Live mode
 
     const seed = async (): Promise<void> => {
       await page.evaluate(
-        ({ markdown, anchor }) => {
-          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+        ({ markdown, anchor, sel }) => {
+          const root = document.querySelector(sel) as HTMLElement | null;
           if (!root) return;
           const content = root.querySelector('.cm-content') as HTMLElement | null;
           const tileHolder = (content ?? root) as unknown as {
@@ -132,8 +133,7 @@ test('Document mode collapses memos / CriticMarkup on the active line; Live mode
             userEvent: 'input.testReset',
           });
         },
-        { markdown: doc, anchor: caretPos },
-      );
+        { markdown: doc, anchor: caretPos, sel: ACTIVE_EDITOR });
       await page.waitForTimeout(80);
     };
 
@@ -196,8 +196,8 @@ test('mode switch alone (no edit, no caret move) rebuilds memo + CriticMarkup de
 
     // Seed once. Subsequent assertions MUST NOT reseed.
     await page.evaluate(
-      ({ markdown, anchor }) => {
-        const root = document.querySelector('.cm-editor') as HTMLElement | null;
+      ({ markdown, anchor, sel }) => {
+        const root = document.querySelector(sel) as HTMLElement | null;
         if (!root) return;
         const content = root.querySelector('.cm-content') as HTMLElement | null;
         const tileHolder = (content ?? root) as unknown as {
@@ -220,8 +220,7 @@ test('mode switch alone (no edit, no caret move) rebuilds memo + CriticMarkup de
           userEvent: 'input.testReset',
         });
       },
-      { markdown: doc, anchor: caretPos },
-    );
+      { markdown: doc, anchor: caretPos, sel: ACTIVE_EDITOR });
     await page.waitForTimeout(80);
 
     // ── Live baseline: caret-on-memo line shows raw `%%` + `{++`. ──
@@ -288,8 +287,8 @@ test('==highlight==, ~sub~, ^sup^ render in Document mode and reveal active-line
     const doc = '==hi==\nH~2~O\nX^2^';
     const seed = async (anchor: number): Promise<void> => {
       await page.evaluate(
-        ({ markdown, a }) => {
-          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+        ({ markdown, a, sel }) => {
+          const root = document.querySelector(sel) as HTMLElement | null;
           if (!root) return;
           const content = root.querySelector('.cm-content') as HTMLElement | null;
           const tileHolder = (content ?? root) as unknown as {
@@ -312,8 +311,7 @@ test('==highlight==, ~sub~, ^sup^ render in Document mode and reveal active-line
             userEvent: 'input.testReset',
           });
         },
-        { markdown: doc, a: anchor },
-      );
+        { markdown: doc, a: anchor, sel: ACTIVE_EDITOR });
       await page.waitForTimeout(80);
     };
 
@@ -381,8 +379,8 @@ test('GitHub alert callouts: five kinds render in Document mode, raw in Source m
 
     const seed = async (): Promise<void> => {
       await page.evaluate(
-        ({ markdown }) => {
-          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+        ({ markdown, sel }) => {
+          const root = document.querySelector(sel) as HTMLElement | null;
           if (!root) return;
           const content = root.querySelector('.cm-content') as HTMLElement | null;
           const tileHolder = (content ?? root) as unknown as {
@@ -405,8 +403,7 @@ test('GitHub alert callouts: five kinds render in Document mode, raw in Source m
             userEvent: 'input.testReset',
           });
         },
-        { markdown: doc },
-      );
+        { markdown: doc, sel: ACTIVE_EDITOR });
       await page.waitForTimeout(120);
     };
 
@@ -417,8 +414,7 @@ test('GitHub alert callouts: five kinds render in Document mode, raw in Source m
       expect(await page.locator(`.cm-md-alert-${kind}`).count()).toBeGreaterThanOrEqual(2);
     }
     const docModeText = await page.evaluate(
-      () => (document.querySelector('.cm-content') as HTMLElement).innerText,
-    );
+      (sel) => (document.querySelector(sel) as HTMLElement).innerText, ACTIVE_CONTENT);
     expect(docModeText).not.toContain('[!NOTE]');
     expect(docModeText).not.toContain('[!CAUTION]');
 
@@ -430,8 +426,7 @@ test('GitHub alert callouts: five kinds render in Document mode, raw in Source m
       { timeout: 2000 },
     );
     const sourceText = await page.evaluate(
-      () => (document.querySelector('.cm-content') as HTMLElement).innerText,
-    );
+      (sel) => (document.querySelector(sel) as HTMLElement).innerText, ACTIVE_CONTENT);
     for (const kind of ['NOTE', 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION']) {
       expect(sourceText).toContain(`[!${kind}]`);
     }

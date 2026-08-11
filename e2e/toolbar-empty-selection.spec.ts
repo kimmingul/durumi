@@ -1,5 +1,6 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { launchClean, shutdownClean, getEditorDoc } from './_helpers';
+import { ACTIVE_CONTENT, ACTIVE_EDITOR, waitForActiveContent } from './_panels';
 
 /**
  * v0.2.29 — empty-selection toolbar contract.
@@ -31,7 +32,7 @@ let page: Page;
 test.beforeAll(async () => {
   app = await launchClean();
   page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
 });
 
 test.afterAll(async () => {
@@ -39,8 +40,8 @@ test.afterAll(async () => {
 });
 
 async function clearAndFocus(): Promise<void> {
-  await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     const view = (
       content as unknown as {
@@ -61,7 +62,7 @@ async function clearAndFocus(): Promise<void> {
       selection: { anchor: 0 },
     });
     view.focus();
-  });
+  }, ACTIVE_EDITOR);
 }
 
 async function clickToolbarButton(testId: string): Promise<void> {
@@ -104,8 +105,8 @@ for (const { testId } of INLINE_BUTTONS) {
 test('non-empty selection + toolbar bold still wraps the selection (regression guard)', async () => {
   await clearAndFocus();
   await page.keyboard.type('hello world');
-  await page.evaluate(() => {
-    const content = document.querySelector('.cm-content') as HTMLElement | null;
+  await page.evaluate((sel) => {
+    const content = document.querySelector(sel) as HTMLElement | null;
     const view = (
       content as unknown as {
         cmTile?: { root?: { view?: { dispatch: (spec: object) => void; focus: () => void } } };
@@ -114,7 +115,7 @@ test('non-empty selection + toolbar bold still wraps the selection (regression g
     if (!view) return;
     view.dispatch({ selection: { anchor: 0, head: 5 }, userEvent: 'select' });
     view.focus();
-  });
+  }, ACTIVE_CONTENT);
   await clickToolbarButton('toolbar-bold');
   expect(await getEditorDoc(page)).toBe('**hello** world');
 });

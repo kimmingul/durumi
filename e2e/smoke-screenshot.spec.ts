@@ -23,6 +23,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { launchClean, setMarkdownMode, setTyporaMode, setWysiwygMode, shutdownClean } from './_helpers';
+import { ACTIVE_CONTENT, ACTIVE_EDITOR, activeContent, waitForActiveContent } from './_panels';
 
 const FIXTURE_SRC = path.resolve(process.cwd(), 'docs', 'v0.2-smoke-test.md');
 const SHOT_DIR = path.resolve(process.cwd(), 'e2e', 'screenshots', 'v0.2-smoke');
@@ -33,7 +34,7 @@ test.skip(process.env.SMOKE !== '1', 'set SMOKE=1 to run the v0.2 smoke screensh
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -48,11 +49,11 @@ async function openFixture(app: ElectronApplication, page: Page, mdPath: string)
     win?.webContents.send('menu:command', { type: 'openRecent', path: p });
   }, mdPath);
   await page.waitForFunction(
-    (expected: string) => {
-      const cm = document.querySelector('.cm-content') as HTMLElement | null;
+    ({ expected, sel }: { expected: string; sel: string }) => {
+      const cm = document.querySelector(sel) as HTMLElement | null;
       return cm?.innerText.includes(expected) ?? false;
     },
-    'Smoke Test',
+    { expected: 'Smoke Test', sel: ACTIVE_CONTENT },
     { timeout: 10_000 },
   );
   // Allow the live decorations + widgets one render tick to settle.
@@ -61,8 +62,8 @@ async function openFixture(app: ElectronApplication, page: Page, mdPath: string)
 
 /** Place the caret at the start of the given (1-based) source line. */
 async function caretToLine(page: Page, line: number) {
-  await page.evaluate((target: number) => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  await page.evaluate(({ target, sel }: { target: number; sel: string }) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     type ViewLike = {
       state: { doc: { lines: number; line: (n: number) => { from: number } } };
@@ -76,14 +77,14 @@ async function caretToLine(page: Page, line: number) {
     const safe = Math.max(1, Math.min(target, view.state.doc.lines));
     const info = view.state.doc.line(safe);
     view.dispatch({ selection: { anchor: info.from }, userEvent: 'select.smoke' });
-  }, line);
+  }, { target: line, sel: ACTIVE_EDITOR });
   await page.waitForTimeout(120);
 }
 
 /** Scroll the editor's scroll DOM so the caret line sits roughly mid-viewport. */
 async function scrollCaretIntoView(page: Page) {
-  await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     type ViewLike = {
       state: { selection: { main: { head: number } } };
@@ -102,14 +103,14 @@ async function scrollCaretIntoView(page: Page) {
     const desiredFromTop = sd.clientHeight * 0.4;
     const drift = c.top - r.top - desiredFromTop;
     sd.scrollTop = Math.max(0, sd.scrollTop + drift);
-  });
+  }, ACTIVE_EDITOR);
   await page.waitForTimeout(120);
 }
 
 /** Scroll to the very top of the document. */
 async function scrollToTop(page: Page) {
-  await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     type ViewLike = {
       dispatch: (s: unknown) => void;
@@ -122,14 +123,14 @@ async function scrollToTop(page: Page) {
     view.focus();
     view.dispatch({ selection: { anchor: 0 }, userEvent: 'select.smoke' });
     view.scrollDOM.scrollTop = 0;
-  });
+  }, ACTIVE_EDITOR);
   await page.waitForTimeout(120);
 }
 
 /** Find the (1-based) line number of the first line whose text matches needle. */
 async function findLine(page: Page, needle: string): Promise<number> {
-  return await page.evaluate((q: string) => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  return await page.evaluate(({ q, sel }: { q: string; sel: string }) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     type DocLike = {
       lines: number;
@@ -145,7 +146,7 @@ async function findLine(page: Page, needle: string): Promise<number> {
       if (view.state.doc.line(i).text.includes(q)) return i;
     }
     return 0;
-  }, needle);
+  }, { q: needle, sel: ACTIVE_EDITOR });
 }
 
 async function snap(page: Page, name: string) {
@@ -168,8 +169,8 @@ async function parkLineAtTop(page: Page, line: number, offsetPx = 60) {
   // heuristic could not, because widgets like [toc] add visual height with
   // no corresponding source line count).
   await page.evaluate(
-    (args: { line: number; offsetPx: number }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    (args: { line: number; offsetPx: number; sel: string }) => {
+      const root = document.querySelector(args.sel) as HTMLElement | null;
       const content = root?.querySelector('.cm-content') as HTMLElement | null;
       type ScrollIntoViewArg = unknown;
       type ViewLike = {
@@ -198,14 +199,14 @@ async function parkLineAtTop(page: Page, line: number, offsetPx = 60) {
         userEvent: 'select.smoke',
       });
     },
-    { line, offsetPx },
+    { line, offsetPx, sel: ACTIVE_EDITOR },
   );
   await page.waitForTimeout(280);
   // One refinement pass in case CM's first scrollIntoView missed by a few px
   // due to widget heights settling after layout.
   await page.evaluate(
-    (args: { line: number; offsetPx: number }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    (args: { line: number; offsetPx: number; sel: string }) => {
+      const root = document.querySelector(args.sel) as HTMLElement | null;
       const content = root?.querySelector('.cm-content') as HTMLElement | null;
       type ViewLike = {
         state: { doc: { line: (n: number) => { from: number } } };
@@ -231,7 +232,7 @@ async function parkLineAtTop(page: Page, line: number, offsetPx = 60) {
       sd.scrollTop = Math.max(0, Math.min(sd.scrollTop + d, sd.scrollHeight - sd.clientHeight));
       view.requestMeasure?.();
     },
-    { line, offsetPx },
+    { line, offsetPx, sel: ACTIVE_EDITOR },
   );
   await page.waitForTimeout(140);
 }
@@ -333,8 +334,8 @@ test.describe('v0.2 smoke screenshots', () => {
         await caretToLine(page, Math.max(1, noteAlertLine - 2));
         // Scroll so the NOTE alert sits near the top of the viewport, giving
         // room below for TIP/IMPORTANT/WARNING/CAUTION to all be in frame.
-        await page.evaluate((line: number) => {
-          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+        await page.evaluate(({ line, sel }: { line: number; sel: string }) => {
+          const root = document.querySelector(sel) as HTMLElement | null;
           const content = root?.querySelector('.cm-content') as HTMLElement | null;
           type ViewLike = {
             state: { doc: { line: (n: number) => { from: number } } };
@@ -352,7 +353,7 @@ test.describe('v0.2 smoke screenshots', () => {
           // Move the NOTE line ~80px below the top — header label sits above it.
           const drift = c.top - r.top - 80;
           sd.scrollTop = Math.max(0, sd.scrollTop + drift);
-        }, noteAlertLine);
+        }, { line: noteAlertLine, sel: ACTIVE_EDITOR });
         await page.waitForTimeout(150);
       }
       await snap(page, '09-document-alerts-all-five.png');
@@ -371,8 +372,8 @@ test.describe('v0.2 smoke screenshots', () => {
       if (tableLine > 0) {
         // Park caret well off the table so the cell render mode is active.
         await caretToLine(page, Math.max(1, tableLine - 3));
-        await page.evaluate((line: number) => {
-          const root = document.querySelector('.cm-editor') as HTMLElement | null;
+        await page.evaluate(({ line, sel }: { line: number; sel: string }) => {
+          const root = document.querySelector(sel) as HTMLElement | null;
           const content = root?.querySelector('.cm-content') as HTMLElement | null;
           type ViewLike = {
             state: { doc: { line: (n: number) => { from: number } } };
@@ -391,7 +392,7 @@ test.describe('v0.2 smoke screenshots', () => {
           // mermaid all fit in one shot.
           const drift = c.top - r.top - 40;
           sd.scrollTop = Math.max(0, sd.scrollTop + drift);
-        }, tableLine);
+        }, { line: tableLine, sel: ACTIVE_EDITOR });
         await page.waitForTimeout(200);
       }
       await snap(page, '11-document-table-math-mermaid.png');
@@ -803,7 +804,7 @@ test.describe('v0.2 smoke screenshots', () => {
       // ---- 35 — Table cell blurred (back to render mode). Click the
       // editor body well below the table to drop the cell's contentEditable
       // focus, then snap. Should show the rendered (non-edit) appearance.
-      await page.locator('.cm-content').click({ position: { x: 10, y: 350 } });
+      await activeContent(page).click({ position: { x: 10, y: 350 } });
       await page.waitForTimeout(200);
       // Re-park the table near the top in case the click scrolled us.
       if (tableLine34 > 0) {
@@ -979,7 +980,7 @@ test.describe('v0.2 smoke screenshots', () => {
         });
       }, wsDir);
       await page.reload();
-      await page.waitForSelector('.cm-content', { timeout: 5000 });
+      await waitForActiveContent(page, { timeout: 5000 });
       // Re-open the fixture (reload reset the open document).
       await openFixture(app, page, mdPath);
       await setWysiwygMode(app, page);
@@ -1133,11 +1134,11 @@ test.describe('v0.2 smoke screenshots', () => {
       }, largeMdPath);
       // Wait for the title heading from the fixture to appear in the editor DOM.
       await page.waitForFunction(
-        () => {
-          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+        (sel) => {
+          const cm = document.querySelector(sel) as HTMLElement | null;
           return cm?.innerText.includes('Large Stress Fixture') ?? false;
         },
-        undefined,
+        ACTIVE_CONTENT,
         { timeout: 30_000 },
       );
       const openMs = Date.now() - openStart;
@@ -1157,14 +1158,14 @@ test.describe('v0.2 smoke screenshots', () => {
       await snap(page, '43-large-doc-top.png');
 
       // ---- 44 — Large doc scrolled to ~50% (~line 2525).
-      const middleLine = await page.evaluate(() => {
-        const root = document.querySelector('.cm-editor') as HTMLElement | null;
+      const middleLine = await page.evaluate((sel) => {
+        const root = document.querySelector(sel) as HTMLElement | null;
         const content = root?.querySelector('.cm-content') as HTMLElement | null;
         type ViewLike = { state: { doc: { lines: number } } };
         const tile = (content ?? root) as unknown as { cmTile?: { root?: { view?: ViewLike } } };
         const view = tile.cmTile?.root?.view;
         return view ? Math.floor(view.state.doc.lines / 2) : 2500;
-      });
+      }, ACTIVE_EDITOR);
       await caretToLine(page, middleLine);
       await scrollCaretIntoView(page);
       await page.waitForTimeout(200);
@@ -1201,7 +1202,7 @@ test.describe('v0.2 smoke screenshots', () => {
         });
       }, tmpDir); // tmpDir contains the large fixture
       await page.reload();
-      await page.waitForSelector('.cm-content', { timeout: 8000 });
+      await waitForActiveContent(page, { timeout: 8000 });
       await page.waitForTimeout(400);
       const searchInput46 = await page.$('.cm-search-input');
       if (searchInput46) {
@@ -1225,11 +1226,11 @@ test.describe('v0.2 smoke screenshots', () => {
         win?.webContents.send('menu:command', { type: 'openRecent', path: p });
       }, largeMdPath);
       await page.waitForFunction(
-        () => {
-          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+        (sel) => {
+          const cm = document.querySelector(sel) as HTMLElement | null;
           return cm?.innerText.includes('Large Stress Fixture') ?? false;
         },
-        undefined,
+        ACTIVE_CONTENT,
         { timeout: 30_000 },
       );
       // eslint-disable-next-line no-console
@@ -1269,11 +1270,11 @@ test.describe('v0.2 smoke screenshots', () => {
         // can't easily reach into CM's facet without leaking internals across
         // the page boundary; counting DOM `[class*="cm-md-"]` nodes gives a
         // stable signal of how many decorations are actually painted.
-        const decoCount = await page.evaluate(() => {
-          const cm = document.querySelector('.cm-content');
+        const decoCount = await page.evaluate((sel) => {
+          const cm = document.querySelector(sel);
           if (!cm) return 0;
           return cm.querySelectorAll('[class*="cm-md-"], .cm-memo, .cm-cm-insert, .cm-cm-delete').length;
-        });
+        }, ACTIVE_CONTENT);
         return { ms: elapsedMs, decoCount };
       };
 
@@ -1351,7 +1352,7 @@ test.describe('v0.2 smoke screenshots', () => {
         });
       }, [ws1, ws2, ws3]);
       await page.reload();
-      await page.waitForSelector('.cm-content', { timeout: 8000 });
+      await waitForActiveContent(page, { timeout: 8000 });
       await page
         .waitForSelector('.cm-tree-root-label', { timeout: 6000 })
         .catch(() => {
@@ -1364,11 +1365,11 @@ test.describe('v0.2 smoke screenshots', () => {
         win?.webContents.send('menu:command', { type: 'openRecent', path: p });
       }, largeMdPath);
       await page.waitForFunction(
-        () => {
-          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+        (sel) => {
+          const cm = document.querySelector(sel) as HTMLElement | null;
           return cm?.innerText.includes('Large Stress Fixture') ?? false;
         },
-        undefined,
+        ACTIVE_CONTENT,
         { timeout: 30_000 },
       );
       await setWysiwygMode(app, page);
@@ -1394,11 +1395,11 @@ test.describe('v0.2 smoke screenshots', () => {
         await ws2Row.click().catch(() => undefined);
         await page
           .waitForFunction(
-            () => {
-              const cm = document.querySelector('.cm-content') as HTMLElement | null;
+            (sel) => {
+              const cm = document.querySelector(sel) as HTMLElement | null;
               return cm?.innerText.includes('Literature') ?? false;
             },
-            undefined,
+            ACTIVE_CONTENT,
             { timeout: 5000 },
           )
           .catch(() => {
@@ -1421,11 +1422,11 @@ test.describe('v0.2 smoke screenshots', () => {
         win?.webContents.send('menu:command', { type: 'openRecent', path: p });
       }, largeMdPath);
       await page.waitForFunction(
-        () => {
-          const cm = document.querySelector('.cm-content') as HTMLElement | null;
+        (sel) => {
+          const cm = document.querySelector(sel) as HTMLElement | null;
           return cm?.innerText.includes('Large Stress Fixture') ?? false;
         },
-        undefined,
+        ACTIVE_CONTENT,
         { timeout: 30_000 },
       );
       await setWysiwygMode(app, page);

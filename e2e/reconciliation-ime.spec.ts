@@ -12,6 +12,7 @@ import {
   cancelComposition,
   observeCompositionEnd,
 } from './_helpers';
+import { ACTIVE_CONTENT, activeContent } from './_panels';
 
 /**
  * AC-WS-019~022 — 조합 중 외부 변경 조정.
@@ -55,15 +56,13 @@ async function withOpenDoc(initial: string, fn: (f: Fixture) => Promise<void>): 
 
     const firstLine = initial.trim().split('\n')[0] ?? '';
     await page.waitForFunction(
-      (expected: string) =>
-        (document.querySelector('.cm-content') as HTMLElement | null)?.innerText.includes(
-          expected,
-        ) ?? false,
-      firstLine,
+      ({ expected, sel }: { expected: string; sel: string }) =>
+        (document.querySelector(sel) as HTMLElement | null)?.innerText.includes(expected) ?? false,
+      { expected: firstLine, sel: ACTIVE_CONTENT },
       { timeout: 10_000 },
     );
 
-    await page.locator('.cm-content').click();
+    await activeContent(page).click();
     await fn({ app, page, filePath, dir });
   } finally {
     await shutdownClean(app);
@@ -71,7 +70,7 @@ async function withOpenDoc(initial: string, fn: (f: Fixture) => Promise<void>): 
   }
 }
 
-const bufferText = (page: Page): Promise<string> => page.locator('.cm-content').innerText();
+const bufferText = (page: Page): Promise<string> => activeContent(page).innerText();
 
 /**
  * 편집 표면(`.cm-content`)에서 직접 조합 경계를 센다.
@@ -83,15 +82,15 @@ const bufferText = (page: Page): Promise<string> => page.locator('.cm-content').
  * 구분할 수 없다.
  */
 async function installSurfaceCounter(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const cm = document.querySelector('.cm-content');
+  await page.evaluate((sel) => {
+    const cm = document.querySelector(sel);
     if (!cm) throw new Error('.cm-content not found');
     const w = window as unknown as { __cmCounts?: { starts: number; ends: number } };
     const counts = { starts: 0, ends: 0 };
     w.__cmCounts = counts;
     cm.addEventListener('compositionstart', () => { counts.starts += 1; });
     cm.addEventListener('compositionend', () => { counts.ends += 1; });
-  });
+  }, ACTIVE_CONTENT);
 }
 
 /** 조정 표면의 현재 상태. 없으면 null. */
@@ -159,11 +158,11 @@ function expectCompositionStillOpen(counts: { starts: number; ends: number }): v
 async function proveChannelLive(f: Fixture): Promise<void> {
   fs.writeFileSync(f.filePath, 'CHANNEL-LIVE-PROBE\n', 'utf8');
   await f.page.waitForFunction(
-    () =>
-      (document.querySelector('.cm-content') as HTMLElement | null)?.innerText.includes(
+    (sel) =>
+      (document.querySelector(sel) as HTMLElement | null)?.innerText.includes(
         'CHANNEL-LIVE-PROBE',
       ) ?? false,
-    undefined,
+    ACTIVE_CONTENT,
     { timeout: 10_000 },
   );
 }

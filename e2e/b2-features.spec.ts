@@ -3,11 +3,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { launchClean, setTyporaMode, shutdownClean } from './_helpers';
+import { ACTIVE_CONTENT, activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -45,15 +46,14 @@ test('open folder + click file opens content', async () => {
       });
     }, tmp);
     await page.reload();
-    await page.waitForSelector('.cm-content');
+    await waitForActiveContent(page);
     await page.waitForSelector('.cm-tree-row-file', { timeout: 5000 });
     const rows = page.locator('.cm-tree-row-file');
     await expect(rows).toHaveCount(2);
     await rows.first().click();
     await page.waitForTimeout(200);
     const content = await page.evaluate(
-      () => (document.querySelector('.cm-content') as HTMLElement).innerText
-    );
+      (sel) => (document.querySelector(sel) as HTMLElement).innerText, ACTIVE_CONTENT);
     expect(content).toContain('One');
   } finally {
     await shutdown(app);
@@ -93,12 +93,12 @@ test('outline tab shows headings and clicking jumps cursor', async () => {
   );
   const app = await launchClean({ userDataDir: userData });
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   try {
     // Typed-markdown test: switch to Typora mode so `#` chars aren't escaped
     // by the WYSIWYG strict-literal filter (see e2e/_helpers.ts).
     await setTyporaMode(app, page);
-    await page.click('.cm-content');
+    await activeContent(page).click();
     await page.keyboard.type('# H1\n\n## H2\n\n### H3\n\nbody text\n');
     // useDocOutline has a 100ms debounce; wait it out before switching tabs.
     await page.waitForTimeout(150);

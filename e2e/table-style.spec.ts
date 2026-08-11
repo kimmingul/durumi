@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { getEditorDoc, launchClean, shutdownClean } from './_helpers';
+import { ACTIVE_EDITOR, activeContent, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -18,7 +19,7 @@ async function shutdown(app: ElectronApplication) {
  * header cell isn't focused) so the gear icon is hover-discoverable.
  */
 async function insertTable(page: import('@playwright/test').Page): Promise<void> {
-  await page.click('.cm-content');
+  await activeContent(page).click();
   await page.keyboard.press('Meta+Shift+T');
   await page.waitForSelector('div[role="row"]');
 }
@@ -31,8 +32,8 @@ async function setEditorDoc(
   page: import('@playwright/test').Page,
   doc: string,
 ): Promise<void> {
-  await page.evaluate((markdown) => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  await page.evaluate(({ markdown, sel }) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     if (!root) return;
     const content = root.querySelector('.cm-content') as HTMLElement | null;
     const tileHolder = (content ?? root) as unknown as {
@@ -51,7 +52,7 @@ async function setEditorDoc(
       changes: { from: 0, to: view.state.doc.length, insert: markdown },
       userEvent: 'input.testReset',
     });
-  }, doc);
+  }, { markdown: doc, sel: ACTIVE_EDITOR });
   // Wait for the StateField rebuild + row decoration mount.
   await page.waitForSelector('div[role="row"]', { timeout: 2000 });
 }

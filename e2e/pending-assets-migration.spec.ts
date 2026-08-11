@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launchClean, shutdownClean, getEditorDoc } from './_helpers';
+import { ACTIVE_EDITOR, waitForActiveContent } from './_panels';
 
 /**
  * Build a userData dir whose absolute path contains a literal space.
@@ -27,7 +28,7 @@ async function mkdtempWithSpace(prefix: string): Promise<string> {
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -190,9 +191,9 @@ test('renderer actually renders a pending image whose path contains a space', as
   const userDataWithSpace = await mkdtempWithSpace('durumi-spaced-');
   const app = await launchClean({ userDataDir: userDataWithSpace });
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   try {
-    const probe = await page.evaluate(async () => {
+    const probe = await page.evaluate(async (sel) => {
       const w = window as unknown as {
         api: {
           saveImage: (
@@ -221,7 +222,7 @@ test('renderer actually renders a pending image whose path contains a space', as
       const encoded = encodeURI(saved.absPath);
       // Dispatch a CM transaction to insert the markdown image at caret.
       // This is the same code path `usePickAndInsertImage` takes.
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+      const root = document.querySelector(sel) as HTMLElement | null;
       if (!root) return null;
       const content = root.querySelector('.cm-content') as HTMLElement | null;
       const view = (
@@ -241,7 +242,7 @@ test('renderer actually renders a pending image whose path contains a space', as
         changes: { from: 0, to: view.state.doc.length, insert: `![](${encoded})\n` },
       });
       return { absPath: saved.absPath, encoded };
-    });
+    }, ACTIVE_EDITOR);
     expect(probe).not.toBeNull();
     expect(probe!.absPath).toContain(' ');
 

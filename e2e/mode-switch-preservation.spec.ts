@@ -1,10 +1,11 @@
 import { test, expect, type ElectronApplication } from '@playwright/test';
 import { launchClean, setMarkdownMode, setTyporaMode, setWysiwygMode, shutdownClean } from './_helpers';
+import { ACTIVE_EDITOR, waitForActiveContent } from './_panels';
 
 async function launch() {
   const app = await launchClean();
   const page = await app.firstWindow();
-  await page.waitForSelector('.cm-content');
+  await waitForActiveContent(page);
   return { app, page };
 }
 
@@ -20,8 +21,8 @@ interface ViewSnapshot {
 }
 
 async function readSnapshot(page: import('@playwright/test').Page): Promise<ViewSnapshot> {
-  return await page.evaluate(() => {
-    const root = document.querySelector('.cm-editor') as HTMLElement | null;
+  return await page.evaluate((sel) => {
+    const root = document.querySelector(sel) as HTMLElement | null;
     const content = root?.querySelector('.cm-content') as HTMLElement | null;
     type LineInfo = { number: number; from: number };
     type DocLike = { lineAt: (pos: number) => LineInfo };
@@ -46,7 +47,7 @@ async function readSnapshot(page: import('@playwright/test').Page): Promise<View
       scrollTop: view.scrollDOM.scrollTop,
       caretClientY: coords ? coords.top : null,
     };
-  });
+  }, ACTIVE_EDITOR);
 }
 
 async function seedLongDoc(
@@ -58,8 +59,8 @@ async function seedLongDoc(
   const doc = lines.join('\n');
   // Place caret at the start of the requested line.
   await page.evaluate(
-    ({ markdown, targetLine }) => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    ({ markdown, targetLine, sel }) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       if (!root) return;
       const content = root.querySelector('.cm-content') as HTMLElement | null;
       type ViewSeed = {
@@ -83,8 +84,7 @@ async function seedLongDoc(
         userEvent: 'select.test',
       });
     },
-    { markdown: doc, targetLine: caretLine },
-  );
+    { markdown: doc, targetLine: caretLine, sel: ACTIVE_EDITOR });
   await page.waitForTimeout(120);
 }
 
@@ -98,8 +98,8 @@ test('mode switch preserves caret line and scroll position across Document/Live/
   try {
     await seedLongDoc(page, 50);
     // Manually scroll down so line 50 is roughly mid-viewport.
-    await page.evaluate(() => {
-      const root = document.querySelector('.cm-editor') as HTMLElement | null;
+    await page.evaluate((sel) => {
+      const root = document.querySelector(sel) as HTMLElement | null;
       const content = root?.querySelector('.cm-content') as HTMLElement | null;
       type ViewLike = { scrollDOM: { scrollTop: number; scrollHeight: number; clientHeight: number } };
       const tile = (content ?? root) as unknown as { cmTile?: { root?: { view?: ViewLike } } };
@@ -107,7 +107,7 @@ test('mode switch preserves caret line and scroll position across Document/Live/
       if (!view) return;
       const sd = view.scrollDOM;
       sd.scrollTop = Math.max(0, (sd.scrollHeight - sd.clientHeight) * 0.5);
-    });
+    }, ACTIVE_EDITOR);
     await page.waitForTimeout(80);
 
     const initial = await readSnapshot(page);
