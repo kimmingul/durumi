@@ -4,7 +4,7 @@ title: "진행 기록 — v0.3 멀티패널 셸"
 version: "0.3.11"
 status: in-progress
 created: 2026-08-08
-updated: 2026-08-10
+updated: 2026-08-11
 author: manager-spec
 priority: P1
 phase: "v0.3.0 target"
@@ -688,6 +688,124 @@ REQ-PANEL-053(패널별 배너)·054(IME 게이트 합류)·058(모달 금지)�
 
 ---
 
+### M4-2 — 패널별 배너·IME 게이트 문서축·모달 금지·e2e 셀렉터 이관
+
+**증거**: `.moai/state/verify/m4-2/`. 커밋 `bba4f69`(지목 수단) · `106428d`(배너 이관) · `7f6755e`(IME 게이트) · `c6e3d7e`(모달 금지) · `7dbe31d`(e2e 이관).
+
+M4의 21개 AC를 둘로 나눈 뒤쪽 8건이다. 요구를 신설하지도 재번호하지도 않았다.
+
+#### AC 판정 (8건 중 7건 완전 PASS, 1건 부분 PASS)
+
+AC-PANEL-058만 부분이다 — 다섯 상태 중 넷을 재현했고 다섯째(복원 실패)는 그 표면이 M8 산출물이라 M4-2 시점에 존재하지 않는다. 아래 §설계 긴장 (2)에 근거를 적었다. 나머지 7건은 완전 PASS다.
+
+| AC | 상태 | 판정 명령 | 실제 출력 |
+|---|---|---|---|
+| 053 | PASS | `npx vitest run tests/layout/panelReconciliationBanner.test.tsx` | 패널 A 영역 안 배너 1개, 패널 B 영역 0개. 창 전체 `[data-reconcile-surface]` 1개이며 그것이 `[data-panel-container]` 하위이고 `closest('[data-panel]')` 비-null |
+| 053b | PASS | 동일 | 패널 3개 각각 미저장 편집 + 확정 변경 주입 → `[data-reconcile-surface]` **3개**, 패널마다 정확히 1개 (대기열이 아니다) |
+| 053c | PASS | 동일 | 패널 B 활성 + 포커스는 패널 밖 탐침. 배너 등장 후 `document.activeElement` 불변, `activePanelId` 불변. `ReconciliationSurface.tsx`·`PanelContainer.tsx` 소스에 `autoFocus`·`.focus(` 0건 |
+| 053d | PASS | 동일 | 두 패널 모두 배너 상태에서 A의 `load-from-disk` → 적용 effect `['a:# disk a\n']` 단 1건, A 배너 소멸·B 배너 유지. `dismiss`도 A만 걷고 B의 상태는 `held-notify` 유지, `view-diff`는 양쪽 유지 |
+| 054 | PASS | `npx vitest run tests/layout/panelCompositionGate.test.tsx` | 패널 A `.cm-content`에 `compositionstart`(`starts>=1`, `ends===0`) 후 b.md 확정 변경 → 적용 effect `['# disk b\n']`, b.md 상태 비-`held-composition`, A의 `ends` 여전히 0. 대조: 같은 상태에서 a.md는 effect 0건 + `held-composition` |
+| 054b | PASS | 동일 | 같은 경로를 해소하는 게이트 둘 중 하나만 조합 중 → effect 0건 + `held-composition`; 종료 시 라우팅되어 비-`held-composition`. 둘 다 열고 한쪽만 종료 → `held-composition` **유지**, 나머지 종료 후 해제 |
+| 058 | PASS(부분, 4/5 상태) | `npx vitest run tests/layout/panelNoticeNonModal.test.tsx` | 분할(패널 2개)·닫기 거부(`closePanel`→`false`)·조정 알림(배너 존재)·감시 등록 실패(`watchOpenFile` 거부 시도 ≥1) 네 상태 각각 `role="dialog"`/`role="alertdialog"`/`<dialog>` 0개 + `activeElement` 불변. 알림 기구 5파일 소스 스캔 통과. **복원 실패 상태는 미재현** — 아래 참조 |
+| 095 | PASS | `.moai/state/verify/m4-2/step5-audit.log` + `pnpm test:e2e` | 창 유일 요소 가정 셀렉터 **0건**(위반 0). 대상 35파일 **35/35** 이관. 헬퍼 밖 원시 `data-panel` 문자열 0건. e2e `214 passed / 0 failed` |
+
+#### 계약 산출물 — 패널 지목 수단 (`plan.md` §B.8, `design.md` §9.2)
+
+`panelId`는 런타임 생성 문자열이라 e2e가 예측할 수 없으므로 지목 축을 둘로 잡았다: **위치**(`data-panel-index`, 렌더 순서 0-based)와 **활성 여부**(`data-panel-active`, 활성 패널에만). 표식은 패널 **최외곽**에 붙는다 — 그래야 배너·툴바·편집 표면이 전부 그 하위에 들어와 "패널 A 영역 안"이라는 AC 문언이 판정 가능해진다. 편집 표면에만 달았다면 배너가 그 밖에 있어 AC-PANEL-053을 검사할 수 없다.
+
+`e2e/_panels.ts`가 로케이터와 셀렉터 문자열 **양쪽**을 내보낸다. `page.evaluate` 본문에서는 로케이터를 쓸 수 없고 셀렉터 문자열이 필요하기 때문이다. 35파일이 전부 이 한 파일을 거치므로 표식 이름을 바꾸는 비용은 35이 아니라 1이다.
+
+#### 배너 이관은 재작성이 아니다
+
+`ReconciliationSurface`는 이미 `path`를 받아 `dispatchFor(path, …)`로 문서별 라우팅을 하고, 자동 포커스도 프로그램적 포커스도 쓰지 않으며 `aria-live="polite"`로만 알린다. AC-PANEL-053c·053d가 정확히 그 성질에 의존하므로 **손대지 않았다**. 바뀐 것은 마운트 위치뿐이다: `App.tsx`의 창 전역 1개 → 각 패널의 `doc?.path`.
+
+배너를 편집 표면 상자 **밖**에 둔 것은 판단이다. 그 상자의 `onFocusCapture`가 활성 패널을 바꾸므로, 안에 두면 배너 버튼을 누르는 것만으로 활성 패널이 옮겨간다 — AC-PANEL-053c가 배제하는 것이다.
+
+#### 계획 비용 추정의 정정 — 054/054b는 이미 성립하고 있었다
+
+`plan.md` §C M4는 REQ-PANEL-054를 "M4의 작업"으로 계상했다. 실제로는 **M0~M3가 이미 세운 성질**이다: `reconciliationStore`의 `composingGates: Map<pathKey, Set<token>>`가 문서축 OR 합류를 하고, `attachReconciliationCompositionGate`가 부착마다 새 `Symbol`을 발행하며, `MarkdownEditor`가 뷰마다 게이트를 하나씩 붙인다. M4-2의 몫은 **검사를 붙이는 것**이었고 생산 코드는 한 줄도 바뀌지 않았다.
+
+첫 실행에서 4건이 통과했으므로 공허하지 않음을 반증으로 보였다. 생산 코드를 결함 형태로 되돌리고 각각 실측한 뒤 복원했다(`git diff --stat` 무출력으로 복원 확인).
+
+| 반증 주입 | 실패한 검사 | 결과 |
+|---|---|---|
+| 조합 게이트를 창 전역 플래그로 (`composition-start`를 열린 모든 문서로 브로드캐스트) | 054 > 패널 A의 조합이 패널 B 문서의 조정을 보류시키지 않는다 | 1 failed / 3 passed |
+| 게이트 토큰을 모듈 수준 공유 `Symbol`로 (REQ-PANEL-071이 닫은 결함) | 054b > 다른 표면의 조합 종료가 진행 중인 조합의 보류를 풀지 않는다 | 1 failed / 3 passed |
+| OR 합류의 억제 조항 `if (gates.size > 0) return;` 제거 | 054b > 동일 | 1 failed / 3 passed |
+
+기록: `.moai/state/verify/m4-2/step3-inversion-evidence.md`.
+
+#### 조합 수명 관문 — `b70f25a`의 교훈을 첫 줄부터 적용
+
+새로 쓴 "조합이 열려 있다" 단언 전부에 `starts >= 1`(조합이 실제로 표면에 도달했다) + `ends === 0`(단언 시점에 아직 열려 있다) 관문을 붙였다. 이 관문 없이는 REQ-PANEL-071 계열 결함과 환경 잡음이 같은 빨간불을 낸다 — `AC-WS-020b` 플래키의 원인이 정확히 그것이었다. 신규 e2e/유닛 줄에 `.skip`/`.fixme`/`.only`/타임아웃 상향은 **0건**이다(`git diff` 스캔).
+
+#### 설계 긴장 3건
+
+**(1) 지목 표식 vs 기준선 다이제스트(AC-PANEL-003b).** `singlePanelDegeneracy`의 다이제스트는 노드의 `data-*`를 **전부** 찍는다. 최외곽에 표식 3개를 얹으면 기준선과 어긋나고, 실제로 1건이 빨간불이 났다(어긋난 것은 정확히 그 세 속성뿐, 그 밖의 구조 드리프트 0).
+
+**대가를 물고 델타를 이름으로 못박았다** — 그 파일이 통과용 노드에 이미 쓰던 규율 그대로다(`stripPanelMarkers`). 대가는 명확하다: 그 세 이름에 한해 기준선 방어가 느슨해진다. 그래서 걷어내기만 하지 않고, **표식이 노드를 늘리지도 배치를 바꾸지도 않는다**를 적극 단언하는 검사를 같은 파일에 더했다(통과용 노드의 직계 자식일 것, 중앙 열의 flex 스타일 3종 동일, 시각 스타일 5종 부재, `data-*`가 그 세 이름 **뿐**일 것). 표식이 하나라도 늘거나 다른 `data-*`가 붙으면 그대로 깨진다.
+
+**(2) AC-PANEL-058의 다섯 상태 중 하나가 아직 없다.** AC 문언은 분할·닫기 실패·**복원 실패**·조정 알림·감시 등록 실패 다섯을 든다. 복원 실패는 패널 배치 persist의 실패 경로(AC-PANEL-006b)이고 그 표면은 `plan.md` §C **M8**의 산출물이라 M4-2 시점에 **존재하지 않는다**. 없는 표면에 "모달이 없다"를 단언하면 공허하게 참이다.
+
+**재현하지 않고 기록했다.** 대신 M8이 그 알림을 만들 때 거쳐야 할 알림 기구 5파일을 소스 스캔으로 덮었다 — 새 알림 표면을 다른 파일에 만들면 그 목록이 갱신되어야 하고, 그것이 M8에서 이 AC를 재검증하게 하는 장치다. **복원 실패 상태의 최종 판정은 M8 소속이다.** 그래서 AC-PANEL-058은 4/5 상태 PASS로 적는다.
+
+**(3) AC-PANEL-054b의 "두 패널이 같은 문서"는 v0.3에서 도달 불가다.** v0.3은 dual-open을 금지하므로(REQ-PANEL-011) `openInNewPanel`이 기존 패널로 **이동**시킨다. 그 UI 상태는 패널 API로 만들 수 없다.
+
+**게이트 계층에서 고정했다** — 그 상태가 기계적으로 만들어 내는 것, 즉 같은 경로를 해소하는 게이트 둘을 실제 `attachReconciliationCompositionGate`로 붙였다. 합류 판정이 사는 곳이 정확히 거기다. 대가: UI 경로의 회귀는 이 검사가 잡지 못한다. 그러나 v0.3에 그 UI 경로가 없으므로 지금 잡을 것도 없고, dual-open이 도입되는 시점에 이 검사가 그 계층의 계약으로 남는다.
+
+#### 이관에서 적출한 것
+
+**의미 파손 1건.** `panel-ime.spec.ts`의 지역 `panelCount`는 `.cm-content` **개수를 패널 수로** 쓰고 있었다. 기계적으로 활성 패널로 좁히면 언제나 1이 되어 "분할이 패널을 만들었다"(=2)가 거짓이 된다. 헬퍼의 `panelCount`(패널 표식을 센다)로 갈아탔다. 기계적 치환이 조용히 의미를 뒤집는 형태여서 적어 둔다.
+
+**감사 사각 1건.** `_helpers.ts`의 `getEditorDoc`도 전역 `.cm-editor`를 집고 있었다. spec 파일만 훑던 초판 감사가 놓쳤고, 대상 집합을 `git grep -l ... 010908e`로 다시 세면서 드러났다(35 중 34만 변경됨). 감사 범위를 `e2e/*.ts` 전체로 넓혔다.
+
+**스캔 대상 오지정 1건.** AC-PANEL-058 소스 스캔 초판이 `useMenuCommandRouter.ts`에 포커스 금지를 걸어 빨간불이 났다. 틀린 것은 코드가 아니라 스캔 대상이었다 — AC의 포커스 조항은 **알림을 그리는 표면**에 걸리고, 그 파일의 `.focus()`는 `findNext`/`findPrev` 같은 사용자가 부른 캐럿 이동이다. 모달 금지(어느 쪽에서 만들어도 결함)와 포커스 금지(알림 표면 전용)를 두 층으로 갈랐다.
+
+**`waitForFunction` 인자 위치 1건.** `waitForFunction(fn, arg, options)`의 arg는 두 번째다. 이관 스크립트 초판이 `evaluate`와 같이 끝에 붙였다가 인자 개수가 어긋나 타입 검사가 잡았다. 출력을 기워 넣지 않고 스크립트를 고쳐 깨끗한 트리에서 처음부터 다시 돌렸다.
+
+#### AC-PANEL-095 계수 드리프트 (D3)
+
+| 출처 | 기재 | 실측 (`010908e`) |
+|---|---|---|
+| `acceptance.md` AC-PANEL-095 | 34파일 | **35파일** |
+| `plan.md` §B.8 | 34파일 (`grep -rl \| wc -l` → 34) | **35파일 / 162건** |
+
+차이 1건은 **M4-1이 추가한 `e2e/panel-ime.spec.ts`**다(`git diff --name-status 040df4a HEAD -- e2e/` → `A e2e/panel-ime.spec.ts`). 즉 드리프트의 원인은 계수 오류가 아니라 **판 작성 이후 대상 집합이 자란 것**이다. 35파일 전부 이관했다.
+
+`acceptance.md`·`design.md` 본문은 **고치지 않았다** — 그것은 manager-spec의 산출물이고 scope-doc 정정은 sync 단계 소관이다(L46). 여기에는 기록만 남긴다.
+
+#### 이관하지 않은 것 — 그리고 그 이유
+
+`root.querySelector('.cm-content')` 형태 **39곳은 그대로 두었다.** 이미 패널의 에디터 루트에 스코프되어 있어 창 유일성을 가정하지 않는다. AC 문언이 배제하는 것은 "창 안 유일 요소로 가정하는" 셀렉터이고, 이관 대상은 그 루트를 집는 쪽(`document.querySelector('.cm-editor')`)이었다.
+
+**측정폭 조정은 범위 밖이다(D2).** `src/styles/global.css:32`의 전역 `.cm-content` 규칙과 `src/editor/theme.ts:10-15`는 건드리지 않았다. `design.md` §3.2a가 (i) 셀렉터 이관과 (ii) 전역 규칙 축소를 분리하며, M4-2는 (i)만 한다. 좁은 보조 패널이 원고 측정폭(800px 중앙 정렬)을 상속하는 것은 미관 문제이고 바이트 무결성과 무관하다. 이제 (ii)의 선행 조건은 충족되었다.
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — **222 passed / 2417 passed**(기준선 218/2390 → **+4 파일 / +27 건**). 증감 대조: 신규 4파일 26건(지목 6 + 배너 7 + 게이트 4 + 모달 9) + `singlePanelDegeneracy` 순증 1건(표식 무해성 검사) = **+27**로 일치한다. 감소 0건.
+
+`typecheck` exit 0(`tsc --build` + `tsc --noEmit -p tsconfig.test.json` 양쪽). `lint` exit 0, 신규 경고 0. `coverage` exit 0 — All files **96.29%**(기준선 96.29%, 변동 없음). 건드린 파일 per-file: `PanelContainer.tsx` 100%, `ReconciliationSurface.tsx` 100%, `compositionGate.ts` 100%, `reconciliationStore.ts` 100% (게이트는 `perFile: true`, statements/lines 85%).
+
+`pnpm test:e2e` **214 passed / 4 skipped / 0 failed**. 건너뛴 4건은 전부 `smoke-screenshot.spec.ts`의 `SMOKE=1` 게이트로, 이 마일스톤이 추가한 것이 아니다(`git diff` 신규 `.skip` 0건). **그 4건은 손으로 고친 곳이 가장 많은 파일이므로 `SMOKE=1`로 따로 돌렸다 — 4 passed.** 타입 검사만으로는 부족했다.
+
+플래키 이력이 있는 조합 계열 4개 spec(`reconciliation-ime`·`panel-ime`·`ime-composition`·`composition-primitive`)은 **3회 반복 33/33 통과**(`.moai/state/verify/m4-2/e2e-repeat.log`). 1회 초록을 결정성의 증거로 삼지 않는다.
+
+#### 불변식
+
+동결 7경로 + 보존 8파일 **15/15** `git diff --quiet 040df4a` exit 0. `applyExternalChange` arity 2 유지(`applyExternalChange(target: DispatchTarget, nextContent: string)`).
+
+`MarkdownEditor.tsx`는 M4-2에서 **한 줄도 바뀌지 않았다**(`git diff 010908e --` 무출력). extension 배열 본문을 `040df4a`와 텍스트 대조해 **동일**함을 확인했다.
+
+한 가지 적어 둔다: M4-1 절이 기록한 "**42항목**"을 이 마일스톤이 독립적으로 재현하지 못했다. 저장소에 extension 개수를 단언하는 테스트가 없고, 최상위 원소를 세는 계수법으로는 `040df4a`와 HEAD 양쪽 모두 **26**이 나온다(중첩 항목을 펼치는 계수법이면 다른 수가 나올 수 있다). 실질 불변식인 "`040df4a`와 배열 동일"은 본문 텍스트 대조로 확인했으므로 판정에 영향은 없으나, 두 계수가 어긋난 채 남는 것은 다음 마일스톤이 잘못된 기대치를 쓰게 하므로 기록한다.
+
+#### 범위 밖으로 남긴 것
+
+- **AC-PANEL-058의 복원 실패 상태** — M8(패널 배치 persist)이 그 표면을 만든 뒤 재검증한다.
+- **`.cm-content` 측정폭 조정** — `design.md` §3.2a (ii). 선행 조건(셀렉터 이관)은 이제 충족되었다.
+- **`acceptance.md`/`design.md`의 34→35 계수 정정** — sync 단계 소관.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
@@ -698,9 +816,17 @@ m2_commit_sha: 6e7259f       # M2 구현 커밋
 m2_entrypoint_commit_sha: 48ffc7d   # 분할·닫기 진입점
 m3_commit_sha: f04c53b       # M3 감시 등록의 문서 축 + 경로 대조
 m3_routing_commit_sha: eb652fd   # M3 문서별 조정 · 창 단위 정책 판정
-run_status: milestone-partial   # M0·M1·M3 완료, M2 부분 완료(11/15). M4~M8 미착수
-milestone: M0+M1+M2(부분)+M3
-ac_pass_count: 41               # M0 12 + M1 8 + M2 11 + M3 10
+m4_1_commit_sha: d5f84e9     # M4-1 표시 모드의 패널 축 이관 + 활성 뷰 접근자
+m4_2_commit_shas:            # M4-2 다섯 단계 (§E.2 M4-2 절)
+  - bba4f69                  #   1) 패널 지목 수단 (계약 산출물)
+  - 106428d                  #   2) 조정 배너를 패널 안으로 이관
+  - 7f6755e                  #   3) IME 게이트 문서축 고정 (생산 코드 무변경)
+  - c6e3d7e                  #   4) 패널 알림 모달 금지
+  - 7dbe31d                  #   5) e2e 셀렉터 이관 35파일
+run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5~M8 미착수
+milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)
+ac_pass_count: 62               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8
+ac_partial_count: 1             # AC-PANEL-058 — 5개 상태 중 4개 재현. 복원 실패는 M8 표면
 ac_fail_count: 0
 ac_scope: >-
   M0: AC-PANEL-080 / 080b / 080c / 080d / 080e / 080f / 081 / 081b / 081c / 082 / 083 / 084
@@ -708,33 +834,45 @@ ac_scope: >-
   M2: AC-PANEL-001 / 002 / 002b / 002c / 003 / 003b / 004 / 005 / 007 / 011 / 065
   M2 미착수: AC-PANEL-036 / 036b / 036c / 036d (프로젝트 트리 표면 부재)
   M3: AC-PANEL-050 / 050b / 051 / 051b / 052 / 055 / 055b / 056 / 057 / 057b
+  M4-1: AC-PANEL-020 / 021 / 022 / 023 / 024 / 030 / 030b / 031 / 032 / 032b / 033 / 034 / 035
+  M4-2: AC-PANEL-053 / 053b / 053c / 053d / 054 / 054b / 058(부분) / 095
 reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
 document_mode_principles_unchanged: true
 extension_independence_unchanged: true
 extension_array_untouched: true       # AC-PANEL-042 allowlist 전제 보존
-new_warnings_or_lints_introduced: 0   # M3 실측: act 경고 46건은 1b64c86에서도 46건(기존)
+extension_array_count_discrepancy: >-
+  M4-1 절은 42항목으로 기록했으나 M4-2가 독립 재현하지 못했다. 저장소에 개수를
+  단언하는 테스트가 없고, 최상위 원소 계수법으로는 040df4a·HEAD 양쪽 26이다.
+  실질 불변식("040df4a와 배열 동일")은 본문 텍스트 대조로 확인 — 판정 영향 없음.
+new_warnings_or_lints_introduced: 0   # lint/typecheck 신규 경고 0 (양쪽 exit 0)
+react_act_warnings: 165               # M4-2 실측. 신규 4파일 기여 38, 기존 127.
+                                      # lint/type 경고가 아니라 테스트 하네스 잡음이며
+                                      # App을 마운트하는 테스트가 늘면 함께 는다.
 teardown_discipline: release-before-executor-detach
 dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2 M1의 긴장 해소 참조
 watch_registration_model: reference-counted-open-document-set  # M3 — 경로당 1회, 마지막 참조에서 해제
 path_identity: injectable-pure-function  # shared/pathIdentity.ts — 플랫폼을 인자로 받는다(C-7)
 reconciliation_policy_scope: window-single   # 문서별 정책 맵 없음 (REQ-PANEL-056)
-test_files: 209                  # 기준선 199 → M0 201 → M1 203 → M2 205 → M2e 206 → M3 209
-tests: 2315                      # 기준선 2191 → M0 2209 → M1 2237 → M2 2256 → M2e 2266 → M3 2315
-coverage_gate: pass              # per-file 85%, All files 96.24%
+test_files: 222                  # … → M3 209 → M4-1 218 → M4-2 222 (신규 4파일)
+tests: 2417                      # … → M3 2315 → M4-1 2390 → M4-2 2417 (+27, 감소 0)
+e2e_tests: 214                   # 0 failed. skip 4건은 smoke-screenshot의 SMOKE=1 게이트(기존)
+e2e_smoke_gated_verified: true   # SMOKE=1로 따로 실행 — 4 passed. 손수정이 가장 많은 파일
+e2e_flaky_repeat_check: "조합 계열 4 spec × 3회 = 33/33 통과 (1회 초록을 결정성 증거로 쓰지 않음)"
+coverage_gate: pass              # per-file 85%, All files 96.29% (M4-1과 동일, 변동 없음)
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
   m3_mitigation: "경로 대조를 순수 함수로 떼고 양 플랫폼을 유닛에서 재현 (AC-PANEL-051b)"
-total_run_phase_files: 39        # M0 15 + M1 16 + M3 8(소스 5 + 테스트 3, progress.md 별도)
-m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4~M8은 후속 위임"
+total_run_phase_files: 103       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
+                                 # 그중 M4-2 기여 43 (e2e 이관 35 + 소스 2 + 테스트 6)
+m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4는 M4-1/M4-2 분할, M5~M8은 후속 위임"
 deferred_by_open_decision:
-  - "패널별 배너 표면 — REQ-PANEL-053 (M4). 배너는 여전히 창 전역 1개다"
-  - "IME 게이트의 문서 축 합류 — REQ-PANEL-054 (M4)"
+  - "AC-PANEL-058 복원 실패 상태 — 그 알림 표면이 M8(패널 배치 persist) 산출물이라 미재현"
+  - ".cm-content 측정폭 조정 — design.md §3.2a (ii). 선행 조건(셀렉터 이관)은 M4-2가 충족"
+  - "acceptance.md/design.md의 34→35 계수 정정 — sync 단계 소관(L46)"
   - "resolveWatchScope/registerWatchScope 프로덕션 배선 — 소유 요구 없음. 관측으로만 기록"
-  - "editMode의 패널 축 이관 — OQ-3 (M4)"
-  - "소비처의 패널 지목 배선 — OQ-4 (M4)"
   - "파일 종류 판정 함수 — OQ-10 (M5)"
   - "프로젝트 트리 표면 — M2 미착수분, 후속 위임 (AC-036/036b/036c/036d)"
   - "패널 폭 등식의 픽셀 단언 — jsdom 레이아웃 부재, e2e 이관 (AC-005)"
