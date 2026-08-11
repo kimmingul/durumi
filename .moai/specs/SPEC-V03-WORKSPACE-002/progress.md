@@ -976,6 +976,131 @@ PRESERVE 16파일 `git diff --quiet 040df4a` 전부 exit 0. `MarkdownEditor.tsx`
 
 ---
 
+### M5 단계3 — extension 조립을 3층으로 재구성하고 allowlist로 단언하다
+
+**대상 AC**: AC-PANEL-042 (`Then` allowlist 판정 · `And①` 공통 항목 존재 · `And②` 9항목 부재 — 세 축을 각각 반증 가능하게 나눔)
+**커밋**: `<pending-backfill>` (단계4가 백필)
+**변경**: 소스 2 수정(`src/editor/MarkdownEditor.tsx` · `src/components/PanelContainer.tsx`) + 신규 3(`src/editor/extensionLayers.ts` · 테스트 2)
+
+#### 이 단계가 끝낸 불변식 — 먼저 읽을 것
+
+**M0~M4는 `MarkdownEditor.tsx`의 `extensions:` 배열 블록을 `040df4a`와 바이트 동일하게 유지했고, 매 단계 다음 명령으로 검증했다:**
+
+```
+diff <(git show 040df4a:src/editor/MarkdownEditor.tsx | sed -n '88,147p') <(sed -n '91,150p' src/editor/MarkdownEditor.tsx)
+```
+
+**단계3이 그 불변식을 의도적으로 끝낸다.** 이 커밋부터 위 대조는 **다르게 나오는 것이 정상**이며, 실측했다 — `DIFFERENT`. 회귀가 아니다.
+
+**무엇이 그것을 대신하는가**: 지키려던 것은 바이트가 아니라 **항목의 순서(=우선순위)** 였다. CodeMirror에서 배열 순서는 우선순위이므로 층별로 묶어 재배열하면 예컨대 `markdownKeymap`과 `macroKeymapCompartment`의 키 승부가 조용히 뒤집힌다. 그래서 대체 계약은 기계 검사다:
+
+- `tests/editor/extensionLayers.test.ts` → **"마크다운 조립의 항목 순서가 040df4a 배열의 항목 순서와 같다"** — 24항목의 순서를 `040df4a:89~144`의 줄 번호 주석과 함께 고정한다. 단계4가 보조층(언어 문법)을 추가해도 이 마크다운 순서는 변하지 않는다.
+- 같은 파일 → **"보조 조립의 순서가 마크다운 조립의 공통 슬롯 순서와 같다"** — 보조 패널에서도 공통 11항목의 상대 순서가 보존된다.
+
+단계4는 위 두 검사를 계승하고, `diff` 블록 대조는 더 이상 쓰지 않는다.
+
+#### AC 판정 (AC-PANEL-042, 세 축)
+
+| 축 | 판정 | 측정 |
+|---|---|---|
+| `Then` **allowlist** — 최상위 항목 집합이 공통층 ∪ 보조층에 포함 | PASS | 보조 조립의 11개 식별자 전부가 allowlist 안. 합집합 밖 항목 `[]` |
+| `And①` 공통 6항목 존재 | PASS | 슬롯 존재 + **동작 관측**: `undoDepth`=1 후 undo 복원 / `Mod-z`·`Mod-f` 바인딩 / `cm-lineWrapping` 클래스 / `.cm-activeLine` 노드 / `styleModule` > 0 / `onChange('hi')` 호출 |
+| `And②` 9항목 부재 (비망라) | PASS | 9건 전부 **식별자가 아니라 실제 상태**로 측정 — 아래 표 |
+
+**`And②` 9항목의 측정 수단** (태그가 아니라 상태를 잰다):
+
+| # | 항목 | 측정 축 | 보조 / 마크다운 |
+|---|---|---|---|
+| ①② | 라이브 데코레이션 · 3-모드 컴파트먼트 | `editModeCompartment.get(state)` | `undefined` / defined |
+| ③ | 이미지·링크 원자 경계 | `facet(EditorView.atomicRanges).length` | 0 / >0 |
+| ④ | WYSIWYG 이스케이프 필터 | `input.type`으로 `*` 타건 후 문서 | `a*` / `a\*` |
+| ⑤ | 인용 자동완성 | keymap facet의 `Ctrl-Space` | 부재 / 존재 |
+| ⑥ | 인용 호버 툴팁 | `facet(showTooltip).length` | 0 / >0 |
+| ⑦ | 제목 힌트 플러그인 | `onHeadingHint` 콜백 호출 여부 | 미호출 / 호출 |
+| ⑧ | 마크다운 keymap | keymap facet의 `Mod-b` | 부재 / 존재 |
+| ⑨ | 이미지 붙여넣기·드롭 | `dragover`의 `defaultPrevented` | `false` / `true` |
+| — | (추가) 마크다운 언어층 | `facet(language)` | `null` / `markdown` |
+
+마지막 행은 9항목 목록에 없지만 **중첩 은닉을 잡는 유일한 축**이라 함께 잰다 (아래 한계 절).
+
+#### 반증 (E2) — 4건 주입, 전부 적출 확인 후 원복
+
+| # | 주입 | 결과 |
+|---|---|---|
+| A | 기존 마크다운 확장(`citationHoverTooltip`)을 공통층으로 오분류 | allowlist 행 FAIL — `expected [ 'citationHoverTooltip' ] to deeply equal []`. 부재 행·층 산술 3행도 동반 FAIL (5건) |
+| B | **새로 발명한** 확장 `FALSIFY_markdownTocRuler`를 공통층에 추가 (9항목 목록에도, 오늘의 24항목에도 없다) | allowlist 행 FAIL — `expected [ 'FALSIFY_markdownTocRuler' ] to deeply equal []` (4건) |
+| C | 태그는 그대로 두고 `history` 슬롯 **안쪽에** `markdown()`을 중첩 | **allowlist 행은 통과했다**(태그 불변). 언어 facet 행이 FAIL — `expected Language{…} to be null` (2건) |
+| D | `MarkdownEditor`에서 종류를 `fileKindOf(filePath ?? '')`로 파생 | untitled 3행 FAIL — `expected undefined to be 'markdown'` |
+
+**B가 이 판정의 정본성을 증명한다**: 금지 목록(9항목 열거) 형태였다면 `FALSIFY_markdownTocRuler`는 영원히 잡히지 않는다. 목록에 없기 때문이다.
+
+**C가 한계를 증명한다**: allowlist는 최상위 입도이므로 중첩 은닉을 못 본다. 그 구멍을 부재 검증의 상태 측정이 부분적으로 메운다(언어층은 잡힌다).
+
+원복 후 `diff` 무출력 + `grep -rn FALSIFY src/ tests/ shared/ electron/` exit 1(무매치).
+
+#### 위험 4건 — 무엇을 실측하고 무엇을 골랐나
+
+**(1) 편집 표면이 문서를 갈아타며 재사용된다 (중심 위험).**
+`MarkdownEditor`는 `key`를 받지 않고 마운트 이펙트 deps가 `[]`다. 실측 결과 컴파트먼트 재설정이 안전하다 — **모듈 스코프 StateField(실행 취소 이력 · `editModeField` · `docPathField`)의 값과 문서·선택이 재설정을 넘어 보존된다**(probe: `undoDepth` 1→1, `editMode` 유지, 재설정 후 `undo` 정상). 그래서 **컴파트먼트**를 택했다(후보 (a), `design.md` §5.1 F7의 "이미 있는 확장 지점"). 언어 extension 교체도 실측으로 확인했다(`facet(language)`: null → `python` → null).
+
+**층 전체를 하나의 컴파트먼트에 담았다.** 공통층을 컴파트먼트 밖에 두는 형태를 먼저 검토했으나 기각했다 — 층별로 묶으면 24항목의 상대 순서가 바뀌고, 구체적으로 `macroKeymapCompartment`가 `markdownKeymap`보다 **앞**으로 올라가 사용자 매크로와 마크다운 서식 키의 승부가 뒤집힌다. 컴파트먼트는 자기 위치에 내용을 그대로 펼치므로(probe로 확인: 세 keymap 중 컴파트먼트가 가운데일 때 우선순위 A→B→C 유지) 통째로 담으면 순서가 보존된다.
+
+귀결: `EditorState`의 최상위 항목은 1개(컴파트먼트)지만, **AC가 조회하는 "조립 결과"는 그 컴파트먼트가 담은 24 / 11항목**이다. 이 매핑을 코드 주석과 위 대체 계약이 함께 고정한다.
+
+**(2) `filePath === null`(untitled)이 보조로 떨어지면 안 된다.**
+스토어가 이미 안다 — `DocumentState.kind`가 있고 `emptyDocument()`가 `kind: 'markdown'`으로 만든다(`workspaceStore.ts`). **새 통로를 만들지 않고 그것을 읽었다**: `PanelContainer`가 `kind={doc?.kind ?? 'markdown'}`을 넘기고 `MarkdownEditor`의 기본값도 `markdown`이다. 경로에서 파생하지 **않는다**. 반증 D가 그 선택의 필요성을 보인다.
+
+**(3) `baseKeymap` 슬롯이 마크다운 동작을 품고 있다 — 적출했고 고치지 않았다.**
+`keymap.of([enterListContinuation(), ...defaultKeymap, ...historyKeymap, ...searchKeymap])`은 공통층 한 항목인데 `enterListContinuation()`은 **마크다운 목록 이어쓰기**다. AC-PANEL-042의 판정 입도가 최상위 항목이고 `design.md` §5.2가 "기본 keymap"을 공통층 한 항목으로 세므로 **판정은 통과한다**. 그러나 사실로서 `.py` 패널에도 목록 이어쓰기가 실린다.
+
+**고치지 않았다.** 슬롯을 쪼개는 것은 승인된 범위 밖이고, 그 입도는 `liveDecorations` 43항목을 통째로 세는 것과 같은 계열의 **의도된 규약**이다(`plan.md` §A.5). 조립 지점에 `@MX:NOTE`로 기록했고 이 절이 그 발견을 남긴다 — **SPEC 개정이 필요한지는 오케스트레이터가 판단할 사안이다.**
+
+**(4) 마크다운층이 없는 패널에 모드 전환이 들어오면.**
+실측: 설정에 없는 컴파트먼트에 대한 `reconfigure`는 **예외를 던지지 않고 조용히 무시된다**(`compartment.get(state) === undefined`, 문서 무변경). 크래시가 아니라 무해한 no-op이다. `extensionLayers.test.ts`와 `panelKindLayering.test.tsx` 양쪽에서 고정했다.
+
+#### 층 산술 — 설계 문서가 아니라 조립에서 쟀다
+
+```
+markdown : top-level 24  (common 11 / markdown 13 / auxiliary 0)
+auxiliary: top-level 11  (common 11)
+```
+
+순서 실측(c=공통, m=마크다운): `history:c, baseKeymap:c, autoPair:c, emojiAutocomplete:m, markdownLanguage:m, editModeState:c, docPathState:c, editModeDecorationCompartment:m, atomicMedia:m, atomicInlineMarks:m, wysiwygEscapeFilter:m, citationAutocomplete:m, citationHoverTooltip:m, ghostText:m, spellcheckExclusion:m, headingHint:m, viewModes:c, markdownKeymap:m, macroKeymapCompartment:c, theme:c, highlightActiveLine:c, lineWrapping:c, imagePasteDropHandlers:m, changeListener:c`
+
+`040df4a:89~144`의 항목 순서와 **한 항목도 어긋나지 않는다**(줄 번호 대조 실측). 이로써 §E.3의 `extension_array_count_discrepancy`(M4-1이 42항목으로 적고 M4-2가 재현 못한 건)도 해소된다 — **최상위 24항목**이 `design.md` §5.2의 11+13과 일치하며, 이제 그것을 단언하는 테스트가 저장소에 있다.
+
+#### 왜 별도 모듈인가 (`src/editor/extensionLayers.ts`)
+
+두 가지 이유이며 둘 다 측정 가능하다.
+
+1. **판정 가능성**: AC가 "조립 결과"를 조회한다. 조립이 마운트 이펙트 안에 있으면 컴포넌트를 띄우고 `EditorState`를 역추적해야 하고, 그러면 관측 가능한 facet만 보이므로 "최상위 항목 집합"이라는 입도를 재현할 수 없다. 순수 함수면 조립 결과가 곧 반환값이다.
+2. **커버리지 게이트**: `src/editor/MarkdownEditor.tsx`는 `vitest.legacy-coverage.ts:72`의 제외 목록에 있다. 조립을 그 안에 두면 이 SPEC의 핵심 로직이 per-file 85% 게이트를 **비껴간다**. 뗀 모듈은 게이트 안이며 실측 **100%** 다.
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — **229 passed / 2518 passed**(기준선 227/2474 → **+2 파일 / +44 건**). 증감 대조: `extensionLayers.test.ts` 29 + `panelKindLayering.test.tsx` 15 = **+44**로 일치. 감소 0건. **기존 테스트 수정 0건** — 층 재구성이 기존 단언을 하나도 건드리지 않았다.
+
+`typecheck` exit 0(양쪽), `lint` exit 0, 신규 경고 0. `build` exit 0. `coverage` exit 0 — All files **96.31%**(기준선 96.29% → +0.02pp).
+
+**커버리지 게이트의 실제 적용 범위(정직한 기록)**: 수정한 소스 2개 중 **`src/editor/MarkdownEditor.tsx`는 제외 목록(`vitest.legacy-coverage.ts:72`)에 있어 per-file 게이트의 판정을 받지 않는다** — 이 단계에서 가장 크게 바뀐 파일이 바로 그것이다. 게이트가 실제로 건 것은 신규 `extensionLayers.ts`(100%)와 `PanelContainer.tsx`(100%)다. `MarkdownEditor.tsx`의 새 경로가 실행된다는 증거는 위 AC 표·반증 표와 `panelKindLayering.test.tsx`이지 게이트가 아니다.
+
+#### 불변식
+
+PRESERVE 16파일 `git diff --quiet 040df4a` 전부 exit 0(DIFF 0건). `src/editor/decorations/index.ts` `git diff 040df4a` 무출력 — `liveDecorations` 43항목을 개별 분해하지 않았다.
+
+M0의 조정 라우팅 이펙트 + 조합 게이트 정리 순서 블록(`compositionGate.detach()` → `detachExecutor?.()`)은 HEAD 대비 **바이트 동일**(`diff` 무출력). 종류 전환이 편집 표면을 다시 만들지 않는다는 것도 테스트가 고정한다(`onReady` 호출 1회, 뷰 인스턴스 동일) — 그래서 `readyView`가 변하지 않고 M0 이펙트가 재실행되지 않는다.
+
+`MarkdownEditor.tsx` extension 배열 블록 대조는 **이 커밋부터 성립하지 않는다**(위 첫 절).
+
+#### 범위 밖으로 남긴 것 (M5 단계3)
+
+- **언어 문법 조달** — AC-PANEL-041 / 045, 단계4. 보조층은 지금 비어 있고, 빈 보조층은 allowlist의 포함 판정을 자명하게 만족시킨다.
+- **`enterListContinuation()` 슬롯 분리** — 위 위험 (3). 승인 범위 밖이며 `@MX:NOTE`로 기록만 했다.
+- **저장 경로 / saveAs 필터** — M6.
+- **실사용 확인** — 이 단계는 유닛·jsdom까지다. §E.3 `deferred_by_open_decision` 참조.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
@@ -994,10 +1119,11 @@ m4_2_commit_shas:            # M4-2 다섯 단계 (§E.2 M4-2 절)
   - c6e3d7e                  #   4) 패널 알림 모달 금지
   - 7dbe31d                  #   5) e2e 셀렉터 이관 35파일
 m5_step1_commit_sha: b16fd7e   # M5 단계1 (AC-PANEL-040). 단계2가 백필 — 커밋은 자기 SHA를 모른다
-m5_step2_commit_sha: <pending-backfill>   # M5 단계2 (AC-PANEL-046). 같은 이유로 후속 백필
-run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5 단계2/4. M6~M8 미착수
-milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계2/4)
-ac_pass_count: 64               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5-단계1 1 + M5-단계2 1
+m5_step2_commit_sha: 6439ad1   # M5 단계2 (AC-PANEL-046). 단계3이 백필
+m5_step3_commit_sha: <pending-backfill>   # M5 단계3 (AC-PANEL-042). 같은 이유로 후속 백필
+run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5 단계3/4. M6~M8 미착수
+milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계3/4)
+ac_pass_count: 65               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5-단계1 1 + 단계2 1 + 단계3 1
 ac_partial_count: 1             # AC-PANEL-058 — 5개 상태 중 4개 재현. 복원 실패는 M8 표면
 ac_fail_count: 0
 ac_scope: >-
@@ -1010,16 +1136,38 @@ ac_scope: >-
   M4-2: AC-PANEL-053 / 053b / 053c / 053d / 054 / 054b / 058(부분) / 095
   M5 단계1: AC-PANEL-040 (Then·And 두 축 각각 PASS)
   M5 단계2: AC-PANEL-046 (Then·U+FFFD·SHA-256·양성 대조 네 갈래 각각 PASS)
+  M5 단계3: AC-PANEL-042 (Then allowlist · And① 공통 존재 · And② 9항목 부재 세 축 각각 PASS)
 reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
 document_mode_principles_unchanged: true
 extension_independence_unchanged: true
-extension_array_untouched: true       # AC-PANEL-042 allowlist 전제 보존
-extension_array_count_discrepancy: >-
-  M4-1 절은 42항목으로 기록했으나 M4-2가 독립 재현하지 못했다. 저장소에 개수를
-  단언하는 테스트가 없고, 최상위 원소 계수법으로는 040df4a·HEAD 양쪽 26이다.
-  실질 불변식("040df4a와 배열 동일")은 본문 텍스트 대조로 확인 — 판정 영향 없음.
+extension_array_untouched: false      # **M5 단계3에서 의도적으로 종료**. 아래 두 키가 대신한다
+extension_array_invariant_ended_at: m5_step3
+  # M0~M4가 쓰던 `diff <(git show 040df4a:… | sed -n '88,147p') <(sed -n '91,150p' …)`
+  # 블록 대조는 이 커밋부터 DIFFERENT가 정상이다(실측). 회귀가 아니다.
+extension_layering_contract: >-
+  대체 계약은 기계 검사 2건이며 둘 다 tests/editor/extensionLayers.test.ts에 있다.
+  (1) "마크다운 조립의 항목 순서가 040df4a 배열의 항목 순서와 같다" — 24항목의
+  순서를 040df4a:89~144 줄 번호 주석과 함께 고정. 지키려던 것은 바이트가 아니라
+  우선순위였다(CodeMirror에서 배열 순서 = 우선순위).
+  (2) "보조 조립의 순서가 마크다운 조립의 공통 슬롯 순서와 같다".
+  단계4는 이 둘을 계승하고 diff 블록 대조는 쓰지 않는다.
+extension_array_count_resolved: >-
+  해소됐다. M4-1이 42항목으로 적고 M4-2가 재현 못한 건은, 조립을 순수 함수로
+  떼어 실측한 결과 **최상위 24항목**(공통 11 + 마크다운 13)으로 확정됐고
+  design.md §5.2와 일치한다. 이제 그것을 단언하는 테스트가 저장소에 있다
+  (M4-2가 지적한 "개수를 단언하는 테스트가 없다"는 공백이 메워졌다).
+extension_layer_model: single-kind-compartment-holding-full-ordered-set
+  # 층 전체를 하나의 컴파트먼트에 담는다. 공통층을 밖에 두면 24항목의 상대
+  # 순서가 바뀌어 macroKeymapCompartment가 markdownKeymap보다 앞서게 되고
+  # 사용자 매크로와 마크다운 서식 키의 승부가 뒤집힌다.
+  # 귀결: EditorState 최상위는 1항목이지만 AC가 조회하는 "조립 결과"는
+  # 그 컴파트먼트가 담은 24 / 11항목이다.
+panel_kind_source: document-state-not-path
+  # 종류는 workspaceStore의 DocumentState.kind에서 온다. 경로에서 파생하면
+  # fileKindOf('')가 untitled를 보조로 떨어뜨려 새 원고가 전부 평문 패널이 된다
+  # (반증 D로 실증).
 new_warnings_or_lints_introduced: 0   # lint/typecheck 신규 경고 0 (양쪽 exit 0)
 react_act_warnings: 165               # M4-2 실측. 신규 4파일 기여 38, 기존 127.
                                       # lint/type 경고가 아니라 테스트 하네스 잡음이며
@@ -1029,36 +1177,48 @@ dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2
 watch_registration_model: reference-counted-open-document-set  # M3 — 경로당 1회, 마지막 참조에서 해제
 path_identity: injectable-pure-function  # shared/pathIdentity.ts — 플랫폼을 인자로 받는다(C-7)
 reconciliation_policy_scope: window-single   # 문서별 정책 맵 없음 (REQ-PANEL-056)
-test_files: 227                  # … → M4-2 222 → M5-단계1 224 → M5-단계2 227 (신규 3파일)
-tests: 2474                      # … → M4-2 2417 → M5-단계1 2441 → M5-단계2 2474 (+33, 감소 0)
+test_files: 229                  # … → M5-단계1 224 → 단계2 227 → 단계3 229 (신규 2파일)
+tests: 2518                      # … → M5-단계1 2441 → 단계2 2474 → 단계3 2518 (+44, 감소 0)
+pre_existing_tests_modified: 0   # 단계3 — 층 재구성이 기존 단언을 하나도 건드리지 않았다
 e2e_tests: 214                   # 0 failed. skip 4건은 smoke-screenshot의 SMOKE=1 게이트(기존)
 e2e_smoke_gated_verified: true   # SMOKE=1로 따로 실행 — 4 passed. 손수정이 가장 많은 파일
 e2e_flaky_repeat_check: "조합 계열 4 spec × 3회 = 33/33 통과 (1회 초록을 결정성 증거로 쓰지 않음)"
-coverage_gate: pass              # per-file 85%, All files 96.29% (M4-1과 동일, 변동 없음)
+coverage_gate: pass              # per-file 85%, All files 96.31% (기준선 96.29% → +0.02pp)
                                  # M5-단계1 신규 shared/fileKind.ts per-file 100%
                                  # M5-단계2 신규 electron/openDecode.ts per-file 100%
+                                 # M5-단계3 신규 src/editor/extensionLayers.ts per-file 100%
+                                 #           src/components/PanelContainer.tsx per-file 100%
 coverage_gate_actual_scope: >-
   M5-단계2가 수정한 소스 4개 중 3개(electron/ipc/files.ts, shared/ipc-contract.ts,
   src/hooks/useFileMenuCommands.ts)는 vitest.legacy-coverage.ts 제외 목록(32·45·102행)에
   있어 per-file 게이트의 판정을 받지 않았다. 그 코드가 실행된다는 증거는 AC 표와
   반증 표이지 게이트가 아니다. 게이트가 실제로 건 신규 파일은 openDecode.ts 하나다.
+  M5-단계3도 같은 공백을 갖는다 — 수정 소스 2개 중 **가장 크게 바뀐
+  src/editor/MarkdownEditor.tsx가 제외 목록 72행에 있어 게이트 밖**이다. 조립을
+  별도 모듈(extensionLayers.ts)로 뗀 이유의 하나가 그것이며, 그 모듈과
+  PanelContainer.tsx는 게이트 안에서 100%다. MarkdownEditor.tsx 새 경로의 실행
+  증거는 tests/editor/panelKindLayering.test.tsx이지 게이트가 아니다.
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
   m3_mitigation: "경로 대조를 순수 함수로 떼고 양 플랫폼을 유닛에서 재현 (AC-PANEL-051b)"
-total_run_phase_files: 112       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
+total_run_phase_files: 115       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
                                  # 그중 M4-2 기여 43 (e2e 이관 35 + 소스 2 + 테스트 6)
                                  # M5-단계1 기여 4 신규 (files.ts + fileKind.ts + 테스트 2).
                                  # M5-단계2 기여 5 (신규 4: openDecode.ts + 테스트 3, 신규 진입 1: dict.ts).
-                                 # files.ts·ipc-contract.ts·useFileMenuCommands.ts는 이미 집합에 있어 증가 없음.
-                                 # 실측: 040df4a..b16fd7e = 107, 커밋 후 = 112
+                                 #   files.ts·ipc-contract.ts·useFileMenuCommands.ts는 이미 집합에 있어 증가 없음.
+                                 # M5-단계3 기여 3 신규 (extensionLayers.ts + 테스트 2).
+                                 #   MarkdownEditor.tsx·PanelContainer.tsx는 이미 집합에 있어 증가 없음.
+                                 # 실측: 040df4a..b16fd7e = 107 → 단계2 후 112 → 단계3 후 115
 m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4는 M4-1/M4-2 분할, M5~M8은 후속 위임"
 deferred_by_open_decision:
   - "AC-PANEL-058 복원 실패 상태 — 그 알림 표면이 M8(패널 배치 persist) 산출물이라 미재현"
   - ".cm-content 측정폭 조정 — design.md §3.2a (ii). 선행 조건(셀렉터 이관)은 M4-2가 충족"
   - "acceptance.md/design.md의 34→35 계수 정정 — sync 단계 소관(L46)"
   - "resolveWatchScope/registerWatchScope 프로덕션 배선 — 소유 요구 없음. 관측으로만 기록"
-  - "파일 종류 판정의 프로덕션 배선 — 단계1이 shared/fileKind.ts에 세우고 다이얼로그 필터가, 단계2가 열기 읽기 분기(readTextForOpen)가 소비한다. 패널 바인딩 시점의 kind 전달과 보조 패널 조립은 단계3~4 소관. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
+  - "파일 종류 판정의 프로덕션 배선 — 단계1이 shared/fileKind.ts에 세우고 다이얼로그 필터가, 단계2가 열기 읽기 분기(readTextForOpen)가, 단계3이 패널 조립(PanelContainer → MarkdownEditor.kind → extensionLayers)이 소비한다. 남은 것은 단계4의 보조층(언어 문법)뿐이다. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
+  - "enterListContinuation() 슬롯 분리 — 단계3이 적출한 사실. baseKeymap 슬롯(공통층)이 마크다운 목록 이어쓰기를 품고 있어 .py 패널에도 실린다. AC-PANEL-042의 최상위 입도로는 판정 통과이며, 쪼개는 것은 승인 범위 밖이라 @MX:NOTE로 기록만 했다. SPEC 개정 필요 여부는 오케스트레이터 판단 사안"
+  - "단계3의 실사용 확인 — 유닛·jsdom까지만 수행했다. 앱 실행도 e2e도 돌리지 않았다. 살아 있는 편집기에 무엇이 실리는지를 바꾸는 단계이므로 실제 .py 파일을 연 패널의 렌더 결과·성능·IME 거동은 미검증이다"
   - "마크다운 열기의 U+FFFD 치환 — 단계2가 보조 파일만 방어하도록 사용자가 범위를 확정(C-10). 분기점에 @MX:DEBT + CEILING + UPGRADE로 기록했고 비대칭을 테스트가 고정한다. 별개 SPEC 사안"
   - "Latin-1 등 비UTF-8 인코딩 보조 파일을 여는 수단 — 단계2의 엄격 디코드가 거부한다(요구의 문자 그대로의 귀결). 인코딩 선택 UI는 이 SPEC 범위 밖"
   - "프로젝트 트리 표면 — M2 미착수분, 후속 위임 (AC-036/036b/036c/036d)"

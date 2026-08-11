@@ -241,6 +241,17 @@ function Panel({
           filePath={doc?.path ?? null}
           macros={macros}
           editMode={editMode}
+          /*
+            종류의 출처는 **문서**다(REQ-PANEL-040·042). 경로에서 다시 파생하면
+            `filePath === null`인 새 원고가 `fileKindOf('')`에 걸려 보조로
+            떨어진다 — 확장자를 증명할 수 없는 입력을 보조로 보내는 것이
+            그 함수의 계약이기 때문이다(`shared/fileKind.ts`). 스토어는
+            untitled 문서를 `kind: 'markdown'`으로 만든다.
+
+            문서가 없는 패널(`doc === null`)도 마크다운으로 둔다. 빈 편집
+            표면이며 곧 문서를 받는다.
+          */
+          kind={doc?.kind ?? 'markdown'}
         />
       </div>
     </div>
