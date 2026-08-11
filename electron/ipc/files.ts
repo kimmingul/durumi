@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { promises as fs } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { MARKDOWN_EXTENSIONS } from '@shared/fileKind';
 import type { FileResult } from '@shared/ipc-contract';
 import { addRecentFile, getPreferences } from '../preferences';
 import { pickDefaultDir } from '../dialogDefaults';
@@ -31,7 +32,11 @@ export function registerFilesHandlers(): void {
     if (!win) return null;
     const defaultDir = await pickDefaultDir(null);
     const result = await dialog.showOpenDialog(win, {
-      filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
+      // 확장자 집합의 출처는 `shared/fileKind.ts` 하나다 (REQ-PANEL-040).
+      // 여기 리터럴을 다시 박으면 패널의 종류 판정과 갈라지고, 그때 사용자는
+      // 마크다운 필터로 연 파일이 보조 패널로 열리는 것을 본다.
+      // `FileFilter.extensions`가 가변 `string[]`이라 사본을 넘긴다.
+      filters: [{ name: 'Markdown', extensions: [...MARKDOWN_EXTENSIONS] }],
       properties: ['openFile'],
       ...(defaultDir ? { defaultPath: defaultDir } : {}),
     });

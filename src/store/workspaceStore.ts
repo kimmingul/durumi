@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { FileKind } from '@shared/fileKind';
 import { pathKey, samePath as samePathIdentity } from '@shared/pathIdentity';
 import { EDIT_MODES, type EditMode } from '../editor/editMode';
 
@@ -37,8 +38,15 @@ import { EDIT_MODES, type EditMode } from '../editor/editMode';
 export type DocumentId = string;
 export type PanelId = string;
 
-/** 마크다운 원고인가 보조 파일인가. 판정 함수 자체는 M5 소관이다. */
-export type FileKind = 'markdown' | 'auxiliary';
+/**
+ * 마크다운 원고인가 보조 파일인가.
+ *
+ * M5가 판정 함수를 `shared/fileKind.ts`에 세우면서 타입의 출처도 그쪽으로
+ * 옮겼다 — main도 같은 판정을 봐야 하는데 `electron/`은 `src/`를 import할 수
+ * 없으므로, 여기 선언을 남겨 두면 같은 유니온이 두 벌 생긴다. 기존 import
+ * 경로는 재export로 그대로 동작한다.
+ */
+export type { FileKind };
 
 /**
  * 내용의 **정체성**. 같은 내용이면 같은 revision이다.

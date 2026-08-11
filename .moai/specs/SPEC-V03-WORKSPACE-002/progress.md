@@ -806,6 +806,69 @@ AC-PANEL-058만 부분이다 — 다섯 상태 중 넷을 재현했고 다섯째
 
 ---
 
+### M5 단계1 — 파일 종류 판정을 `shared/`에 세우고 다이얼로그 필터의 방향을 뒤집다
+
+**증거**: `.moai/state/verify/m5-step1/`. 커밋 `<pending-backfill>`.
+
+M5의 네 단계 중 첫 번째이며 AC-PANEL-040 한 건만 다룬다. 요구를 신설하지도 재번호하지도 않았다.
+
+#### AC 판정 (1건, `Then`·`And` 두 축을 따로 판정)
+
+| AC | 축 | 상태 | 판정 명령 | 실제 출력 |
+|---|---|---|---|---|
+| 040 | Then | PASS | `npx vitest run tests/shared/fileKind.test.ts` | `a.md`·`a.markdown`·`a.txt` 세 경우 모두 `fileKindOf` → `'markdown'`. 23 passed |
+| 040 | And | PASS | `npx vitest run tests/electron/filesDialogFilter.test.ts` | `file:open` 핸들러를 포착해 호출 → `dialog.showOpenDialog`가 실제로 받은 `filters[0].extensions`가 `MARKDOWN_EXTENSIONS`와 구조적 동등. 1 passed |
+
+#### 방향 뒤집기 — SPEC-1 `REFERENCE_DIR_NAME`과 같은 형태
+
+`tsconfig.web.json`이 `composite: true` + `include: [src/**, shared/**]`이므로 `shared/` → `electron/` import는 TS6307로 실패한다(`plan.md` §B.2). 그래서 집합을 `shared/fileKind.ts`에 정의하고 `electron/ipc/files.ts`가 그것을 읽는다. `shared/projectFolders.ts`가 `REFERENCE_DIR_NAME`에 쓴 것과 같은 형태이며, 두 값의 동일성 단언은 비-composite인 `tsconfig.test.json`에서 성립하므로 `tests/`에 두었다.
+
+`Electron.FileFilter.extensions`가 가변 `string[]`이라 상수는 `readonly string[]`로 두고 호출부에서 전개(`[...MARKDOWN_EXTENSIONS]`)한다. 참조 동일성을 포기한 대가는 아래 §단언 강도에 적었다.
+
+#### 중복 타입 흡수 — `FileKind`
+
+`src/store/workspaceStore.ts:41`이 같은 유니온(`'markdown' | 'auxiliary'`)을 이미 선언하고 있었고 그 주석 자신이 "판정 함수 자체는 M5 소관이다"라고 적어 두었다. `shared/`에 판정 함수를 세우면서 그 선언을 남겨 두면 같은 유니온이 두 벌이 되고, main은 `src/`를 import할 수 없으므로 갈라짐을 컴파일러가 잡지 못한다. 타입 전용 재export로 흡수했다 — 런타임 변화 0, 기존 import 경로 무변경.
+
+#### 단언 강도 — 이 검사가 잡지 못하는 것
+
+`And` 축은 **구조적 동등**(`toEqual`)이다. 호출부가 상수를 읽지 않고 **값이 같은** 리터럴을 다시 박아 넣는 경우는 통과한다. 참조 동일성(`toBe`)이면 그것까지 잡히지만, 그러려면 `shared/`의 상수를 가변 `string[]`으로 내보내거나 캐스팅해야 한다. 공유 SSOT의 불변성이 더 크다고 판단해 구조적 동등을 택했다.
+
+실제로 막으려던 실패(두 값이 **갈라지는 것**)는 잡힌다는 것을 반증으로 보였다:
+
+| 반증 주입 | 실패한 검사 | 실제 출력 |
+|---|---|---|
+| `MARKDOWN_EXTENSIONS`에서 `'txt'` 제거 | 4건 (`Then` a.txt / 대소문자 a.TXT / 집합 단언 / `And`) | `Tests 4 failed \| 20 passed (24)` |
+| 호출부에 `['md','markdown']` 재하드코딩 | `And` 1건 | `AssertionError: expected [ 'md', 'markdown' ] to deeply equal [ 'md', 'markdown', 'txt' ]` |
+
+두 축은 상보적이며 어느 한쪽만으로는 부족하다. `Then`은 상수와 **독립적인** 리터럴 세 줄이라 집합이 좁아지는 것을 잡고, `And`는 다이얼로그가 받는 실제 인자를 보므로 호출부 이탈을 잡는다. `Then`을 상수 참조로 적었다면 집합이 좁아질 때 기대값도 함께 좁아져 REQ-PANEL-040의 `shall not`을 아무것도 반증하지 못한다.
+
+#### 판정 계약에서 의도적으로 정한 경계
+
+- **대소문자 무시** — macOS 기본 FS와 OS 다이얼로그 필터가 모두 대소문자를 구분하지 않으므로 `a.MD`는 마크다운 필터를 **통과해서 들어온다**. 보조로 판정하면 마크다운 필터로 연 파일이 평문 패널로 열린다.
+- **확장자 없음/dotfile/점으로 끝남 → 보조** — `node:path.extname`과 같은 경계다. 증명할 수 없는 입력을 마크다운으로 오판하면 평문에 데코레이션이 얹히지만, 반대 오판은 평문 편집기로 열릴 뿐이라 손실이 작다.
+- **basename 분리** — `/notes.md/README`처럼 디렉터리 이름에 점이 있는 경로. 판정 결과만 보면 basename을 떼지 않아도 우연히 맞으므로(`md/README`가 집합에 없다), 추출 자체를 `fileExtensionOf`로 내보내 직접 고정했다.
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — **224 passed / 2441 passed**(기준선 222/2417 → **+2 파일 / +24 건**). 증감 대조: `fileKind.test.ts` 23건 + `filesDialogFilter.test.ts` 1건 = **+24**로 일치한다. 감소 0건.
+
+`typecheck` exit 0(`tsc --build` + `tsc --noEmit -p tsconfig.test.json` 양쪽). `lint` exit 0, 신규 경고 0. `coverage` exit 0 — All files **96.29%**(기준선과 동일). 신규 `shared/fileKind.ts` per-file **100%**(게이트는 `perFile: true`, statements/lines 85%).
+
+#### 불변식
+
+동결 7경로 + 보존 8파일 **15/15** `git diff --quiet 040df4a` exit 0. `electron/ipc/files.ts:96`(saveAs 필터, 현재 `:101`)은 `['md']` 그대로 — 그 확장은 AC-PANEL-044c 소관이며 M6이다.
+
+`MarkdownEditor.tsx`는 이 단계에서 **한 줄도 바뀌지 않았다**(`git diff HEAD --` 무출력). 다만 `git diff 040df4a --`는 비어 있지 않은데, 이는 M0 커밋 `48aa799`(+46/−14)가 남긴 것이고 이 단계의 소산이 아니다. 실질 불변식인 extension 배열 본문(`040df4a:88-147` ↔ 현재 `:91-150`)은 텍스트 대조로 **동일**함을 확인했다.
+
+#### 범위 밖으로 남긴 것 (M5 단계1)
+
+- **`fs.readFile(path,'utf8')`의 손실성**(`files.ts:41`·`:48`) — AC-PANEL-046, 단계2.
+- **언어 문법 조달** — AC-PANEL-041, 단계4. 판정 함수에 언어 축을 얹지 않은 이유는 위 헤더 주석에 적었다.
+- **saveAs 필터 확장** — AC-PANEL-044c, M6.
+- **`fileKindOf`의 프로덕션 배선** — 이 단계는 판정 함수와 다이얼로그 방향만 세운다. 패널 바인딩 시점의 호출은 후속 단계 소관이며, 현재 유일한 프로덕션 소비자는 다이얼로그 필터다.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
@@ -823,9 +886,10 @@ m4_2_commit_shas:            # M4-2 다섯 단계 (§E.2 M4-2 절)
   - 7f6755e                  #   3) IME 게이트 문서축 고정 (생산 코드 무변경)
   - c6e3d7e                  #   4) 패널 알림 모달 금지
   - 7dbe31d                  #   5) e2e 셀렉터 이관 35파일
-run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5~M8 미착수
-milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)
-ac_pass_count: 62               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8
+m5_step1_commit_sha: <pending-backfill>   # M5 단계1 (AC-PANEL-040). 커밋은 자기 SHA를 모르므로 후속 백필
+run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5 단계1/4. M6~M8 미착수
+milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계1/4)
+ac_pass_count: 63               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5-단계1 1
 ac_partial_count: 1             # AC-PANEL-058 — 5개 상태 중 4개 재현. 복원 실패는 M8 표면
 ac_fail_count: 0
 ac_scope: >-
@@ -836,6 +900,7 @@ ac_scope: >-
   M3: AC-PANEL-050 / 050b / 051 / 051b / 052 / 055 / 055b / 056 / 057 / 057b
   M4-1: AC-PANEL-020 / 021 / 022 / 023 / 024 / 030 / 030b / 031 / 032 / 032b / 033 / 034 / 035
   M4-2: AC-PANEL-053 / 053b / 053c / 053d / 054 / 054b / 058(부분) / 095
+  M5 단계1: AC-PANEL-040 (Then·And 두 축 각각 PASS)
 reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
@@ -855,25 +920,28 @@ dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2
 watch_registration_model: reference-counted-open-document-set  # M3 — 경로당 1회, 마지막 참조에서 해제
 path_identity: injectable-pure-function  # shared/pathIdentity.ts — 플랫폼을 인자로 받는다(C-7)
 reconciliation_policy_scope: window-single   # 문서별 정책 맵 없음 (REQ-PANEL-056)
-test_files: 222                  # … → M3 209 → M4-1 218 → M4-2 222 (신규 4파일)
-tests: 2417                      # … → M3 2315 → M4-1 2390 → M4-2 2417 (+27, 감소 0)
+test_files: 224                  # … → M3 209 → M4-1 218 → M4-2 222 → M5-단계1 224 (신규 2파일)
+tests: 2441                      # … → M3 2315 → M4-1 2390 → M4-2 2417 → M5-단계1 2441 (+24, 감소 0)
 e2e_tests: 214                   # 0 failed. skip 4건은 smoke-screenshot의 SMOKE=1 게이트(기존)
 e2e_smoke_gated_verified: true   # SMOKE=1로 따로 실행 — 4 passed. 손수정이 가장 많은 파일
 e2e_flaky_repeat_check: "조합 계열 4 spec × 3회 = 33/33 통과 (1회 초록을 결정성 증거로 쓰지 않음)"
 coverage_gate: pass              # per-file 85%, All files 96.29% (M4-1과 동일, 변동 없음)
+                                 # M5-단계1 신규 shared/fileKind.ts per-file 100%
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
   m3_mitigation: "경로 대조를 순수 함수로 떼고 양 플랫폼을 유닛에서 재현 (AC-PANEL-051b)"
-total_run_phase_files: 103       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
+total_run_phase_files: 107       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
                                  # 그중 M4-2 기여 43 (e2e 이관 35 + 소스 2 + 테스트 6)
+                                 # M5-단계1 기여 4 신규 (files.ts + fileKind.ts + 테스트 2).
+                                 # workspaceStore.ts는 M1부터 집합에 있어 계수 증가 없음
 m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4는 M4-1/M4-2 분할, M5~M8은 후속 위임"
 deferred_by_open_decision:
   - "AC-PANEL-058 복원 실패 상태 — 그 알림 표면이 M8(패널 배치 persist) 산출물이라 미재현"
   - ".cm-content 측정폭 조정 — design.md §3.2a (ii). 선행 조건(셀렉터 이관)은 M4-2가 충족"
   - "acceptance.md/design.md의 34→35 계수 정정 — sync 단계 소관(L46)"
   - "resolveWatchScope/registerWatchScope 프로덕션 배선 — 소유 요구 없음. 관측으로만 기록"
-  - "파일 종류 판정 함수 — OQ-10 (M5)"
+  - "파일 종류 판정의 프로덕션 배선 — 판정 함수는 M5 단계1이 shared/fileKind.ts에 세웠고 다이얼로그 필터가 소비 중이다. 패널 바인딩 시점의 호출과 보조 패널 조립은 M5 단계2~4 소관. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
   - "프로젝트 트리 표면 — M2 미착수분, 후속 위임 (AC-036/036b/036c/036d)"
   - "패널 폭 등식의 픽셀 단언 — jsdom 레이아웃 부재, e2e 이관 (AC-005)"
   - "같은 파일을 두 패널에 — v0.4 문서↔뷰 동기화 프로토콜 (REQ-PANEL-011이 v0.3에서 금지)"
