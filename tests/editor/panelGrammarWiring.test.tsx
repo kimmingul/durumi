@@ -123,11 +123,22 @@ function countReconfigures(view: EditorView): () => number {
 }
 
 /**
- * 문법 적재(동적 import)와 그에 따른 재렌더·재설정이 모두 끝날 때까지 흘린다.
+ * React의 대기 중인 작업(상태 갱신·이펙트)을 흘린다.
  *
- * 마이크로태스크 하나로는 부족하다 — `load()`는 동적 import 체인이고 그 뒤에
- * React의 상태 갱신과 이펙트가 한 번 더 붙는다. 매크로태스크 몇 번을 도는 것이
- * 특정 tick 수에 기대는 것보다 안전하다.
+ * **이 함수는 문법 적재를 기다리지 못한다.** 초판 주석은 "적재가 모두 끝날
+ * 때까지 흘린다"고 적었지만 실제로 하는 일은 매크로태스크를 정해진 횟수만큼
+ * 도는 것뿐이고, 동적 import가 그 횟수 안에 끝난다는 보장은 어디에도 없다.
+ * 라운드 수는 시간이 아니라 **이벤트 루프 회전 수**이므로, 느린 러너에서는
+ * 같은 6회가 훨씬 짧은 I/O 창을 뜻한다.
+ *
+ * 실측(반증): 라운드를 0으로 낮추면 AC-PANEL-041의 세 항목이 그대로 실패한다
+ * (`expected null to be 'python'`). windows CI가 이 파일의 **첫 테스트**에서
+ * 정확히 그 형태로 깨졌고, 같은 실행의 뒤쪽 테스트들은 python을 단언하며
+ * 통과했다 — 적재 배선은 성립하며 모자란 것은 시간이었다.
+ *
+ * 그래서 적재 완료에 기대는 자리는 전부 `settleGrammar`로 옮겼다. 여기 남은
+ * 것은 **적재가 개입하지 않는** 자리들뿐이다(마크다운 패널, 경로 없는 패널,
+ * 카탈로그에 없는 확장자 — 이들은 `load()`를 아예 부르지 않는다).
  */
 async function settle(rounds = 6): Promise<void> {
   for (let i = 0; i < rounds; i += 1) {
@@ -136,6 +147,31 @@ async function settle(rounds = 6): Promise<void> {
       await new Promise((r) => setTimeout(r, 0));
     });
   }
+}
+
+/**
+ * 그 경로들의 문법 적재가 **실제로 끝난 뒤** React를 흘린다.
+ *
+ * `LanguageDescription.load()`는 진행 중인 적재의 **같은 약속**을 돌려주므로
+ * (내부 `loading` 캐시), 여기서 부르는 것은 두 번째 적재를 시작하는 것이 아니라
+ * 컴포넌트가 이미 띄워 둔 그 적재에 올라타는 것이다. 컴포넌트가 먼저 등록한
+ * 해소 콜백이 우리보다 앞서 실행되므로, 이 함수가 돌아온 시점에는 재설정이
+ * 이미 적용되어 있다 — tick 수를 맞히지 않으므로 러너 속도와 무관하다.
+ *
+ * **반드시 마운트 뒤에 부른다.** 마운트 전에 부르면 `desc.support`가 채워진 채로
+ * 해소 이펙트가 돌아 **동기 경로**를 타고, 그러면 이 파일이 재려는 비동기 조달이
+ * 아예 일어나지 않는다 — §경합 절이 적어 둔 "따뜻한 상태 오염"과 같은 함정이다.
+ *
+ * 경합 절에서는 **버려질 적재**를 기다리는 데에도 쓴다. 늦게 온 문법이 실리지
+ * 않았음을 보려면 그것이 실제로 도착해야 하기 때문이다: 라운드 0에서 경합 절
+ * 네 항목이 전부 통과한다는 실측이 그 공백을 드러냈다(도착하지 않은 문법은
+ * 오염시킬 수도 없으므로 단언이 공회전한다).
+ */
+async function settleGrammar(...paths: string[]): Promise<void> {
+  await act(async () => {
+    await Promise.all(paths.map((p) => grammarDescriptionFor(p)?.load()));
+  });
+  await settle();
 }
 
 function langName(m: Mounted): string | null {
@@ -159,20 +195,20 @@ describe('AC-PANEL-041 — 보조 패널이 언어 문법을 받는다', () => {
     ['/w/conf.yaml', 'a: 1', 'yaml'],
   ])('%s (내용 %s) 패널의 언어층이 %s가 된다', async (filePath, value, expected) => {
     const m = editor({ value, filePath, kind: 'auxiliary' });
-    await settle();
+    await settleGrammar(filePath);
     expect(langName(m)).toBe(expected);
   });
 
   it('`.yml`도 YAML로 열린다', async () => {
     const m = editor({ value: 'a: 1', filePath: '/w/conf.yml', kind: 'auxiliary' });
-    await settle();
+    await settleGrammar('/w/conf.yml');
     expect(langName(m)).toBe('yaml');
   });
 
   it('문법이 실려도 편집과 변경 통보는 그대로 동작한다', async () => {
     const onChange = vi.fn();
     const m = editor({ value: 'x = 1', filePath: '/w/analysis.py', kind: 'auxiliary', onChange });
-    await settle();
+    await settleGrammar('/w/analysis.py');
     expect(langName(m)).toBe('python');
     act(() => {
       m.view.dispatch({ changes: { from: 5, insert: '\ny = 2' } });
@@ -183,7 +219,7 @@ describe('AC-PANEL-041 — 보조 패널이 언어 문법을 받는다', () => {
   it('문법 조달이 편집 표면을 다시 만들지 않는다 — M0의 라우팅 등록이 흔들리지 않는다', async () => {
     const m = editor({ value: 'x = 1', filePath: '/w/analysis.py', kind: 'auxiliary' });
     const before = m.view;
-    await settle();
+    await settleGrammar('/w/analysis.py');
     expect(langName(m)).toBe('python');
     // `onReady`가 다시 불리지 않았다 = `readyView`가 그대로다 = M0의
     // `[filePath, readyView]` 이펙트(조합 게이트 → 실행자 분리 순서를 담은 그것)가
@@ -293,7 +329,9 @@ describe('문법 해소의 경합 (차가운 적재 중 재바인딩)', () => {
     const m = editor({ value: 'package main', filePath: '/w/a.go', kind: 'auxiliary' });
     expect(langName(m)).toBeNull();
     m.rerender({ value: 'a,b', filePath: '/w/data.csv' });
-    await settle();
+    // 버려질 Go 적재가 **실제로 도착할 때까지** 기다린다 — 도착하지 않으면
+    // 아래 단언은 오염을 재는 것이 아니라 공회전한다.
+    await settleGrammar('/w/a.go');
     expect(langName(m)).toBeNull();
     expect(m.view.state.doc.toString()).toBe('a,b');
   });
@@ -307,7 +345,7 @@ describe('문법 해소의 경합 (차가운 적재 중 재바인딩)', () => {
     const m = editor({ value: 'puts 1', filePath: '/w/a.rb', kind: 'auxiliary' });
     m.rerender({ value: '{"a":1}', filePath: '/w/data.json' });
     expect(langName(m)).toBe('json');
-    await settle();
+    await settleGrammar('/w/a.rb');
     expect(langName(m)).toBe('json');
   });
 
@@ -316,7 +354,7 @@ describe('문법 해소의 경합 (차가운 적재 중 재바인딩)', () => {
     const m = editor({ value: '<?php', filePath: '/w/a.php', kind: 'auxiliary' });
     m.rerender({ value: '# 원고', filePath: '/w/paper.md', kind: 'markdown' });
     expect(langName(m)).toBe('markdown');
-    await settle();
+    await settleGrammar('/w/a.php');
     // 늦게 온 PHP가 실리면 이 패널은 다시 보조 조립이 되어 마크다운층을 잃는다.
     expect(langName(m)).toBe('markdown');
   });
@@ -325,7 +363,7 @@ describe('문법 해소의 경합 (차가운 적재 중 재바인딩)', () => {
     assertCold('/w/a.lua');
     const m = mountEditor({ value: 'x = 1', filePath: '/w/a.lua', kind: 'auxiliary' });
     m.unmount();
-    await expect(settle()).resolves.toBeUndefined();
+    await expect(settleGrammar('/w/a.lua')).resolves.toBeUndefined();
   });
 });
 
@@ -336,7 +374,7 @@ describe('문법 해소의 경합 (차가운 적재 중 재바인딩)', () => {
 describe('문법 축이 중복 재설정을 만들지 않는다', () => {
   it('대조군 — 내용만 바뀌면 재설정이 0이다 (카운터가 잡음을 세지 않는다)', async () => {
     const m = editor({ value: 'x = 1', filePath: '/w/analysis.py', kind: 'auxiliary' });
-    await settle();
+    await settleGrammar('/w/analysis.py');
     const count = countReconfigures(m.view);
     m.rerender({ value: 'x = 2' });
     await settle();
@@ -351,7 +389,7 @@ describe('문법 축이 중복 재설정을 만들지 않는다', () => {
    */
   it('문법이 실린 보조 패널에서 원고로 돌아갈 때 재설정이 정확히 한 번이다', async () => {
     const m = editor({ value: 'x = 1', filePath: '/w/analysis.py', kind: 'auxiliary' });
-    await settle();
+    await settleGrammar('/w/analysis.py');
     expect(langName(m)).toBe('python');
     const count = countReconfigures(m.view);
 
@@ -363,11 +401,11 @@ describe('문법 축이 중복 재설정을 만들지 않는다', () => {
 
   it('같은 문법의 다른 파일로 갈아타면 재설정하지 않는다 (`.yaml` → `.yml`)', async () => {
     const m = editor({ value: 'a: 1', filePath: '/w/conf.yaml', kind: 'auxiliary' });
-    await settle();
+    await settleGrammar('/w/conf.yaml');
     expect(langName(m)).toBe('yaml');
     const count = countReconfigures(m.view);
     m.rerender({ value: 'b: 2', filePath: '/w/other.yml' });
-    await settle();
+    await settleGrammar('/w/other.yml');
     // 같은 카탈로그 항목이므로 해소 결과가 **동일 인스턴스**이고, 적용 정체성이
     // 변하지 않아 재설정을 건너뛴다.
     expect(langName(m)).toBe('yaml');
@@ -379,11 +417,11 @@ describe('문법 축이 중복 재설정을 만들지 않는다', () => {
     // 적재 이력에 흔들리지 않는다 — 차가운 경로는 아래 테스트가 따로 잰다.
     await grammarDescriptionFor('/w/data.json')?.load();
     const m = editor({ value: 'x = 1', filePath: '/w/analysis.py', kind: 'auxiliary' });
-    await settle();
+    await settleGrammar('/w/analysis.py');
     expect(langName(m)).toBe('python');
     const count = countReconfigures(m.view);
     m.rerender({ value: '{"a":1}', filePath: '/w/data.json' });
-    await settle();
+    await settleGrammar('/w/data.json');
     expect(langName(m)).toBe('json');
     // 적재가 끝나 있으므로 중간 평문 단계 없이 곧바로 JSON으로 간다.
     expect(count()).toBe(1);
@@ -403,14 +441,14 @@ describe('문법 축이 중복 재설정을 만들지 않는다', () => {
     expect(grammarDescriptionFor('/w/main.rs')?.support).toBeUndefined();
 
     const m = editor({ value: 'x = 1', filePath: '/w/analysis.py', kind: 'auxiliary' });
-    await settle();
+    await settleGrammar('/w/analysis.py');
     expect(langName(m)).toBe('python');
     const count = countReconfigures(m.view);
 
     m.rerender({ value: 'fn main() {}', filePath: '/w/main.rs' });
     // 첫 걸음 — 아직 적재 전이므로 Python을 즉시 내린다.
     expect(langName(m)).toBeNull();
-    await settle();
+    await settleGrammar('/w/main.rs');
     // 두 번째 걸음 — 적재가 끝나 Rust가 실린다.
     expect(langName(m)).toBe('rust');
     expect(count()).toBe(2);
