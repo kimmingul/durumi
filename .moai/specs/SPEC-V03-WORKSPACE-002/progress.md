@@ -1053,7 +1053,9 @@ diff <(git show 040df4a:src/editor/MarkdownEditor.tsx | sed -n '88,147p') <(sed 
 **(3) `baseKeymap` 슬롯이 마크다운 동작을 품고 있다 — 적출했고 고치지 않았다.**
 `keymap.of([enterListContinuation(), ...defaultKeymap, ...historyKeymap, ...searchKeymap])`은 공통층 한 항목인데 `enterListContinuation()`은 **마크다운 목록 이어쓰기**다. AC-PANEL-042의 판정 입도가 최상위 항목이고 `design.md` §5.2가 "기본 keymap"을 공통층 한 항목으로 세므로 **판정은 통과한다**. 그러나 사실로서 `.py` 패널에도 목록 이어쓰기가 실린다.
 
-**고치지 않았다.** 슬롯을 쪼개는 것은 승인된 범위 밖이고, 그 입도는 `liveDecorations` 43항목을 통째로 세는 것과 같은 계열의 **의도된 규약**이다(`plan.md` §A.5). 조립 지점에 `@MX:NOTE`로 기록했고 이 절이 그 발견을 남긴다 — **SPEC 개정이 필요한지는 오케스트레이터가 판단할 사안이다.**
+**단계3은 고치지 않았다.** 슬롯을 쪼개는 것은 승인된 범위 밖이고, 그 입도는 `liveDecorations` 43항목을 통째로 세는 것과 같은 계열의 **의도된 규약**이다(`plan.md` §A.5). 조립 지점에 `@MX:NOTE`로 기록했고 이 절이 그 발견을 남겼다 — **SPEC 개정이 필요한지는 오케스트레이터가 판단할 사안**으로 넘겼다.
+
+> **후속 — 고쳐졌다.** 오케스트레이터가 그 판단을 수행했다: 누수를 실측해 **파괴적 편집**임을 확인하고, SPEC 개정 **없이** 정정하도록 결정했다. 아래 **"M5 단계3 보완"** 절이 그 결과다. 이 절의 서술은 단계3 시점의 기록으로 그대로 둔다.
 
 **(4) 마크다운층이 없는 패널에 모드 전환이 들어오면.**
 실측: 설정에 없는 컴파트먼트에 대한 `reconfigure`는 **예외를 던지지 않고 조용히 무시된다**(`compartment.get(state) === undefined`, 문서 무변경). 크래시가 아니라 무해한 no-op이다. `extensionLayers.test.ts`와 `panelKindLayering.test.tsx` 양쪽에서 고정했다.
@@ -1095,9 +1097,91 @@ M0의 조정 라우팅 이펙트 + 조합 게이트 정리 순서 블록(`compos
 #### 범위 밖으로 남긴 것 (M5 단계3)
 
 - **언어 문법 조달** — AC-PANEL-041 / 045, 단계4. 보조층은 지금 비어 있고, 빈 보조층은 allowlist의 포함 판정을 자명하게 만족시킨다.
-- **`enterListContinuation()` 슬롯 분리** — 위 위험 (3). 승인 범위 밖이며 `@MX:NOTE`로 기록만 했다.
+- **`enterListContinuation()` 슬롯 분리** — 위 위험 (3). 단계3 시점에는 승인 범위 밖이라 `@MX:NOTE`로 기록만 했다. **아래 보완 절에서 해소됐다** (슬롯을 쪼개지 않고 내용물만 갈랐다).
 - **저장 경로 / saveAs 필터** — M6.
 - **실사용 확인** — 이 단계는 유닛·jsdom까지다. §E.3 `deferred_by_open_decision` 참조.
+
+---
+
+### M5 단계3 보완 — 목록 이어쓰기를 보조 패널에서 뺀다
+
+**대상 AC**: AC-PANEL-042 (세 축 모두 단계3에서 이미 PASS. 이 보완은 **새 AC를 추가하지 않는다** — 판정을 통과하면서도 남아 있던 사실상의 결함을 없앤다)
+**커밋**: `<pending-backfill>` (단계4가 백필)
+**변경**: 소스 1 수정(`src/editor/extensionLayers.ts`) + 신규 1(`tests/editor/listContinuationLayering.test.ts`)
+
+#### 왜 판정을 통과한 것이 결함이었나 — 측정이 판단을 바꿨다
+
+단계3은 누수를 **사실로만** 적었다("`.py` 패널에도 목록 이어쓰기가 실린다"). 오케스트레이터가 보조 조립을 세우고 Enter를 눌러 그 사실의 **크기**를 쟀다:
+
+```
+[관측 1] kind='auxiliary', doc "items:\n  - alpha", 캐럿 끝, Enter
+         → "items:\n  - alpha\n  - "        (마커 자동 삽입)
+[관측 2] kind='auxiliary', doc "items:\n  - ", 캐럿 끝, Enter
+         → "items:\n"                        (그 줄이 통째로 사라진다)
+```
+
+`BULLET_RE = /^(\s*)([-*+])\s+(.*)$/`(`src/editor/keymap/listContinuation.ts:4`)가 **YAML 시퀀스 항목과 정확히 일치**한다. 그리고 `.yaml`/`.yml`은 REQ-PANEL-041이 문법을 조달하겠다고 약속한 집합 안에 있다(`design.md` §5.3 실측표).
+
+관측 2가 판단을 갈랐다. 마커가 하나 더 붙는 것(관측 1)은 성가심이지만, **사용자가 요청하지 않았는데 기존 줄을 지우는 것**은 `design.md` §4.2가 받아들일 수 없다고 못박은 결함 계열이다 — "보이지 않는 문서를 바꾼다 … v0.2.19~.28에서 반복한 '조용히 문서를 고치는' 결함 계열". 즉 AC를 통과하는 것과 출하 가능한 것이 갈라진 지점이었다.
+
+#### 왜 SPEC 개정이 아니라 **정정**인가
+
+`design.md` §5.2가 공통층에 넣은 항목의 이름은 **"기본 keymap"** 이다. `enterListContinuation()`은 `defaultKeymap`·`historyKeymap`·`searchKeymap` 어디에도 속하지 않는다 — 원래 코드가 그 셋과 같은 `keymap.of([...])` 호출에 끼워 넣었을 뿐이고, 단계3의 조립은 그 호출을 통째로 한 슬롯으로 옮기면서 그 사실을 물려받았다. **그러므로 이 항목을 공통층으로 센 것은 설계의 공백이 아니라 설계에 대한 오독이었고, 여기서 빼는 것은 §5.2를 고치는 일이 아니라 §5.2를 정확히 읽는 일이다.** 설계 문서는 한 글자도 바뀌지 않는다.
+
+#### 고친 방식 — 슬롯은 하나로 두고 **내용물**만 갈랐다
+
+`baseKeymap`은 여전히 **공통층 최상위 슬롯 하나**이고, 그 안의 배열에서만 `enterListContinuation()`이 종류에 따라 빠진다.
+
+```ts
+common('baseKeymap', keymap.of([
+  ...(isMarkdown ? [enterListContinuation()] : []),
+  ...defaultKeymap, ...historyKeymap, ...searchKeymap,
+]))
+```
+
+슬롯을 쪼개는 형태(마크다운층에 `listContinuation` 슬롯 신설)를 기각한 이유는 산술이다 — 쪼개면 최상위가 **25 / 11**이 되어 `design.md` §5.2의 11+13=24와 AC-PANEL-042의 개수 판정이 함께 움직인다. 그것은 정정이 아니라 개정이다.
+
+#### 이 결정을 지키는 것은 allowlist가 **아니다** (단계3 반증 C의 귀결)
+
+내용물이 종류에 따라 갈리는 모양은 단계3 반증 (C)가 주입했던 바로 그 모양 — **기존 슬롯 안쪽의 중첩** — 이고, 반증 (C)는 최상위 태그가 그것을 보지 못한다는 사실을 이미 증명했다. 실측으로 재확인했다: 아래 반증 A(수정 되돌리기)에서 `extensionLayers.test.ts` 29건은 **전부 통과했다.** 즉 allowlist·층 산술·순서 계약 중 어느 것도 이 회귀를 잡지 못한다.
+
+그래서 이 보완의 계약은 **문서 변형 단언**이다(`tests/editor/listContinuationLayering.test.ts`, 15건). 배열의 내용물을 조회하지 않고 조립된 상태에 **실제 Enter 키 이벤트를 보내** 문서를 잰다 — 배열 모양은 구현 세부지만 문서 변형은 계약이기 때문이다.
+
+#### 반증 (E2) — 2건 주입, 원복
+
+| # | 주입 | 결과 |
+|---|---|---|
+| A | 수정 되돌리기(`enterListContinuation()`을 무조건 싣기) | 보조 6건 FAIL. 관측과 **문자 단위로 일치**: `expected 'items:\n  - alpha\n  - ' to be 'items:\n  - alpha\n  '` / `expected 'items:\n' to be 'items:\n  - \n  '`. **`extensionLayers.test.ts`는 29건 전부 통과** — 이 회귀는 allowlist로 잡히지 않는다는 실증 |
+| B | **과잉 수정**(마크다운에서도 이어쓰기 제거) | 마크다운 대조군 2건 FAIL. 보조 7건은 전부 통과 — 즉 보조 쪽 단언만으로는 과잉 수정을 못 잡는다. 대조군이 필요한 이유의 실증 |
+
+원복 후 `diff` 무출력, `grep -rn FALSIFY src/ tests/ shared/ electron/` 무매치(exit 1).
+
+**반증 B가 드러낸 사실 — 마크다운 패널에는 이어쓰기 수단이 둘이다.** 과잉 수정을 주입했는데 대조군 7건 중 **둘만** FAIL했다. 원인을 추적했다: `markdown()`이 스스로 `Prec.high(keymap.of(markdownKeymap))`를 싣고 그 `Enter`가 `insertNewlineContinueMarkup`이다(`@codemirror/lang-markdown/dist/index.js:396-397, 422`). 두 수단은 대부분 같은 출력을 내고, **빈 목록 항목에서만 갈린다** — CommonMark에서 빈 목록 항목은 문단을 끊지 못하므로 `items:\n  - `는 목록으로 파싱되지 않고, 그래서 `insertNewlineContinueMarkup`은 false를 돌려주며 정규식 기반인 `enterListContinuation()`만 반응한다.
+
+귀결 둘. (1) 대조군 7건의 검증력이 균일하지 않다 — 실제로 과잉 수정을 막는 것은 빈 항목 2건이고, 나머지 다섯은 "사용자가 보는 동작이 그대로다"라는 더 약한 단언이다. 테스트 파일에 어느 것이 어느 쪽인지 적어 두었다. (2) 마크다운 패널에서 `enterListContinuation()`은 **부분적으로 중복**이다. 그 중복 정리는 마크다운 동작을 바꾸는 일이라 이 보완의 범위 밖이며 §E.3에 기록만 남긴다.
+
+#### 불변식 — 무엇이 움직이지 않았나
+
+| 축 | 측정 | 결과 |
+|---|---|---|
+| 최상위 항목 수 | `extensionLayers.test.ts` "마크다운 패널은 최상위 24항목, 보조 패널은 11항목" | PASS (24 / 11 그대로) |
+| 항목 순서 (마크다운) | 같은 파일 "…040df4a 배열의 항목 순서와 같다" | PASS, **파일 무수정** |
+| 항목 순서 (보조) | 같은 파일 "보조 조립의 순서가 마크다운 조립의 공통 슬롯 순서와 같다" | PASS, **파일 무수정** |
+| 단계3 테스트 2파일 | `git diff --quiet 19729a6 -- tests/editor/extensionLayers.test.ts` / `…panelKindLayering.test.tsx` | 둘 다 exit 0 (바이트 동일) |
+| 바인딩 본체 | `git diff 040df4a -- src/editor/keymap/listContinuation.ts` | 무출력. 정규식을 건드리면 마크다운 동작이 바뀐다 |
+| PRESERVE 16파일 | `git diff --quiet 040df4a` | 전부 exit 0 |
+| `liveDecorations` 43항목 | `git diff 040df4a -- src/editor/decorations/index.ts` | 무출력 |
+
+#### 전체 게이트
+
+`pnpm test` exit 0 — **230 passed / 2533 passed**(단계3 229/2518 → **+1 파일 / +15 건**, 감소 0). **기존 테스트 수정 0건.** `typecheck`·`lint`·`build` exit 0, 신규 경고 0. `coverage` exit 0 — All files **96.31%**(단계3과 동일), `src/editor` 99.59%.
+
+#### 범위 밖으로 남긴 것 (M5 단계3 보완)
+
+- **`listContinuation.ts`의 정규식** — 무변경. 바인딩은 마크다운에서 옳다. 바뀐 것은 **어디에 실리는가**뿐이다.
+- **마크다운 패널의 이어쓰기 수단 이중화** — 위 반증 B의 발견. 정리하면 마크다운 동작이 바뀐다.
+- **실사용 확인** — 유닛·jsdom까지다. 앱 실행도 e2e도 돌리지 않았다.
+- **언어 문법 조달** — AC-PANEL-041 / 045, 단계4. 이 보완은 단계4를 시작하지 않았다.
 
 ---
 
@@ -1121,6 +1205,7 @@ m4_2_commit_shas:            # M4-2 다섯 단계 (§E.2 M4-2 절)
 m5_step1_commit_sha: b16fd7e   # M5 단계1 (AC-PANEL-040). 단계2가 백필 — 커밋은 자기 SHA를 모른다
 m5_step2_commit_sha: 6439ad1   # M5 단계2 (AC-PANEL-046). 단계3이 백필
 m5_step3_commit_sha: <pending-backfill>   # M5 단계3 (AC-PANEL-042). 같은 이유로 후속 백필
+m5_step3_followup_commit_sha: <pending-backfill>   # M5 단계3 보완 (목록 이어쓰기 누수 정정). 새 AC 없음
 run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5 단계3/4. M6~M8 미착수
 milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계3/4)
 ac_pass_count: 65               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5-단계1 1 + 단계2 1 + 단계3 1
@@ -1153,6 +1238,11 @@ extension_layering_contract: >-
   우선순위였다(CodeMirror에서 배열 순서 = 우선순위).
   (2) "보조 조립의 순서가 마크다운 조립의 공통 슬롯 순서와 같다".
   단계4는 이 둘을 계승하고 diff 블록 대조는 쓰지 않는다.
+  (3) 단계3 보완이 셋째를 더했다 — tests/editor/listContinuationLayering.test.ts.
+  앞의 둘이 **슬롯의 집합·순서**를 재는 반면 이것은 슬롯 **안쪽**을 잰다:
+  조립된 상태에 실제 Enter를 눌러 문서 변형을 단언한다. 반증 A로 실증했듯
+  (1)·(2)와 allowlist는 슬롯 내부 변화를 보지 못하므로(단계3 반증 C의 귀결)
+  대체 가능한 계약이 아니라 **보완적** 계약이다.
 extension_array_count_resolved: >-
   해소됐다. M4-1이 42항목으로 적고 M4-2가 재현 못한 건은, 조립을 순수 함수로
   떼어 실측한 결과 **최상위 24항목**(공통 11 + 마크다운 13)으로 확정됐고
@@ -1177,9 +1267,10 @@ dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2
 watch_registration_model: reference-counted-open-document-set  # M3 — 경로당 1회, 마지막 참조에서 해제
 path_identity: injectable-pure-function  # shared/pathIdentity.ts — 플랫폼을 인자로 받는다(C-7)
 reconciliation_policy_scope: window-single   # 문서별 정책 맵 없음 (REQ-PANEL-056)
-test_files: 229                  # … → M5-단계1 224 → 단계2 227 → 단계3 229 (신규 2파일)
-tests: 2518                      # … → M5-단계1 2441 → 단계2 2474 → 단계3 2518 (+44, 감소 0)
-pre_existing_tests_modified: 0   # 단계3 — 층 재구성이 기존 단언을 하나도 건드리지 않았다
+test_files: 230                  # … → M5-단계1 224 → 단계2 227 → 단계3 229 → 단계3 보완 230 (신규 1파일)
+tests: 2533                      # … → 단계2 2474 → 단계3 2518 (+44) → 단계3 보완 2533 (+15, 감소 0)
+pre_existing_tests_modified: 0   # 단계3·보완 모두 0. 보완은 신규 파일만 더했고
+                                 # 단계3의 두 순서 테스트는 git diff --quiet 19729a6 exit 0(바이트 동일)
 e2e_tests: 214                   # 0 failed. skip 4건은 smoke-screenshot의 SMOKE=1 게이트(기존)
 e2e_smoke_gated_verified: true   # SMOKE=1로 따로 실행 — 4 passed. 손수정이 가장 많은 파일
 e2e_flaky_repeat_check: "조합 계열 4 spec × 3회 = 33/33 통과 (1회 초록을 결정성 증거로 쓰지 않음)"
@@ -1209,7 +1300,9 @@ total_run_phase_files: 115       # 실측 git diff --name-only 040df4a HEAD -- s
                                  #   files.ts·ipc-contract.ts·useFileMenuCommands.ts는 이미 집합에 있어 증가 없음.
                                  # M5-단계3 기여 3 신규 (extensionLayers.ts + 테스트 2).
                                  #   MarkdownEditor.tsx·PanelContainer.tsx는 이미 집합에 있어 증가 없음.
-                                 # 실측: 040df4a..b16fd7e = 107 → 단계2 후 112 → 단계3 후 115
+                                 # M5-단계3 보완 기여 1 신규 (listContinuationLayering.test.ts).
+                                 #   extensionLayers.ts는 이미 집합에 있어 증가 없음. → 116
+                                 # 실측: 040df4a..b16fd7e = 107 → 단계2 후 112 → 단계3 후 115 → 보완 후 116
 m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4는 M4-1/M4-2 분할, M5~M8은 후속 위임"
 deferred_by_open_decision:
   - "AC-PANEL-058 복원 실패 상태 — 그 알림 표면이 M8(패널 배치 persist) 산출물이라 미재현"
@@ -1217,8 +1310,9 @@ deferred_by_open_decision:
   - "acceptance.md/design.md의 34→35 계수 정정 — sync 단계 소관(L46)"
   - "resolveWatchScope/registerWatchScope 프로덕션 배선 — 소유 요구 없음. 관측으로만 기록"
   - "파일 종류 판정의 프로덕션 배선 — 단계1이 shared/fileKind.ts에 세우고 다이얼로그 필터가, 단계2가 열기 읽기 분기(readTextForOpen)가, 단계3이 패널 조립(PanelContainer → MarkdownEditor.kind → extensionLayers)이 소비한다. 남은 것은 단계4의 보조층(언어 문법)뿐이다. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
-  - "enterListContinuation() 슬롯 분리 — 단계3이 적출한 사실. baseKeymap 슬롯(공통층)이 마크다운 목록 이어쓰기를 품고 있어 .py 패널에도 실린다. AC-PANEL-042의 최상위 입도로는 판정 통과이며, 쪼개는 것은 승인 범위 밖이라 @MX:NOTE로 기록만 했다. SPEC 개정 필요 여부는 오케스트레이터 판단 사안"
-  - "단계3의 실사용 확인 — 유닛·jsdom까지만 수행했다. 앱 실행도 e2e도 돌리지 않았다. 살아 있는 편집기에 무엇이 실리는지를 바꾸는 단계이므로 실제 .py 파일을 연 패널의 렌더 결과·성능·IME 거동은 미검증이다"
+  - "[해소됨 — 단계3 보완] enterListContinuation() 누수. 단계3이 사실로 적출하고 판단을 오케스트레이터에 넘겼던 건이다. 실측 결과 관측 2(빈 항목 줄이 통째로 사라짐)가 요청하지 않은 파괴적 편집이었고, design.md §5.2가 공통층에 둔 것은 '기본 keymap'인데 enterListContinuation()은 그 셋 중 어디에도 속하지 않으므로 SPEC 개정 없이 정정했다. 슬롯은 쪼개지 않고(24/11 유지) 한 공통 슬롯 안의 배열만 종류에 따라 갈랐다. §E.2 'M5 단계3 보완' 절 참조"
+  - "마크다운 패널의 Enter 이어쓰기 수단 이중화 — 단계3 보완의 반증 B가 드러낸 사실. markdown()이 Prec.high로 싣는 insertNewlineContinueMarkup(@codemirror/lang-markdown)과 enterListContinuation()이 공존하며, 빈 목록 항목에서만 출력이 갈린다(CommonMark에서 빈 항목은 문단을 끊지 못해 목록으로 파싱되지 않는다). 즉 마크다운에서 enterListContinuation()은 부분적으로 중복이다. 정리하면 마크다운의 관측 동작이 바뀌므로 이 SPEC 범위 밖이며, 별도 판단 사안으로 남긴다"
+  - "단계3·보완의 실사용 확인 — 유닛·jsdom까지만 수행했다. 앱 실행도 e2e도 돌리지 않았다. 살아 있는 편집기에 무엇이 실리는지를 바꾸는 단계이므로 실제 .py/.yaml 파일을 연 패널의 렌더 결과·성능·IME 거동은 미검증이다. 특히 보완이 바꾼 것은 Enter 처리 경로이고, 조합 중 Enter(IME 확정)는 jsdom 재현 한계 밖이다"
   - "마크다운 열기의 U+FFFD 치환 — 단계2가 보조 파일만 방어하도록 사용자가 범위를 확정(C-10). 분기점에 @MX:DEBT + CEILING + UPGRADE로 기록했고 비대칭을 테스트가 고정한다. 별개 SPEC 사안"
   - "Latin-1 등 비UTF-8 인코딩 보조 파일을 여는 수단 — 단계2의 엄격 디코드가 거부한다(요구의 문자 그대로의 귀결). 인코딩 선택 UI는 이 SPEC 범위 밖"
   - "프로젝트 트리 표면 — M2 미착수분, 후속 위임 (AC-036/036b/036c/036d)"

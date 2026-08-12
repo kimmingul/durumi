@@ -144,15 +144,38 @@ export function assembleLayers(deps: ExtensionLayerDeps): readonly ExtensionSlot
 
   const slots: (ExtensionSlot | null)[] = [
     common('history', history()),
-    // @MX:NOTE: [AUTO] 이 슬롯은 공통층이지만 `enterListContinuation()`이라는
-    // **마크다운 목록 동작**을 품고 있다. AC-PANEL-042의 판정 입도가 최상위
-    // 항목이므로(`design.md` §5.2가 "기본 keymap"을 공통층 한 항목으로 센다)
-    // 이 슬롯 통째로 allowlist 안이고 판정은 통과한다. 그러나 사실로서
-    // `.py` 패널에도 목록 이어쓰기가 실린다. 쪼개는 것은 SPEC의 승인 범위
-    // 밖이라 여기서 하지 않고 기록만 남긴다 — 인용 앵커: M5 단계3 보고.
+    // @MX:NOTE: [AUTO] 공통층 슬롯 하나지만 **내용물은 종류에 따라 다르다** —
+    // `enterListContinuation()`은 마크다운 패널에만 실린다. 단계3이 적출한
+    // 누수(보조 패널에도 목록 이어쓰기가 실림)를 단계3 보완이 여기서 끝냈다.
+    // 남는 한계는 입도다: 아래 주석이 말하듯 최상위 태그는 이 분기를 보지
+    // 못하므로, 이 결정을 지키는 것은 allowlist가 아니라
+    // `tests/editor/listContinuationLayering.test.ts`의 동작 단언이다.
+    //
+    // **공통층인데 내용이 갈리는 이유** (`design.md` §5.2).
+    // §5.2가 공통층에 둔 것은 "기본 keymap"이고, `enterListContinuation()`은
+    // `defaultKeymap`·`historyKeymap`·`searchKeymap` 어디에도 속하지 않는다 —
+    // 원래 코드가 같은 `keymap.of([...])` 호출에 끼워 넣었을 뿐이다. 따라서
+    // 이 항목을 공통층으로 세는 것은 설계의 공백이 아니라 **오독**이었고,
+    // 여기서 빼는 것은 설계 개정이 아니라 정정이다. 슬롯 자체는 하나로 남으므로
+    // 최상위 항목 수(마크다운 24 / 보조 11)와 순서는 그대로다.
+    //
+    // **왜 무해하지 않았나** (보조 패널 실측, `.yaml`은 REQ-PANEL-041 조달 대상):
+    //   "items:\n  - alpha" 끝에서 Enter → "items:\n  - alpha\n  - "  (마커 삽입)
+    //   "items:\n  - "      끝에서 Enter → "items:\n"                  (줄 소멸)
+    // `BULLET_RE`(`keymap/listContinuation.ts:4`)가 YAML 시퀀스 항목과 정확히
+    // 일치한다. 두 번째는 요청하지 않은 파괴적 편집이며 `design.md` §4.2가
+    // 배제한 "보이지 않는 문서를 바꾼다" 계열이다.
     common(
       'baseKeymap',
-      keymap.of([enterListContinuation(), ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      keymap.of([
+        // 마크다운층 동작이지만 마크다운층 **슬롯**으로 분리하지 않는다.
+        // 분리하면 최상위 항목이 25 / 11이 되어 `design.md` §5.2의 산술과
+        // AC-PANEL-042의 개수 판정이 함께 움직인다 — 그것은 정정이 아니라 개정이다.
+        ...(isMarkdown ? [enterListContinuation()] : []),
+        ...defaultKeymap,
+        ...historyKeymap,
+        ...searchKeymap,
+      ]),
     ),
     common('autoPair', autoPair()),
     md('emojiAutocomplete', () => emojiAutocomplete()),
