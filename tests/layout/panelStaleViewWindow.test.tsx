@@ -106,6 +106,24 @@ describe('비동기 커맨드 처리 중 활성 패널이 바뀌면 작용은 �
       keyGate.resolve(true);
       await inFlight;
     });
+
+    // 제안 패널은 `React.lazy`다(`App.tsx:38`). 상태가 열려도 **청크가 도착할
+    // 때까지** `<Suspense fallback={null}>`이 아무것도 렌더하지 않는다. 정해진
+    // 횟수의 tick으로 그 도착을 대신하면 느린 러너에서 단언이 도착보다 먼저
+    // 실행된다 — 라운드 수는 시간이 아니라 이벤트 루프 회전 수이기 때문이다.
+    //
+    // ubuntu CI가 정확히 그렇게 깨졌다: `제안 패널이 열리지 않았다`가 뜨고
+    // **6ms 뒤** React가 "A suspended resource finished loading … not wrapped
+    // in act"를 경고했다 — 청크가 테스트 종료 뒤에 도착했다는 뜻이다. 같은
+    // 경고가 windows 실행에는 0건이고 거기서는 통과했다. 반대로 이 경고는
+    // 핸들러가 조기 반환하지 **않았음**도 증명한다: 패널이 렌더되지 않았다면
+    // React가 서스펜드할 일도 없다.
+    //
+    // 같은 모듈을 여기서 직접 기다리면 도착이 보장된다. React가 먼저 등록한
+    // 해소 콜백이 우리보다 앞서 실행되므로 순서도 보장된다.
+    await act(async () => {
+      await import('../../src/components/CitationSuggestPanel');
+    });
     await flush();
 
     // 서지 목록은 **맨 마지막에** 채운다. 활성 문서가 바뀔 때마다
