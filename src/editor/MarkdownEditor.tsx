@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 import { useEffect, useRef, useState } from 'react';
-import { Compartment, EditorState } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { attachReconciliationCompositionGate } from './compositionGate';
 import { registerReconciliationExecutor } from './applyExternalChange';
@@ -13,6 +13,7 @@ import { buildMacroKeymap } from './keymap/macros';
 import { useAppStore } from '../store/appStore';
 import {
   decorationsForMode,
+  grammarDescriptionFor,
   layeredExtensions,
   type ExtensionLayerDeps,
 } from './extensionLayers';
@@ -61,8 +62,20 @@ export function MarkdownEditor({
   // 재설정이 안전하다는 것은 실측했다: 모듈 스코프 StateField(실행 취소 이력,
   // `editModeField`, `docPathField`)의 값과 문서·선택이 재설정을 넘어 보존된다.
   const kindCompartmentRef = useRef<Compartment>(new Compartment());
-  /** 컴파트먼트에 **실제로 실려 있는** 종류. 마운트 재설정을 건너뛰는 데 쓴다. */
-  const appliedKindRef = useRef<FileKind>(kind);
+  /**
+   * 컴파트먼트에 **실제로 실려 있는** 조합 — 종류와 언어 문법.
+   * 마운트 재설정과 무의미한 재설정을 건너뛰는 데 쓴다.
+   *
+   * 둘을 **한 정체성으로 묶는** 것이 핵심이다. 각각을 독립 조건으로 삼으면
+   * 하나의 전환(보조+Python → 원고)이 두 번의 재설정을 낸다 — 종류가 먼저 바뀌고
+   * 이어서 문법이 `null`로 떨어지기 때문이다. 재설정은 층을 통째로 갈아끼우므로
+   * ViewPlugin이 즉시 파기·재생성되며, 아래 마운트 스킵 주석이 배제한 낭비가
+   * 그대로 재현된다.
+   */
+  const appliedRef = useRef<{ kind: FileKind; grammar: Extension | null }>({
+    kind,
+    grammar: null,
+  });
   const initialEditModeRef = useRef<EditMode>(editMode);
 
   useEffect(() => {
@@ -76,7 +89,11 @@ export function MarkdownEditor({
 
   // 조립 입력. 층 구성 자체는 `extensionLayers.ts`가 소유하고, 여기서는 이
   // 컴포넌트만 아는 값(컴파트먼트 · 경로 ref · 콜백)을 붙인다.
-  const layerDeps = (forKind: FileKind, forMode: EditMode): ExtensionLayerDeps => ({
+  const layerDeps = (
+    forKind: FileKind,
+    forMode: EditMode,
+    forGrammar: Extension | null,
+  ): ExtensionLayerDeps => ({
     kind: forKind,
     editMode: forMode,
     macros,
@@ -85,6 +102,7 @@ export function MarkdownEditor({
     filePathRef,
     onChange,
     onHeadingHint: (show) => useAppStore.getState().setHeadingHint(show),
+    grammar: forGrammar,
   });
 
   useEffect(() => {
@@ -97,7 +115,10 @@ export function MarkdownEditor({
       // 조회하는 대상)는 컴파트먼트가 담고 있는 24 / 11항목이다.
       extensions: [
         kindCompartmentRef.current.of(
-          layeredExtensions(layerDeps(kind, initialEditModeRef.current)),
+          // 마운트 시점의 문법은 **항상 `null`**이다 — 적재가 비동기라 첫
+          // 조립을 기다려 줄 수 없다. 문법이 있는 파일도 그 한 순간은 평문으로
+          // 열리고(REQ-PANEL-045의 상태), 해소되면 아래 이펙트가 갈아끼운다.
+          layeredExtensions(layerDeps(kind, initialEditModeRef.current, null)),
         ),
       ],
     });
@@ -166,26 +187,70 @@ export function MarkdownEditor({
   }, [value]);
 
   // SPEC-V03-WORKSPACE-002 M5 단계3 — 종류가 바뀌면 층을 갈아끼운다
-  // (REQ-PANEL-042).
+  // (REQ-PANEL-042). 단계4에서 **언어 문법 축이 합류**했다 (REQ-PANEL-041·045).
   //
-  // **이 이펙트가 없으면 요구가 성립하지 않는다.** 편집 표면은 문서를 갈아타며
+  // **이 갈아끼우기가 없으면 요구가 성립하지 않는다.** 편집 표면은 문서를 갈아타며
   // 재사용되므로(`MarkdownEditor`는 `key`를 받지 않는다 —
   // `PanelContainer.tsx`의 재바인딩 주석) `a.md`를 보던 패널에 `a.py`를 열면
-  // 마운트 때 조립된 마크다운층이 그대로 남는다.
+  // 마운트 때 조립된 마크다운층이 그대로 남는다. 같은 이유로 `a.py`를 보던
+  // 패널에 `b.json`을 열면 종류는 그대로여도 **문법**이 갈아 끼워져야 한다 —
+  // 종류만 조건으로 삼으면 JSON 문서가 Python 문법을 쓴다.
   //
-  // 마운트 실행은 건너뛴다 — 마운트 이펙트가 이미 같은 종류로 조립했고, 여기서
-  // 한 번 더 재설정하면 ViewPlugin이 즉시 파기·재생성되며 제목 힌트 콜백이
-  // 두 번 불린다.
-  useEffect(() => {
+  // 마운트 실행은 건너뛴다 — 마운트 이펙트가 이미 같은 조합(종류 + 문법 `null`)
+  // 으로 조립했고, 한 번 더 재설정하면 ViewPlugin이 즉시 파기·재생성되며 제목
+  // 힌트 콜백이 두 번 불린다. 정체성 비교가 그 스킵을 담당한다.
+  const applyLayers = (nextKind: FileKind, nextGrammar: Extension | null) => {
     const view = viewRef.current;
     if (!view) return;
-    if (appliedKindRef.current === kind) return;
-    appliedKindRef.current = kind;
+    const applied = appliedRef.current;
+    if (applied.kind === nextKind && applied.grammar === nextGrammar) return;
+    appliedRef.current = { kind: nextKind, grammar: nextGrammar };
     view.dispatch({
-      effects: kindCompartmentRef.current.reconfigure(layeredExtensions(layerDeps(kind, editMode))),
+      effects: kindCompartmentRef.current.reconfigure(
+        layeredExtensions(layerDeps(nextKind, editMode, nextGrammar)),
+      ),
     });
+  };
+
+  // SPEC-V03-WORKSPACE-002 M5 단계4 — 보조 패널의 언어 문법을 해소한다
+  // (REQ-PANEL-041 조달 / REQ-PANEL-045 평문 폴백).
+  //
+  // 조회는 동기이지만 문법 **본체**는 지연 적재라(`extensionLayers.ts`
+  // §언어 문법 조달) 해소 전에는 조립에 넣을 것이 없다. 그래서 두 걸음으로 간다:
+  //
+  //   ① 지금 **확실히 아는 것**을 즉시 적용한다 — 이미 적재된 문법이면 그것을,
+  //      아니면 `null`(평문)을. 여기서 옛 문법을 그대로 두면 새 문서가 잠시
+  //      **다른 언어의 문법**으로 칠해진다. 평문은 규정된 폴백 상태이지만
+  //      "JSON 텍스트에 Python 토큰"은 내용에 대한 거짓 주장이다.
+  //   ② 적재가 끝나면 그때 갈아끼운다.
+  //
+  // 같은 언어의 다른 파일로 갈아타는 경우(`.yaml` → `.yml`)는 카탈로그 항목이
+  // 같아 `desc.support`가 동일 인스턴스이므로 ①에서 정체성 비교에 걸려
+  // **재설정이 아예 일어나지 않는다**. 언어가 실제로 바뀔 때만 값을 치른다.
+  //
+  // **경합을 막는 것이 이 이펙트의 나머지 절반이다.** `.py`의 적재가 진행 중일 때
+  // 패널이 `.csv`로 재바인딩되면, 뒤늦게 도착한 Python이 그대로 실려 **CSV 문서에
+  // Python 문법이 붙는다**. 정리 함수가 세우는 `cancelled` 깃발이 그 늦은 도착을
+  // 버린다 — 재바인딩은 동기이고 적재 완료는 반드시 그 뒤의 마이크로태스크이므로
+  // 순서는 보장된다.
+  useEffect(() => {
+    // 마크다운 패널은 자기 언어층(`markdownLanguage`)을 가지므로 조회하지 않는다.
+    // 경로가 없는 문서(untitled)도 마찬가지다 — 조회할 파일명이 없다.
+    const desc = kind === 'auxiliary' ? grammarDescriptionFor(filePath) : null;
+    // 카탈로그에 없는 확장자(`.csv`·`.bib`·미지 확장자)는 `desc`가 `null`이다.
+    // 오류가 아니라 규정된 정상 경로이며(REQ-PANEL-045) 평문으로 열린다.
+    applyLayers(kind, desc?.support ?? null);
+    if (!desc || desc.support) return;
+    let cancelled = false;
+    void desc.load().then((support) => {
+      // 늦게 도착했고 그 사이 패널이 갈아탔다면 버린다.
+      if (!cancelled) applyLayers(kind, support);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind]);
+  }, [kind, filePath]);
 
   useEffect(() => {
     const view = viewRef.current;

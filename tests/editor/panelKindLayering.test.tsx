@@ -25,7 +25,26 @@ import { activeDocument, documentOf, useWorkspaceStore } from '../../src/store/w
  *    전부 평문 패널이 된다. 이 회귀는 즉시 눈에 보이고 심각하다.
  *  - 하나의 `EditorView`가 문서를 갈아탈 때 층이 갈리는가 — 편집 표면은
  *    `key` 없이 재사용되므로 마운트 시점의 층이 그대로 남는 것이 기본 동작이다.
+ *
+ * ## 보조 패널의 언어층 단언은 M5 단계4에서 형태가 바뀌었다
+ *
+ * 단계3까지 이 파일은 보조 패널에 대해 `facet(language)`가 **null**임을 단언했다.
+ * 보조층이 비어 있어 어떤 언어도 실리지 않았기 때문이다. 단계4가 언어 문법을
+ * 조달하면서(REQ-PANEL-041) `.py` 패널의 그 facet은 **Python이 정상**이 되었다.
+ *
+ * 그래서 단언을 "언어층이 없다" → **"마크다운 언어층이 아니다"** 로 바꿨다.
+ * 이 파일이 원래 재던 것이 그것이고(테스트 이름들이 이미 "마크다운 언어층이
+ * 사라진다"라고 말한다), 어떤 언어가 실제로 실리는가는
+ * `panelGrammarWiring.test.tsx`가 소유한다. **완화가 아니라 정정이다** — 옛
+ * 단언은 이제 참이 아니고, 참이었던 동안에도 적재 타이밍에 기대고 있었다
+ * (문법 적재는 비동기라, 같은 단언이 차가운 첫 마운트에서는 통과하고 따뜻한
+ * 재바인딩에서는 실패했다 — 단계4가 그것을 실측으로 드러냈다).
  */
+
+/** 이 패널에 실린 언어의 이름. 언어층이 없으면 `null`. */
+function langName(view: EditorView): string | null {
+  return view.state.facet(language)?.name ?? null;
+}
 
 const store = () => useWorkspaceStore.getState();
 
@@ -127,7 +146,7 @@ describe('untitled 문서는 마크다운으로 열린다', () => {
 describe('보조 패널', () => {
   it('kind가 auxiliary면 마크다운 언어층이 없다', () => {
     const m = editor({ value: 'x = 1', filePath: '/w/a.py', kind: 'auxiliary' });
-    expect(m.view.state.facet(language)).toBeNull();
+    expect(langName(m.view)).not.toBe('markdown');
   });
 
   it('보조 패널에도 편집과 변경 통보는 그대로 동작한다', () => {
@@ -147,9 +166,9 @@ describe('보조 패널', () => {
 describe('문서를 갈아탈 때 층이 따라간다', () => {
   it('마크다운 → 보조로 재바인딩하면 마크다운 언어층이 사라진다', () => {
     const m = editor({ value: '# 원고', filePath: '/w/a.md', kind: 'markdown' });
-    expect(m.view.state.facet(language)?.name).toBe('markdown');
+    expect(langName(m.view)).toBe('markdown');
     m.rerender({ value: 'x = 1', filePath: '/w/a.py', kind: 'auxiliary' });
-    expect(m.view.state.facet(language)).toBeNull();
+    expect(langName(m.view)).not.toBe('markdown');
   });
 
   it('보조 → 마크다운으로 되돌리면 마크다운층이 복원된다', () => {
@@ -236,7 +255,7 @@ describe('PanelContainer가 문서의 종류를 편집 표면에 넘긴다', () 
     const panelId = store().activePanelId;
     expect(panelId).not.toBeNull();
     expect(documentOf(store(), panelId as string)?.kind).toBe('auxiliary');
-    expect(soleView(app.host).state.facet(language)).toBeNull();
+    expect(langName(soleView(app.host))).not.toBe('markdown');
   });
 
   it('보조 파일 위에 다시 원고를 열면 마크다운층이 돌아온다', () => {

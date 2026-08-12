@@ -808,7 +808,7 @@ AC-PANEL-058만 부분이다 — 다섯 상태 중 넷을 재현했고 다섯째
 
 ### M5 단계1 — 파일 종류 판정을 `shared/`에 세우고 다이얼로그 필터의 방향을 뒤집다
 
-**증거**: `.moai/state/verify/m5-step1/`. 커밋 `<pending-backfill>`.
+**증거**: `.moai/state/verify/m5-step1/`. 커밋 `b16fd7e`.
 
 M5의 네 단계 중 첫 번째이며 AC-PANEL-040 한 건만 다룬다. 요구를 신설하지도 재번호하지도 않았다.
 
@@ -869,7 +869,7 @@ M5의 네 단계 중 첫 번째이며 AC-PANEL-040 한 건만 다룬다. 요구�
 
 ### M5 단계2 — 보조 파일 열기에 엄격 디코드를 적용하다
 
-**증거**: `.moai/state/verify/m5-step2/`. 커밋 `<pending-backfill>`.
+**증거**: `.moai/state/verify/m5-step2/`. 커밋 `6439ad1`.
 
 M5의 두 번째 단계이며 AC-PANEL-046 한 건만 다룬다. 요구를 신설하지도 재번호하지도 않았다. 단계1이 세운 `fileKindOf`가 여기서 **첫 프로덕션 소비자**를 얻는다.
 
@@ -979,7 +979,7 @@ PRESERVE 16파일 `git diff --quiet 040df4a` 전부 exit 0. `MarkdownEditor.tsx`
 ### M5 단계3 — extension 조립을 3층으로 재구성하고 allowlist로 단언하다
 
 **대상 AC**: AC-PANEL-042 (`Then` allowlist 판정 · `And①` 공통 항목 존재 · `And②` 9항목 부재 — 세 축을 각각 반증 가능하게 나눔)
-**커밋**: `<pending-backfill>` (단계4가 백필)
+**커밋**: `19729a6` (단계4가 백필)
 **변경**: 소스 2 수정(`src/editor/MarkdownEditor.tsx` · `src/components/PanelContainer.tsx`) + 신규 3(`src/editor/extensionLayers.ts` · 테스트 2)
 
 #### 이 단계가 끝낸 불변식 — 먼저 읽을 것
@@ -1106,7 +1106,7 @@ M0의 조정 라우팅 이펙트 + 조합 게이트 정리 순서 블록(`compos
 ### M5 단계3 보완 — 목록 이어쓰기를 보조 패널에서 뺀다
 
 **대상 AC**: AC-PANEL-042 (세 축 모두 단계3에서 이미 PASS. 이 보완은 **새 AC를 추가하지 않는다** — 판정을 통과하면서도 남아 있던 사실상의 결함을 없앤다)
-**커밋**: `<pending-backfill>` (단계4가 백필)
+**커밋**: `dc7ef78` (단계4가 백필)
 **변경**: 소스 1 수정(`src/editor/extensionLayers.ts`) + 신규 1(`tests/editor/listContinuationLayering.test.ts`)
 
 #### 왜 판정을 통과한 것이 결함이었나 — 측정이 판단을 바꿨다
@@ -1185,6 +1185,136 @@ common('baseKeymap', keymap.of([
 
 ---
 
+### M5 단계4 — 언어 문법을 `language-data`로 조달하고 미지 확장자를 평문 폴백하다
+
+**대상 AC**: AC-PANEL-041 (조달 · 출처 · 개별 패키지 부재) · AC-PANEL-045 (열기 성공 · 편집 가능 · 무오류 · `.bib` 규정된 정상 동작)
+**커밋**: `<pending-backfill — M6 또는 sync가 백필>`
+**변경**: 소스 3 수정(`src/editor/extensionLayers.ts` · `src/editor/MarkdownEditor.tsx` · `shared/fileKind.ts`) + 테스트 2 수정 + 신규 2
+
+M5의 마지막 단계다. 단계3이 비워 둔 **보조층**을 채운다. `PanelContainer.tsx`는 무변경이다 — 이미 `filePath`를 넘기고 있어 배선이 필요 없었다.
+
+#### 카탈로그 재측정 (`design.md` §5.3이 지시한 것)
+
+```
+@codemirror/language-data 6.5.2 / 143개 언어
+.py → Python   .json → JSON   .yaml → YAML   .yml → YAML
+.csv → ABSENT  .bib → ABSENT  .bibtex → ABSENT  .xyz → ABSENT  .txt → ABSENT
+```
+
+판 0.3.6 / 판 0.3.12 / M5 진입 측정과 **동일**하다. REQ-PANEL-041(조달)과 REQ-PANEL-045(폴백)의 전제가 그대로 유효하다.
+
+#### 설계 질문 넷에 대한 답
+
+**(1) 지연 적재 대 동기 조립.** 조립은 **순수 동기 함수로 남기고** 문법을 그 **입력**으로 받는다(`ExtensionLayerDeps.grammar`). 해소는 `MarkdownEditor`의 이펙트 하나가 맡아 종류 컴파트먼트를 재설정한다. 조립 안에서 `load()`를 시작했다면 이 함수가 부수 효과를 갖고 **모듈 전역 적재 이력에 따라 결과가 달라졌을 것**이고, 그러면 AC-PANEL-041·042의 판정이 재현되지 않는다 — 단계3이 조립을 별도 모듈로 뗀 이유를 스스로 깨는 셈이다.
+
+해소 이펙트는 두 걸음으로 간다: ① 지금 **확실히 아는 것**(`desc.support`가 이미 있으면 그것, 없으면 `null`)을 즉시 적용하고, ② 적재가 끝나면 갈아끼운다. ①에서 옛 문법을 그대로 두지 않는 이유는, 두면 새 문서가 잠시 **다른 언어의 문법**으로 칠해지기 때문이다. 평문은 REQ-PANEL-045가 규정한 상태이지만 "JSON 텍스트에 Python 토큰"은 내용에 대한 거짓 주장이다. 대가는 차가운 언어 전환 시 재설정 한 번 추가이며 테스트가 그 값을 고정한다(따뜻한 전환 1회 / 차가운 전환 2회 / 같은 언어 0회).
+
+**경합은 명시적으로 다뤘다.** 정리 함수의 `cancelled` 깃발이 늦게 도착한 해소를 버린다. 재바인딩은 동기이고 적재 완료는 반드시 그 뒤의 마이크로태스크이므로 순서가 보장된다.
+
+**(2) `matchFilename` 대 확장자 조회.** `LanguageDescription.matchFilename`을 쓰고 **basename**을 넘긴다. 카탈로그 항목은 `extensions` 배열뿐 아니라 `filename` 정규식도 갖는다(6.5.2에서 8항목: Python·Asterisk·CMake·Dockerfile·Groovy·Nginx·Ruby·Shell). 확장자만 조회하면 그 축이 통째로 빠지고, 라이브러리가 이미 하는 일을 손으로 좁혀 다시 구현하게 된다.
+
+basename인 이유는 실측이다 — 확장자 축은 경로 전체로도 동작하지만(`/w/a.json` → JSON) `filename` 축은 앵커된 정규식이라 경로 전체에서는 매치되지 않는다(`/w/Dockerfile` → null, `Dockerfile` → Dockerfile). basename 추출은 `shared/fileKind.ts`에 `fileBasenameOf`로 **한 번만** 정의하고 `fileExtensionOf`가 쓰던 인라인 로직을 그것으로 바꿨다(동작 동일, 사본 제거).
+
+**딸려온 것을 좁히지 않고 적는다**: `Dockerfile`은 조달된다. 어떤 AC도 요구하지 않고 그것을 위해 만든 코드도 없다 — `[요구 아님 · 관측 기록]`으로 표시해 테스트에 남겼다. 지시가 예로 든 `Makefile`은 **이 카탈로그에 없다**(실측 `null`) — 폴백으로 간다.
+
+**(3) 평문 폴백의 위치.** **슬롯 자체가 없다.** CodeMirror에서 언어 facet의 부재가 곧 평문이므로 채울 것이 없고, 빈 슬롯을 세우면 `design.md` §5.2가 보조층에 선언하지 않은 원소를 발명하는 셈이다. 개수도 항상 1이 되어 두 `Where`의 구분이 사라진다.
+
+**(4) `.txt`.** `MARKDOWN_EXTENSIONS`에 있으므로 마크다운으로 판정되어 **보조 경로에 오지 않는다**. 전용 분기를 두지 않았고, 그 판단의 근거를 두 단언으로 남겼다(`fileKindOf('/w/notes.txt') === 'markdown'` + 카탈로그에도 `.txt`가 없어 설령 와도 폴백이 덮는다). 이 가정을 어긴 기존 픽스처는 없었다.
+
+#### 보조층 개수 계약의 변경 (완화가 아니라 정정)
+
+단계3까지 보조는 **항상 11**이었다(보조층이 비어 있었으므로). 이제 **11 또는 12**이며, 그 둘은 흔들림이 아니라 요구의 두 갈래다:
+
+```
+REQ-PANEL-041  Where 문법 정의가 사용 가능한 경우  → 공통 11 + 보조 1 = 12
+REQ-PANEL-045  Where 문법 정의가 없는 경우         → 공통 11 + 보조 0 = 11
+```
+
+그래서 단언을 "11 이상"이나 "11 또는 12" 같은 느슨한 형태로 바꾸지 **않았다**. 입력이 정하는 값을 정확히 단언한다:
+
+| 조립 입력 | 단언 |
+|---|---|
+| `markdown` (문법 유무 무관) | 최상위 **24**, 층별 11 / 13 / **0** |
+| `auxiliary` + `grammar: null` | 최상위 **11**, 층별 11 / 0 / **0** |
+| `auxiliary` + `grammar` | 최상위 **12**, 층별 11 / 0 / **1** (`auxiliaryLanguage`) |
+
+**순서 계약도 형태가 바뀌었다.** 단계3의 "보조 전체 == 마크다운의 공통 슬롯"은 보조층에 원소가 생긴 지금 성립할 수 없다. 지키려던 것(**공통 슬롯끼리의 상대 순서 = 우선순위**)을 그 형태로 정확히 단언한다 — 보조 조립에서 공통 슬롯만 뽑은 부분열이 마크다운의 그것과 같아야 한다. 여기에 **문법 슬롯의 자리**를 고정하는 단언을 더했다: 마크다운 조립에서 `markdownLanguage`가 앉은 자리와 같은 자리다. 끝에 붙이면 `viewModes`·`macroKeymapCompartment`·`theme` 뒤로 밀려 두 종류의 언어층 우선순위가 갈린다. **마크다운 24항목의 순서는 한 글자도 바뀌지 않았다.**
+
+#### AC 표 — AC-PANEL-041
+
+| 축 | 판정 | 증거 |
+|---|---|---|
+| `Then` `.py`·`.json`·`.yaml` 각각 문법 조달 | PASS | `grammarDescriptionFor` → Python / JSON / YAML (3 rows) |
+| `Then` 조립을 통과해 상태에 도달 | PASS | `state.facet(language)?.name` → `python` / `json` / `yaml` |
+| `Then` 컴포넌트 경계에서도 도달 | PASS | 패널 마운트 후 `facet(language)` 3종 |
+| `And①` 출처가 `@codemirror/language-data` | PASS | `lezerLangs`가 그 정의 객체를 **원소로 포함**(동일성) |
+| `And①` 조회가 카탈로그 전수 | PASS | `.rs` → Rust, `.html` → HTML (3항목 하드코딩이면 실패) |
+| `And②` `@codemirror/lang-*` 미증가 | PASS | deps의 lang-* 집합 == `['@codemirror/lang-markdown']`, devDeps == `[]` |
+| `And②` `git diff` 대조 | PASS | `git diff 040df4a -- package.json`의 `dependencies` 블록 **바이트 동일** (§E.3 `c11_dependency_evidence` 참조) |
+
+#### AC 표 — AC-PANEL-045
+
+| 축 | 판정 | 증거 |
+|---|---|---|
+| `Given` `.csv`·`.bib`·`.xyz`(+`.bibtex`) 조회가 null | PASS | 4 rows |
+| `Then` 열기 성공 (예외 없음) | PASS | 조립 3종 `not.toThrow()` + 패널 마운트 3종 |
+| `Then` 평문으로 열린다 | PASS | `facet(language)` null, 문서 내용 보존 |
+| `Then` 내용이 편집 가능 | PASS | 조립 3종 + 패널 3종 (`onChange` 통보 포함) |
+| `And` 오류·경고가 표시되지 않는다 | PASS | 마운트+편집 창에서 `console.error`/`warn` 호출 0 |
+| `And` `.bib`가 같은 폴백 경로 | PASS | `.bib`의 (조회 결과 · 슬롯 목록 · 보조층 수)가 `.csv`·`.xyz`와 동일 |
+| 폴백도 편집기다 (뷰어 아님) | PASS | 공통 슬롯 5종 존재 |
+
+#### 반증 — 다섯 건 주입, **한 건이 테스트의 결함을 드러냈다**
+
+| # | 주입 | 결과 |
+|---|---|---|
+| (a) | 조회를 무력화(`grammarDescriptionFor` 항상 null) | AC-041 **14 rows FAIL** / AC-045 **전 rows PASS** — 두 AC가 독립적으로 반증 가능하다 |
+| (b) | 폴백을 오류로(미매치 시 throw) | AC-045 **15 rows FAIL** (무오류 rows·`.bib` rows 포함) |
+| (c) | 카탈로그 원소 대신 **개별 패키지 모양**의 정의를 손수 조립해 반환 | **출처 rows만 3건 FAIL**, 이름·facet rows는 PASS — 출처 단언이 정확히 그것을 가른다 |
+| (d) | 경합 방어 제거(`cancelled` 무력화) | **초판은 통과했다 — 아래 참조** |
+| (e) | 폴백에도 빈 슬롯을 세워 보조층 항상 1 | 개수·순서·`.bib` 동일 경로 **4 rows FAIL** |
+
+**(d)가 통과한 것이 이 단계의 가장 중요한 관측이다.** 경합 테스트가 `.py`로 경합을 만들려 했는데, 같은 파일의 앞선 테스트가 이미 Python을 적재해 두어 해소 이펙트가 `desc.support` 빠른 경로로 **`load()`를 아예 부르지 않았다**. 진행 중인 적재가 없으니 늦게 도착할 것도 없었다 — **테스트가 아무것도 재고 있지 않았다.** 반증을 주입하지 않았다면 이 사실은 드러나지 않았다.
+
+고친 형태: 경합 절은 **이 파일의 다른 어떤 테스트도 적재하지 않는 언어**(Go · Ruby · PHP · Lua)만 쓰고, 각 테스트가 시작할 때 `desc.support === undefined`(차갑다)를 먼저 단언한다. 전제가 깨지면 조용히 달라지는 대신 거기서 실패한다. 재주입 결과 **4건 중 3건 FAIL**(나머지 1건인 마운트 해제 중 적재는 `viewRef.current` null 검사라는 다른 수단이 지킨다 — 정직하게 적는다).
+
+이 저장소에 이미 있던 교훈("재현 테스트가 엉뚱한 이유로 통과한 전례")의 거울상이다.
+
+**되돌림**: 다섯 건 전부 원복. `grep -rn FALSIFY src/ tests/ shared/ electron/` → 0건.
+
+#### 기존 테스트 2건이 실패했다 — 계약의 정정
+
+`tests/editor/panelKindLayering.test.tsx`의 두 단언이 실패했다: 보조(`.py`) 패널에 대해 `facet(language)`가 **null**이라는 것. 단계4 이후 그 facet은 **Python이 정상**이므로 옛 단언이 참이 아니다.
+
+세 단언(실패 2 + 같은 형태로 통과하던 1)을 **"마크다운 언어층이 아니다"** 로 바꿨다. 이 파일이 원래 재던 것이 그것이고(테스트 이름들이 이미 "마크다운 언어층이 사라진다"라고 말한다), 어떤 언어가 실제로 실리는가는 새 파일이 소유한다. **완화가 아니라 정정이다** — 옛 단언은 이제 거짓이고, 참이었던 동안에도 적재 타이밍에 기대고 있었다(같은 단언이 차가운 첫 마운트에서는 통과하고 따뜻한 재바인딩에서는 실패했다 — 단계4가 그것을 실측으로 드러냈다).
+
+#### 배열 모양이 아니라 상태로 잰다
+
+단계3 보완이 실증했듯 최상위 배열만 보는 단언은 슬롯 **안쪽**의 회귀를 보지 못한다. 그래서 조달의 중심 판정은 슬롯 개수가 아니라 조립된 `EditorState`의 `state.facet(language)`이며, 컴포넌트 경계에서도 같은 facet으로 잰다. 재설정 횟수는 `Transaction.reconfigured`(공개 신호, `headingHint.ts:80`이 쓰는 것과 같다)로 센다.
+
+#### 번들 실측 — 지연 적재는 **사실이며 새로 생긴 것이 아니다**
+
+`design.md` §5.3이 예측한 지연 적재를 `pnpm build` 산출물로 확인했다:
+
+```
+python-CvWbmiX4.js  12,822 B   (Python 문법 — 독립 청크)
+index-Dv5cSiji.js   19,845 B   (YAML 문법 — 독립 청크)
+index-moXzf9_B.js    3,270 B   (JSON 문법 — 독립 청크)
+메인 청크(index-*.js 1.96 MB)에서 yamlLanguage / jsonLanguage / pythonLanguage → 각 0건
+메인 청크의 LanguageDescription 출현 154건 (= 카탈로그 표는 메인에 있다)
+```
+
+즉 **카탈로그(정의 표 + 동적 import 진입점)는 메인 청크에 있고 문법 본체는 언어별 독립 청크**다. 그리고 이것은 이 단계가 만든 것이 아니다 — 소스를 HEAD로 되돌려 기준선 빌드를 떠 **청크 이름 집합이 완전히 동일**(양쪽 185개, `diff` 무출력)함을 확인했다. 마크다운 펜스 코드블록이 이미 `codeLanguages: lezerLangs`로 같은 표를 싣고 있었기 때문이다. 이 단계가 한 일은 **이미 있던 지연 적재 그래프를 재사용한 것**이며 새 청크도 새 의존성도 만들지 않았다. 메인 청크 증가분은 1,955.68 kB → 1,957.24 kB (+1.56 kB, 주석 포함 코드).
+
+#### 범위 밖으로 남긴 것 (M5 단계4)
+
+- **하이라이팅 결과의 품질** — 두 AC의 메커니즘 범위가 명시적으로 배제한다. 토큰 분류·색·시각 출력을 단언하는 테스트를 쓰지 않았다.
+- **`.bib` 전용 문법** — 새 런타임 의존성이므로 C-11에 걸린다. 별도 SPEC 사안(REQ-PANEL-045가 한계를 명시).
+- **실사용 확인** — 유닛·jsdom까지다. 앱 실행도 e2e도 돌리지 않았다.
+- **`macros = []` 기본값이 매 렌더 매크로 컴파트먼트를 재설정하는 것** — 단계4가 재설정 카운터를 세우며 관측한 기존 동작이다. 이 단계의 범위 밖이라 고치지 않고 테스트에서 안정 인스턴스를 넘겨 잡음만 배제했다.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
@@ -1204,11 +1334,13 @@ m4_2_commit_shas:            # M4-2 다섯 단계 (§E.2 M4-2 절)
   - 7dbe31d                  #   5) e2e 셀렉터 이관 35파일
 m5_step1_commit_sha: b16fd7e   # M5 단계1 (AC-PANEL-040). 단계2가 백필 — 커밋은 자기 SHA를 모른다
 m5_step2_commit_sha: 6439ad1   # M5 단계2 (AC-PANEL-046). 단계3이 백필
-m5_step3_commit_sha: <pending-backfill>   # M5 단계3 (AC-PANEL-042). 같은 이유로 후속 백필
-m5_step3_followup_commit_sha: <pending-backfill>   # M5 단계3 보완 (목록 이어쓰기 누수 정정). 새 AC 없음
-run_status: milestone-partial   # M0·M1·M3·M4 완료, M2 부분 완료(11/15). M5 단계3/4. M6~M8 미착수
-milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계3/4)
-ac_pass_count: 65               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5-단계1 1 + 단계2 1 + 단계3 1
+m5_step3_commit_sha: 19729a6   # M5 단계3 (AC-PANEL-042). 단계4가 백필
+m5_step3_followup_commit_sha: dc7ef78   # M5 단계3 보완 (목록 이어쓰기 누수 정정). 새 AC 없음
+m5_step4_commit_sha: <pending-backfill>   # M5 단계4 (AC-PANEL-041 + 045). M5의 마지막 단계라 백필 주체는 M6 또는 sync
+m5_complete: true               # M5 다섯 AC 전부 PASS — 아래 m5_ac_evidence 참조
+run_status: milestone-partial   # M0·M1·M3·M4·M5 완료, M2 부분 완료(11/15). M6~M8 미착수
+milestone: M0+M1+M2(부분)+M3+M4(M4-1+M4-2)+M5(단계1~4 완료)
+ac_pass_count: 67               # M0 12 + M1 8 + M2 11 + M3 10 + M4-1 13 + M4-2 8 + M5 5 (040·042·046·041·045)
 ac_partial_count: 1             # AC-PANEL-058 — 5개 상태 중 4개 재현. 복원 실패는 M8 표면
 ac_fail_count: 0
 ac_scope: >-
@@ -1222,6 +1354,8 @@ ac_scope: >-
   M5 단계1: AC-PANEL-040 (Then·And 두 축 각각 PASS)
   M5 단계2: AC-PANEL-046 (Then·U+FFFD·SHA-256·양성 대조 네 갈래 각각 PASS)
   M5 단계3: AC-PANEL-042 (Then allowlist · And① 공통 존재 · And② 9항목 부재 세 축 각각 PASS)
+  M5 단계4: AC-PANEL-041 (조달 3확장자 · 조립 도달 · 컴포넌트 도달 · 출처 동일성 · 카탈로그 전수 · lang-* 미증가 일곱 축)
+            AC-PANEL-045 (조회 null · 열기 성공 · 평문 · 편집 가능 · 무오류 · .bib 동일 경로 · 공통층 온전 일곱 축)
 reproduction_first: true         # REQ-PANEL-073 — M0 3건 + M1 await 창·sticky 2건 재현
 preserve_list_post_run_count: 0  # PRESERVE 목록 위반 0건
 reconciliation_core_unchanged: true   # 5파일 git diff --quiet 전부 exit 0
@@ -1238,6 +1372,13 @@ extension_layering_contract: >-
   우선순위였다(CodeMirror에서 배열 순서 = 우선순위).
   (2) "보조 조립의 순서가 마크다운 조립의 공통 슬롯 순서와 같다".
   단계4는 이 둘을 계승하고 diff 블록 대조는 쓰지 않는다.
+  (4) 단계4가 두 계약의 **형태를 바꿨다** — 보조층에 원소가 생겼기 때문이다.
+  개수: 보조는 이제 문법 유무에 따라 11 또는 12이며(REQ-041/045의 두 Where),
+  느슨한 형태가 아니라 입력이 정하는 값을 정확히 단언한다. 순서: "보조 전체 ==
+  마크다운의 공통 슬롯"이 성립할 수 없으므로 "보조의 **공통 슬롯 부분열** ==
+  마크다운의 그것"으로 정정하고, 문법 슬롯이 마크다운 언어층과 **같은 자리**에
+  앉는다는 단언을 더했다(끝에 붙이면 두 종류의 언어층 우선순위가 갈린다).
+  마크다운 24항목의 순서는 무변경이다.
   (3) 단계3 보완이 셋째를 더했다 — tests/editor/listContinuationLayering.test.ts.
   앞의 둘이 **슬롯의 집합·순서**를 재는 반면 이것은 슬롯 **안쪽**을 잰다:
   조립된 상태에 실제 Enter를 눌러 문서 변형을 단언한다. 반증 A로 실증했듯
@@ -1258,8 +1399,67 @@ panel_kind_source: document-state-not-path
   # 종류는 workspaceStore의 DocumentState.kind에서 온다. 경로에서 파생하면
   # fileKindOf('')가 untitled를 보조로 떨어뜨려 새 원고가 전부 평문 패널이 된다
   # (반증 D로 실증).
+m5_ac_evidence:                   # M5 완료 — 다섯 AC 전부 PASS. 각 AC의 판정 위치.
+  AC-PANEL-040:                   # 단계1 b16fd7e — 파일 종류 판정이 마크다운 집합을 좁히지 않는다
+    source: shared/fileKind.ts (MARKDOWN_EXTENSIONS · fileKindOf)
+    tests: tests/shared/fileKind.test.ts + 다이얼로그 필터 동일성 단언(tests/ 계층)
+  AC-PANEL-041:                   # 단계4 — 보조 패널이 언어 문법을 제공한다 (+ C-11)
+    source: src/editor/extensionLayers.ts (grammarDescriptionFor · 보조층 슬롯)
+            + src/editor/MarkdownEditor.tsx (해소 이펙트)
+    tests: tests/editor/auxiliaryGrammar.test.ts (조달·출처·lang-* 미증가)
+           + tests/editor/panelGrammarWiring.test.tsx (컴포넌트 도달·경합)
+  AC-PANEL-042:                   # 단계3 19729a6 (+ 보완 dc7ef78) — 마크다운 전용 확장 부재
+    source: src/editor/extensionLayers.ts (3층 조립)
+    tests: tests/editor/extensionLayers.test.ts (allowlist·층 산술·순서)
+           + tests/editor/panelKindLayering.test.tsx (컴포넌트 경계)
+           + tests/editor/listContinuationLayering.test.ts (슬롯 안쪽 · 보완)
+  AC-PANEL-045:                   # 단계4 — 문법 정의가 없으면 평문으로 연다
+    source: src/editor/extensionLayers.ts (보조층 슬롯 부재 = 폴백)
+    tests: tests/editor/auxiliaryGrammar.test.ts (조회 null·조립·편집)
+           + tests/editor/panelGrammarWiring.test.tsx (열기·편집·무오류·.bib 동일 경로)
+  AC-PANEL-046:                   # 단계2 6439ad1 — 디코드 불가 파일은 편집 패널로 열지 않는다
+    source: electron/openDecode.ts + electron/ipc/files.ts
+    tests: tests/electron/openDecode.test.ts 계열 (U+FFFD·SHA-256·양성 대조)
+m5_remaining: none                # M5의 네 단계 전부 완료. 남은 마일스톤은 M6~M8.
+auxiliary_grammar_model: catalog-lookup-sync--body-load-async
+  # 조회(LanguageDescription.matchFilename, 동기)가 보조층 원소 수 0-or-1을 정하고,
+  # 본체 적재(desc.load(), 비동기)는 호출부 이펙트가 맡아 종류 컴파트먼트를 재설정한다.
+  # 조립은 순수 동기 함수로 남는다 — 안에서 적재하면 모듈 전역 적재 이력에 따라
+  # 결과가 달라져 AC-041·042의 판정이 재현되지 않는다.
+auxiliary_grammar_lookup_input: basename   # 경로 전체가 아니다
+  # 실측: 확장자 축은 경로 전체로도 동작하나(/w/a.json → JSON), filename 정규식 축은
+  # 앵커되어 있어 경로 전체에서는 매치되지 않는다(/w/Dockerfile → null,
+  # Dockerfile → Dockerfile). basename 추출은 shared/fileKind.ts의 fileBasenameOf 하나.
+auxiliary_grammar_race_guard: cleanup-cancelled-flag
+  # 재바인딩은 동기, 적재 완료는 반드시 그 뒤의 마이크로태스크 → 순서 보장.
+  # **경합 테스트는 차가운 언어(Go·Ruby·PHP·Lua)로만 잰다** — 따뜻한 언어는
+  # desc.support 빠른 경로가 load()를 부르지 않아 경합 자체가 없다(반증 d가 적출).
+plaintext_fallback_model: slot-absent-not-empty-slot
+  # 언어 facet의 부재가 곧 평문이다. 빈 슬롯을 세우면 design.md §5.2가 보조층에
+  # 선언하지 않은 원소를 발명하는 셈이고 개수가 항상 1이 되어 두 Where의 구분이 사라진다.
+grammar_lazy_chunking_verified: pre-existing
+  # pnpm build 실측: python 문법 12,822 B / YAML 19,845 B / JSON 3,270 B가 각각
+  # 독립 청크이고 메인 청크(1.96 MB)에 yamlLanguage·jsonLanguage·pythonLanguage 0건.
+  # 카탈로그 표(LanguageDescription 154건)는 메인에 있다. **새로 생긴 것이 아니다** —
+  # 소스를 HEAD로 되돌린 기준선 빌드와 청크 이름 집합이 완전 동일(양쪽 185개, diff 무출력).
+  # 마크다운 펜스 코드블록이 이미 codeLanguages: lezerLangs로 같은 표를 싣고 있었다.
+  # 메인 청크 1,955.68 kB → 1,957.24 kB (+1.56 kB).
+c11_dependency_evidence: >-
+  git diff 040df4a -- package.json 은 **비어 있지 않다** — 그러나 그 2줄은
+  이 SPEC 이전의 것이다(test:e2e 스크립트에 pnpm build 접두, electron devDep ^31→^43).
+  C-11이 묻는 것은 dependencies이며, 그 블록은 040df4a와 **바이트 동일**하다
+  (node로 두 시점의 dependencies를 뽑아 diff → 무출력). 단계4는 package.json과
+  pnpm-lock.yaml을 건드리지 않았다(git diff --quiet dc7ef78 exit 0).
+  회귀 가드는 tests/editor/auxiliaryGrammar.test.ts의 lang-* 집합 단언이다
+  (deps == ['@codemirror/lang-markdown'], devDeps == []) — git 체크아웃에 의존하지 않고 항상 돈다.
+markdown_layer_untouched_by_step4: true
+  # 마크다운 24항목의 집합·순서·내용 무변경. 조립에 grammar를 넘겨도 마크다운
+  # 패널은 무시하고 보조층 0을 유지한다(단언 있음).
 new_warnings_or_lints_introduced: 0   # lint/typecheck 신규 경고 0 (양쪽 exit 0)
 react_act_warnings: 165               # M4-2 실측. 신규 4파일 기여 38, 기존 127.
+                                      # 단계4 기여 0 — 문법 해소를 React 상태가 아니라
+                                      # ref + 직접 dispatch로 배선했다(이 파일의 다른 축과 같은 방식).
+                                      # 초판은 useState를 썼고 그때는 새 경고가 났다.
                                       # lint/type 경고가 아니라 테스트 하네스 잡음이며
                                       # App을 마운트하는 테스트가 늘면 함께 는다.
 teardown_discipline: release-before-executor-detach
@@ -1267,14 +1467,22 @@ dirty_model: derived-content-revision  # 단조 카운터가 아니다 — §E.2
 watch_registration_model: reference-counted-open-document-set  # M3 — 경로당 1회, 마지막 참조에서 해제
 path_identity: injectable-pure-function  # shared/pathIdentity.ts — 플랫폼을 인자로 받는다(C-7)
 reconciliation_policy_scope: window-single   # 문서별 정책 맵 없음 (REQ-PANEL-056)
-test_files: 230                  # … → M5-단계1 224 → 단계2 227 → 단계3 229 → 단계3 보완 230 (신규 1파일)
-tests: 2533                      # … → 단계2 2474 → 단계3 2518 (+44) → 단계3 보완 2533 (+15, 감소 0)
-pre_existing_tests_modified: 0   # 단계3·보완 모두 0. 보완은 신규 파일만 더했고
-                                 # 단계3의 두 순서 테스트는 git diff --quiet 19729a6 exit 0(바이트 동일)
+test_files: 232                  # … → 단계3 229 → 단계3 보완 230 → 단계4 232 (신규 2파일)
+tests: 2598                      # … → 단계3 2518 (+44) → 보완 2533 (+15) → 단계4 2598 (+65, 감소 0)
+pre_existing_tests_modified: 2   # 단계4에서 처음 0이 아니다. 둘 다 **정정**이며 완화가 아니다:
+                                 # (1) tests/editor/extensionLayers.test.ts — 보조층이 채워져
+                                 #     개수·순서 계약의 형태가 바뀌었다(위 extension_layering_contract (4)).
+                                 #     느슨하게 바꾸지 않고 입력이 정하는 값을 정확히 단언한다.
+                                 # (2) tests/editor/panelKindLayering.test.tsx — 보조 패널의
+                                 #     facet(language) null 단언 3건을 "마크다운이 아니다"로 정정.
+                                 #     그중 2건은 단계4에서 **실제로 실패했다**(옛 단언이 거짓이 됨).
+                                 #     나머지 1건은 통과 중이었으나 적재 타이밍에 기댄 통과였다.
 e2e_tests: 214                   # 0 failed. skip 4건은 smoke-screenshot의 SMOKE=1 게이트(기존)
 e2e_smoke_gated_verified: true   # SMOKE=1로 따로 실행 — 4 passed. 손수정이 가장 많은 파일
 e2e_flaky_repeat_check: "조합 계열 4 spec × 3회 = 33/33 통과 (1회 초록을 결정성 증거로 쓰지 않음)"
-coverage_gate: pass              # per-file 85%, All files 96.31% (기준선 96.29% → +0.02pp)
+coverage_gate: pass              # per-file 85%, All files 96.32% (단계3 96.31% → +0.01pp)
+                                 # M5-단계4: shared/fileKind.ts per-file 100% 유지,
+                                 #           src/editor 99.59% 유지(단계3과 동일)
                                  # M5-단계1 신규 shared/fileKind.ts per-file 100%
                                  # M5-단계2 신규 electron/openDecode.ts per-file 100%
                                  # M5-단계3 신규 src/editor/extensionLayers.ts per-file 100%
@@ -1289,11 +1497,16 @@ coverage_gate_actual_scope: >-
   별도 모듈(extensionLayers.ts)로 뗀 이유의 하나가 그것이며, 그 모듈과
   PanelContainer.tsx는 게이트 안에서 100%다. MarkdownEditor.tsx 새 경로의 실행
   증거는 tests/editor/panelKindLayering.test.tsx이지 게이트가 아니다.
+  M5-단계4도 같다 — 해소 이펙트와 재설정 정체성 비교가 사는 MarkdownEditor.tsx가
+  여전히 게이트 밖이다. 그 경로의 실행 증거는 tests/editor/panelGrammarWiring.test.tsx
+  (경합·재설정 횟수·컴포넌트 도달)이지 게이트가 아니다. 게이트 안에서 100%인 것은
+  extensionLayers.ts와 shared/fileKind.ts다.
 cross_platform_build:
   performed: false
   reason: "Electron 렌더러 유닛 범위. Windows e2e 부재는 C-7로 승계된 기존 공백"
   m3_mitigation: "경로 대조를 순수 함수로 떼고 양 플랫폼을 유닛에서 재현 (AC-PANEL-051b)"
-total_run_phase_files: 115       # 실측 git diff --name-only 040df4a HEAD -- src shared electron tests e2e
+total_run_phase_files: 118       # 실측 git diff --name-only 040df4a -- src shared electron tests e2e
+                                 #      + git ls-files --others --exclude-standard (신규 미추적 포함)
                                  # 그중 M4-2 기여 43 (e2e 이관 35 + 소스 2 + 테스트 6)
                                  # M5-단계1 기여 4 신규 (files.ts + fileKind.ts + 테스트 2).
                                  # M5-단계2 기여 5 (신규 4: openDecode.ts + 테스트 3, 신규 진입 1: dict.ts).
@@ -1302,14 +1515,21 @@ total_run_phase_files: 115       # 실측 git diff --name-only 040df4a HEAD -- s
                                  #   MarkdownEditor.tsx·PanelContainer.tsx는 이미 집합에 있어 증가 없음.
                                  # M5-단계3 보완 기여 1 신규 (listContinuationLayering.test.ts).
                                  #   extensionLayers.ts는 이미 집합에 있어 증가 없음. → 116
-                                 # 실측: 040df4a..b16fd7e = 107 → 단계2 후 112 → 단계3 후 115 → 보완 후 116
+                                 # M5-단계4 기여 2 신규 (테스트 2: auxiliaryGrammar + panelGrammarWiring).
+                                 #   extensionLayers.ts·MarkdownEditor.tsx·fileKind.ts·
+                                 #   extensionLayers.test.ts·panelKindLayering.test.tsx는 이미 집합에 있다. → 118
+                                 # 실측: 040df4a..b16fd7e = 107 → 단계2 후 112 → 단계3 후 115 → 보완 후 116 → 단계4 후 118
 m1_to_mN_commit_strategy: "마일스톤별 단일 커밋 + SHA 백필 커밋. M4는 M4-1/M4-2 분할, M5~M8은 후속 위임"
 deferred_by_open_decision:
   - "AC-PANEL-058 복원 실패 상태 — 그 알림 표면이 M8(패널 배치 persist) 산출물이라 미재현"
   - ".cm-content 측정폭 조정 — design.md §3.2a (ii). 선행 조건(셀렉터 이관)은 M4-2가 충족"
   - "acceptance.md/design.md의 34→35 계수 정정 — sync 단계 소관(L46)"
   - "resolveWatchScope/registerWatchScope 프로덕션 배선 — 소유 요구 없음. 관측으로만 기록"
-  - "파일 종류 판정의 프로덕션 배선 — 단계1이 shared/fileKind.ts에 세우고 다이얼로그 필터가, 단계2가 열기 읽기 분기(readTextForOpen)가, 단계3이 패널 조립(PanelContainer → MarkdownEditor.kind → extensionLayers)이 소비한다. 남은 것은 단계4의 보조층(언어 문법)뿐이다. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
+  - "[해소됨 — 단계4] 파일 종류 판정의 프로덕션 배선 — 단계1이 shared/fileKind.ts에 세우고 다이얼로그 필터가, 단계2가 열기 읽기 분기(readTextForOpen)가, 단계3이 패널 조립(PanelContainer → MarkdownEditor.kind → extensionLayers)이, 단계4가 보조층 언어 문법(grammarDescriptionFor → 해소 이펙트)이 소비한다. 배선이 끝났다. OQ-10은 판 0.3.12에서 확정되어 더는 미결 결정이 아니다"
+  - "`.bib` 전용 문법 — REQ-PANEL-045가 명시한 한계 그대로 남는다. `@codemirror/language-data` 6.5.2 카탈로그에 `.bib`·`.bibtex`가 없고(재측정 확인) BibTeX 전용 문법 도입은 새 런타임 의존성이라 C-11에 걸린다. 참고문헌 파일이 하이라이팅 없이 열리는 것은 결함이 아니라 표시 품질의 한계이며, 그것을 문서로 고정하는 단언이 두 테스트 파일에 있다. 별도 SPEC 사안"
+  - "하이라이팅 결과의 품질 — 두 AC의 메커니즘 범위가 명시적으로 배제한다(과잉주장 금지 규약). 단계4는 확장자 조회가 문법을 **공급하는가**와 미지 확장자가 **열리고 편집되는가**만 쟀다. 토큰 분류·색·시각 출력은 미측정이며 그것을 단언하는 테스트를 쓰지 않았다"
+  - "`macros = []` 기본값의 매 렌더 재설정 — 단계4가 재설정 카운터를 세우며 관측한 **기존** 동작이다(`MarkdownEditor`의 파라미터 기본값이 렌더마다 새 배열을 만들어 `[macros]` 이펙트가 매번 매크로 컴파트먼트를 재설정한다). 이 단계의 범위 밖이라 고치지 않았고, 테스트에서 안정 인스턴스를 넘겨 카운터 잡음만 배제했다. 사용자 관측 동작에는 영향이 없다"
+  - "단계4의 실사용 확인 — 유닛·jsdom까지다. 앱 실행도 e2e도 돌리지 않았다. 살아 있는 편집기에 실제 `.py`/`.json`/`.yaml`을 열었을 때의 하이라이팅 렌더, 첫 적재의 체감 지연, 큰 파일에서의 성능은 미검증이다"
   - "[해소됨 — 단계3 보완] enterListContinuation() 누수. 단계3이 사실로 적출하고 판단을 오케스트레이터에 넘겼던 건이다. 실측 결과 관측 2(빈 항목 줄이 통째로 사라짐)가 요청하지 않은 파괴적 편집이었고, design.md §5.2가 공통층에 둔 것은 '기본 keymap'인데 enterListContinuation()은 그 셋 중 어디에도 속하지 않으므로 SPEC 개정 없이 정정했다. 슬롯은 쪼개지 않고(24/11 유지) 한 공통 슬롯 안의 배열만 종류에 따라 갈랐다. §E.2 'M5 단계3 보완' 절 참조"
   - "마크다운 패널의 Enter 이어쓰기 수단 이중화 — 단계3 보완의 반증 B가 드러낸 사실. markdown()이 Prec.high로 싣는 insertNewlineContinueMarkup(@codemirror/lang-markdown)과 enterListContinuation()이 공존하며, 빈 목록 항목에서만 출력이 갈린다(CommonMark에서 빈 항목은 문단을 끊지 못해 목록으로 파싱되지 않는다). 즉 마크다운에서 enterListContinuation()은 부분적으로 중복이다. 정리하면 마크다운의 관측 동작이 바뀌므로 이 SPEC 범위 밖이며, 별도 판단 사안으로 남긴다"
   - "단계3·보완의 실사용 확인 — 유닛·jsdom까지만 수행했다. 앱 실행도 e2e도 돌리지 않았다. 살아 있는 편집기에 무엇이 실리는지를 바꾸는 단계이므로 실제 .py/.yaml 파일을 연 패널의 렌더 결과·성능·IME 거동은 미검증이다. 특히 보완이 바꾼 것은 Enter 처리 경로이고, 조합 중 Enter(IME 확정)는 jsdom 재현 한계 밖이다"

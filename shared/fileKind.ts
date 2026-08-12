@@ -43,15 +43,26 @@ export type FileKind = 'markdown' | 'auxiliary';
 export const MARKDOWN_EXTENSIONS: readonly string[] = ['md', 'markdown', 'txt'];
 
 /**
+ * 경로에서 파일명만 떼어낸다. 구분자는 `/`와 `\` 둘 다 받는다 — 이 모듈은
+ * 플랫폼을 묻지 않는다(`shared/pathIdentity.ts`와 같은 이유).
+ *
+ * 확장자 판정(`fileExtensionOf`)과 언어 문법 조회(`extensionLayers.ts`의
+ * `grammarDescriptionFor`)가 **같은 경계**를 봐야 하므로 여기 한 번만 정의한다.
+ * 사본을 두면 한쪽만 `\`를 처리하는 식으로 갈라진다.
+ */
+export function fileBasenameOf(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+}
+
+/**
  * 경로의 확장자를 **점 없이 소문자로** 돌려준다. 확장자가 없으면 빈 문자열.
  *
  * `node:path.extname`과 같은 경계를 쓴다: dotfile(`.gitignore`)과 점으로
- * 끝나는 이름(`a.`)은 확장자가 **없다**. 구분자는 `/`와 `\` 둘 다 받는다 —
- * 이 모듈은 플랫폼을 묻지 않으며(`shared/pathIdentity.ts`와 같은 이유),
- * basename을 먼저 떼야 `/notes.md/README`의 점을 확장자로 오인하지 않는다.
+ * 끝나는 이름(`a.`)은 확장자가 **없다**. basename을 먼저 떼야
+ * `/notes.md/README`의 점을 확장자로 오인하지 않는다.
  */
 export function fileExtensionOf(path: string): string {
-  const base = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+  const base = fileBasenameOf(path);
   const dot = base.lastIndexOf('.');
   // dot === 0 은 dotfile, dot === base.length - 1 은 점으로 끝나는 이름.
   if (dot <= 0 || dot === base.length - 1) return '';

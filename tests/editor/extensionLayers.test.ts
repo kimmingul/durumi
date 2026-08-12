@@ -62,10 +62,15 @@ const COMMON_LAYER_IDS: readonly string[] = [
 ];
 
 /**
- * 보조층 — **단계3에서는 비어 있다.** 언어 문법(REQ-PANEL-041)은 단계4가 채운다.
- * 빈 보조층은 포함 판정을 자명하게 만족시키므로 allowlist 형태에 문제가 없다.
+ * 보조층 — **단계4가 채웠다.** `design.md` §5.2가 이 층에 선언한 유일한 원소는
+ * "언어 문법(`LanguageDescription` → `@codemirror/language-data`)"이다.
+ *
+ * 이 목록은 층의 **가능한 원소**를 적은 것이고, 실제 조립에서 그 슬롯은
+ * **문법이 조달된 경우에만** 나타난다(REQ-PANEL-041은 `Where 문법이 사용 가능한
+ * 경우`, REQ-PANEL-045는 `Where 없는 경우`이므로 0-or-1이 두 요구의 모양 그대로다).
+ * 조달·폴백의 판정 자체는 `auxiliaryGrammar.test.ts`가 소유한다.
  */
-const AUXILIARY_LAYER_IDS: readonly string[] = [];
+const AUXILIARY_LAYER_IDS: readonly string[] = ['auxiliaryLanguage'];
 
 const ALLOWLIST = new Set<string>([...COMMON_LAYER_IDS, ...AUXILIARY_LAYER_IDS]);
 
@@ -100,9 +105,19 @@ function makeDeps(kind: FileKind, over: Partial<ExtensionLayerDeps> = {}): Exten
     filePathRef: { current: null },
     onChange: undefined,
     onHeadingHint: () => {},
+    grammar: null,
     ...over,
   };
 }
+
+/**
+ * 보조층 슬롯의 **구조**만 보는 절을 위한 무해한 대역.
+ *
+ * 이 파일이 재는 것은 슬롯의 개수·층·순서다. 실제 문법이 상태에 도달하는지는
+ * `auxiliaryGrammar.test.ts`가 진짜 `LanguageSupport`로 잰다 — 여기서 그것을
+ * 하려면 이 파일 전체가 비동기가 되고, 얻는 것은 없다.
+ */
+const GRAMMAR_STANDIN: Extension = keymap.of([]);
 
 function stateOf(deps: ExtensionLayerDeps, doc = ''): EditorState {
   return EditorState.create({ doc, extensions: layeredExtensions(deps) });
@@ -299,18 +314,50 @@ describe('AC-PANEL-042 And② — 마크다운 전용 항목 9종의 부재 (비
 // 층 산술 — 설계 문서가 아니라 조립 자신에게서 잰다
 // ---------------------------------------------------------------------------
 
-describe('층 산술 (design.md §5.2 = 공통 11 + 마크다운 13 = 24)', () => {
-  it('마크다운 패널은 최상위 24항목, 보조 패널은 11항목을 조립한다', () => {
+/**
+ * **단계4에서 보조 쪽 산술이 바뀌었다 — 계약의 변경이며 완화가 아니다.**
+ *
+ * 단계3까지 보조는 항상 11이었다(보조층이 비어 있었으므로). 단계4가 언어 문법을
+ * 채우면서 보조는 **11 또는 12**가 된다. 그 둘은 임의의 흔들림이 아니라 요구의
+ * 두 갈래를 그대로 옮긴 것이다:
+ *
+ *   REQ-PANEL-041 `Where 문법 정의가 사용 가능한 경우` → 공통 11 + 보조 1 = 12
+ *   REQ-PANEL-045 `Where 문법 정의가 없는 경우`        → 공통 11 + 보조 0 = 11
+ *
+ * 그래서 단언을 "11 이상"이나 "11 또는 12" 같은 느슨한 형태로 바꾸지 않았다 —
+ * **입력이 정하는 값을 정확히** 단언한다. 마크다운 24는 불변이다.
+ */
+describe('층 산술 (design.md §5.2 = 공통 11 + 마크다운 13 = 24, 보조층 0-or-1)', () => {
+  it('마크다운 패널은 문법 입력과 무관하게 최상위 24항목이다', () => {
     expect(assembleLayers(makeDeps('markdown')).length).toBe(24);
-    expect(assembleLayers(makeDeps('auxiliary')).length).toBe(11);
+    expect(assembleLayers(makeDeps('markdown', { grammar: GRAMMAR_STANDIN })).length).toBe(24);
   });
 
-  it('층별 개수가 11 / 13 / 0이다', () => {
-    const slots = assembleLayers(makeDeps('markdown'));
+  it('보조 패널은 문법이 없으면 11항목, 있으면 12항목이다', () => {
+    expect(assembleLayers(makeDeps('auxiliary')).length).toBe(11);
+    expect(assembleLayers(makeDeps('auxiliary', { grammar: GRAMMAR_STANDIN })).length).toBe(12);
+  });
+
+  it('층별 개수가 마크다운 조립에서 11 / 13 / 0이다', () => {
+    const slots = assembleLayers(makeDeps('markdown', { grammar: GRAMMAR_STANDIN }));
     const count = (l: string) => slots.filter((s) => s.layer === l).length;
     expect(count('common')).toBe(11);
     expect(count('markdown')).toBe(13);
+    // 마크다운 패널에는 보조층이 없다 — 문법을 넘겨도 마찬가지다.
     expect(count('auxiliary')).toBe(0);
+  });
+
+  it('층별 개수가 보조 조립에서 11 / 0 / 0-or-1이다', () => {
+    const count = (deps: ExtensionLayerDeps, l: string) =>
+      assembleLayers(deps).filter((s) => s.layer === l).length;
+    const plain = makeDeps('auxiliary');
+    const withGrammar = makeDeps('auxiliary', { grammar: GRAMMAR_STANDIN });
+    for (const deps of [plain, withGrammar]) {
+      expect(count(deps, 'common')).toBe(11);
+      expect(count(deps, 'markdown')).toBe(0);
+    }
+    expect(count(plain, 'auxiliary')).toBe(0);
+    expect(count(withGrammar, 'auxiliary')).toBe(1);
   });
 
   it('층 구성이 design.md §5.2의 명세와 항목 단위로 일치한다', () => {
@@ -318,6 +365,11 @@ describe('층 산술 (design.md §5.2 = 공통 11 + 마크다운 13 = 24)', () =
     const byLayer = (l: string) => slots.filter((s) => s.layer === l).map((s) => s.id).sort();
     expect(byLayer('common')).toEqual([...COMMON_LAYER_IDS].sort());
     expect(byLayer('markdown')).toEqual([...MARKDOWN_LAYER_IDS].sort());
+
+    const aux = assembleLayers(makeDeps('auxiliary', { grammar: GRAMMAR_STANDIN }));
+    expect(aux.filter((s) => s.layer === 'auxiliary').map((s) => s.id)).toEqual([
+      ...AUXILIARY_LAYER_IDS,
+    ]);
   });
 
   /**
@@ -362,12 +414,51 @@ describe('층 산술 (design.md §5.2 = 공통 11 + 마크다운 13 = 24)', () =
     ]);
   });
 
-  it('보조 조립의 순서가 마크다운 조립의 공통 슬롯 순서와 같다 — 우선순위 보존', () => {
-    const md = assembleLayers(makeDeps('markdown'))
-      .filter((s) => s.layer === 'common')
-      .map((s) => s.id);
-    const aux = idsOf(assembleLayers(makeDeps('auxiliary')));
-    expect(aux).toEqual(md);
+  /**
+   * **이 단언도 단계4에서 형태가 바뀌었다.**
+   *
+   * 단계3까지는 `보조 전체 == 마크다운의 공통 슬롯`이었다(보조층이 비었으므로).
+   * 보조층에 원소가 생긴 지금 그 등식은 성립할 수 없으므로, 지키려던 것 —
+   * **공통 슬롯끼리의 상대 순서 = 우선순위** — 를 정확히 그 형태로 단언한다.
+   * 보조 조립에서 공통 슬롯만 뽑은 부분열이 마크다운의 그것과 같아야 한다.
+   */
+  it('보조 조립의 공통 슬롯 순서가 마크다운 조립의 그것과 같다 — 우선순위 보존', () => {
+    const commonOf = (deps: ExtensionLayerDeps) =>
+      assembleLayers(deps)
+        .filter((s) => s.layer === 'common')
+        .map((s) => s.id);
+    const md = commonOf(makeDeps('markdown'));
+    expect(commonOf(makeDeps('auxiliary'))).toEqual(md);
+    expect(commonOf(makeDeps('auxiliary', { grammar: GRAMMAR_STANDIN }))).toEqual(md);
+  });
+
+  /**
+   * 문법 슬롯이 **어디에 끼는가**도 우선순위다. 마크다운 조립에서 언어층
+   * (`markdownLanguage`)이 앉은 자리와 같은 자리에 둔다 — 언어층이 두 조립에서
+   * 같은 우선순위를 갖게 하는 유일한 배치이며, 끝에 붙이면 `viewModes` ·
+   * `macroKeymapCompartment` · `theme` 뒤로 밀려 두 종류의 우선순위가 갈린다.
+   */
+  it('보조층 문법 슬롯이 마크다운 언어층과 같은 자리에 앉는다', () => {
+    const aux = idsOf(assembleLayers(makeDeps('auxiliary', { grammar: GRAMMAR_STANDIN })));
+    expect(aux).toEqual([
+      'history',
+      'baseKeymap',
+      'autoPair',
+      'auxiliaryLanguage', // 마크다운 조립의 `markdownLanguage` 자리
+      'editModeState',
+      'docPathState',
+      'viewModes',
+      'macroKeymapCompartment',
+      'theme',
+      'highlightActiveLine',
+      'lineWrapping',
+      'changeListener',
+    ]);
+
+    // 폴백 조립은 그 자리가 비어 있을 뿐 나머지 순서가 같다.
+    expect(idsOf(assembleLayers(makeDeps('auxiliary')))).toEqual(
+      aux.filter((id) => id !== 'auxiliaryLanguage'),
+    );
   });
 });
 
