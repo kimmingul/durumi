@@ -1315,6 +1315,70 @@ index-moXzf9_B.js    3,270 B   (JSON 문법 — 독립 청크)
 
 ---
 
+### CI 회귀 정정 — 고정 tick 예산이 동적 import를 대신하고 있었다 (windows · ubuntu 각 1건)
+
+PR #10(`feat/v0.3-workspace` → `main`)의 CI가 두 잡에서 각각 1건씩 실패했다. 로컬(macOS·Node 26)은 232파일/2598건 전부 통과했고 CI는 Node 20이다. **두 실패의 뿌리는 같다**: 정해진 횟수의 매크로태스크(`setTimeout(0)` 라운드)를 "동적 import가 끝났다"의 대용으로 쓴 것. 라운드 수는 시간이 아니라 **이벤트 루프 회전 수**이므로 러너가 느려지면 같은 횟수가 훨씬 짧은 I/O 창을 뜻한다.
+
+두 건의 귀속은 다르다 — 하나는 M5가 새로 들인 회귀이고, 하나는 M4-2부터 있던 미검출 결함이다.
+
+#### 1) windows — `panelGrammarWiring.test.tsx` (M5 단계4 회귀, 커밋 `e6b3d8a`)
+
+```
+AC-PANEL-041 > /w/analysis.py (내용 x = 1) 패널의 언어층이 python가 된다
+AssertionError: expected null to be 'python'
+Test Files 1 failed | 231 passed (232) · Tests 1 failed | 2597 passed (2598)
+```
+
+귀속 실측: `c8fa038`(M4-1 직후)·`b70f25a`·`010908e`(M4-2) 전부 windows green. `4f2feb4`(M5)가 첫 실패이고 실패 파일 자체가 M5 단계4의 산출물이다.
+
+**진단 — 배선이 아니라 대기다.** 세 후보(타이밍 / Node 20 / windows 경로)를 다음 관측으로 갈랐다:
+
+| 관측 | 배제되는 후보 |
+|---|---|
+| 같은 windows 실행에서 python을 단언하는 **뒤쪽 테스트 넷이 통과**(27건 중 1건만 실패) | 적재 실패 · 생산 결함 — python은 windows에서 적재된다. 모자란 것은 시간이다 |
+| ubuntu는 같은 Node 20에서 **27건 전부 통과**(로그 `✓ … (27 tests) 1195ms`) | Node 20 자체 |
+| `.py`/`.json`/`.yaml`이 **같은 경로 모양**을 쓰는데 뒤 둘은 통과 | `fileBasenameOf` 경로 처리 |
+| 실패한 것이 파일의 **첫 테스트**(프로세스가 가장 차가운 시점, 203ms 소요) | — 남는 것은 tick 예산 고갈 |
+
+"원인인가 증상인가" 반증: 라운드를 0으로 낮추면 macOS에서도 같은 형태로 깨진다(`expected null to be 'python'`/`'json'`/`'yaml'`/`'rust'` 4건). 예산이 원인임을 직접 재현했다.
+
+**수정.** `settleGrammar(...paths)` — `LanguageDescription.load()`가 진행 중 적재의 **같은 약속**을 돌려주는 성질(내부 `loading` 캐시)을 이용해 컴포넌트가 이미 띄운 적재에 올라탄다. 컴포넌트가 먼저 등록한 콜백이 앞서 실행되므로 돌아온 시점에 재설정이 이미 적용돼 있다. 라운드 상한은 늘리지 않았다 — 그것은 경합 창을 넓힐 뿐이다.
+
+**겸사로 적출한 공백.** 라운드 0 반증에서 **경합 절 네 항목이 전부 통과했다.** 도착하지 않은 문법은 오염시킬 수도 없으므로 단언이 공회전한다 — 단계4가 "따뜻한 상태 오염"을 적출했던 것과 같은 계열의 vacuity다. 경합 절도 버려질 적재를 기다리게 해 **판정을 강화**했다.
+
+#### 2) ubuntu — `panelStaleViewWindow.test.tsx` (M4-2 기존 결함, 커밋 `c9915d6`)
+
+```
+`aiCitationSuggest`의 제안 문단이 대기 중 전환된 패널의 것이다
+AssertionError: 제안 패널이 열리지 않았다: expected null to be truthy
+```
+
+귀속 실측: `b70f25a`·`010908e`·`4f2feb4` 세 푸시에서 **동일 실패**(플래키 아님). `c8fa038`은 green이었으므로 M4-2 구간에서 생겼고 **M5와 무관**하다. windows는 통과한다.
+
+**진단 — 낡은 뷰가 아니라 Suspense다.** `CitationSuggestPanel`은 `React.lazy`(`App.tsx:38`)이고 감싼 것은 `<Suspense fallback={null}>`이라, 상태가 열려도 청크 도착 전에는 DOM이 비어 있다. CI 로그가 이것을 직접 말한다:
+
+| 관측 | 결론 |
+|---|---|
+| 실패 **6ms 뒤** React가 `A suspended resource finished loading … not wrapped in act` 경고 | 청크가 **테스트 종료 뒤** 도착했다 |
+| 같은 경고가 ubuntu 실행 전체에서 **이 실패에만 1건**, 통과한 windows 실행에는 **0건** | 플랫폼별 결정성의 근거가 이 축임 |
+| 서스펜드가 일어났다는 사실 자체 | **조기 반환 가설 배제** — `mdView()`가 null이면 패널이 렌더되지 않으므로 서스펜드할 일이 없다. 핸들러는 끝까지 갔다 |
+
+"원인인가 증상인가" 반증: macOS에서 lazy 카드는 6라운드에 도착한다(예산 8, 여유 2). 예산을 2로 낮추면 **같은 메시지 + 같은 React 경고**가 그대로 재현된다.
+
+**수정.** 단언 직전에 같은 모듈을 `await import`한다. React가 먼저 등록한 해소 콜백이 앞서 실행되므로 순서가 보장되고 tick 수에 의존하지 않는다.
+
+**이 검사가 지키던 성질은 그대로다.** 문단 내용 단언(`toContain('B 문단입니다')`)은 손대지 않았다 — 낡은 뷰 창이 되살아나면 A 문단이 나와 실패하고, 조기 반환이 되살아나면 패널이 열리지 않아 실패한다. "형태가 아니라 동작으로 판정한다"는 이 파일의 전제가 유지된다.
+
+#### 두 수정에 공통으로 적용한 규율
+
+- 단언을 **한 건도** 지우거나 완화하지 않았다. `.skip`·`.only`·타임아웃 상향·재시도 래퍼 없음.
+- 생산 코드 무변경 — 두 실패 모두 테스트의 대기 방식이 원인이며 배선 자체는 성립함을 CI 로그가 증명한다.
+- 반증으로 확인했다: 두 파일 모두 **예산을 재현 시점 값으로 낮춘 채** 통과한다(문법 27건 @라운드 0, 제안 패널 @flush 2). 수정이 tick 수 의존을 제거했다는 직접 증거다.
+
+**남은 한계(정직하게).** ubuntu/windows 실패를 **그 플랫폼에서** 재현하지는 못했다(이 기계에 Node 20도 두 OS도 없다). 재현한 것은 **메커니즘**이다 — 예산을 낮춰 동일 메시지·동일 부수 경고를 얻었고, 수정 후 그 예산에서도 통과한다. 수정이 tick 예산과 무관해졌으므로 러너 속도 축의 실패는 원리적으로 닫혔다고 본다.
+
+---
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 ```yaml
@@ -1455,6 +1519,29 @@ c11_dependency_evidence: >-
 markdown_layer_untouched_by_step4: true
   # 마크다운 24항목의 집합·순서·내용 무변경. 조립에 grammar를 넘겨도 마크다운
   # 패널은 무시하고 보조층 0을 유지한다(단언 있음).
+ci_regression_fix_commits:        # PR #10 CI 실패 2건 정정 (§E.2 "CI 회귀 정정" 절)
+  - e6b3d8a                       #   windows — panelGrammarWiring (M5 단계4 귀속 회귀)
+  - c9915d6                       #   ubuntu  — panelStaleViewWindow (M4-2 귀속 기존 결함)
+ci_regression_root_cause: fixed-tick-budget-standing-in-for-dynamic-import
+  # 두 건의 뿌리가 같다: 정해진 횟수의 매크로태스크를 "동적 import 완료"의 대용으로 씀.
+  # 라운드 수는 시간이 아니라 이벤트 루프 회전 수이므로 느린 러너에서 창이 좁아진다.
+  # 수정은 양쪽 다 "실제 대상을 기다린다" — 예산 상향이 아니다(창을 넓힐 뿐이므로).
+ci_regression_attribution:        # 귀속은 커밋별 실측으로 갈랐다 (추정 아님)
+  windows_panelGrammarWiring: m5-step4   # c8fa038·b70f25a·010908e green → 4f2feb4 최초 실패
+  ubuntu_panelStaleViewWindow: m4-2      # b70f25a·010908e·4f2feb4 동일 실패, c8fa038 green
+ci_regression_production_code_unchanged: true
+  # 두 건 모두 생산 결함이 아니다. windows: 같은 실행의 뒤쪽 테스트 넷이 python을
+  # 단언하며 통과 → 적재는 성립한다. ubuntu: React가 "suspended resource finished
+  # loading"을 경고 → 서스펜드가 일어났다 = 패널이 렌더됐다 = 핸들러 조기 반환 아님.
+ci_regression_reproduced_locally: mechanism-only
+  # 플랫폼 재현은 못 했다(이 기계에 Node 20도 두 OS도 없다). 재현한 것은 메커니즘:
+  # 예산을 낮추면 동일 메시지 + 동일 부수 경고가 나오고, 수정 후에는 그 예산에서도 통과한다.
+ci_regression_falsification:      # 수정이 tick 의존을 제거했다는 직접 증거
+  panelGrammarWiring: "settle(rounds=0)에서 27/27 통과 (수정 전 같은 설정에서 4건 실패)"
+  panelStaleViewWindow: "flush 2라운드에서 1/1 통과 (수정 전 같은 설정에서 실패 재현)"
+ci_regression_assertions_weakened: 0
+  # .skip·.only·타임아웃 상향·단언 완화·재시도 래퍼 전부 없음. 경합 절은 오히려
+  # 강화됐다 — 라운드 0에서 네 항목이 전부 통과하던 vacuity를 적출해 실제 적재를 기다리게 했다.
 new_warnings_or_lints_introduced: 0   # lint/typecheck 신규 경고 0 (양쪽 exit 0)
 react_act_warnings: 165               # M4-2 실측. 신규 4파일 기여 38, 기존 127.
                                       # 단계4 기여 0 — 문법 해소를 React 상태가 아니라
